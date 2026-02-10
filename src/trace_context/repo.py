@@ -450,4 +450,6 @@ class Repo:
     # ------------------------------------------------------------------
 
     def __repr__(self) -> str:
+        if self._closed:
+            return f"Repo(repo_id='{self._repo_id}', closed=True)"
         return f"Repo(repo_id='{self._repo_id}', head='{self.head}')"
