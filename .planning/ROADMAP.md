@@ -30,12 +30,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. User can commit structured content (plain text, conversation messages with roles, tool call results) and the structure is preserved through materialization
   4. User can materialize the current context and get a coherent output suitable for LLM consumption, using either the default concatenation materializer or a custom one
   5. Every commit and materialize operation reports token counts, and users can swap in a custom tokenizer or have API-reported counts used when available
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 01-01: Storage layer and data model (SQLAlchemy models, content-addressable blobs, repository interfaces)
-- [ ] 01-02: Commit engine, token accounting, and materialization
-- [ ] 01-03: SDK public API surface (Repo class, commit types, pluggable protocols)
+- [ ] 01-01-PLAN.md -- Project scaffolding, domain models (7 content types), SQLAlchemy schema, repository pattern (ABCs + SQLite)
+- [ ] 01-02-PLAN.md -- Deterministic hashing, token counting, commit engine, and default materializer
+- [ ] 01-03-PLAN.md -- Repo class (public SDK entry point) and end-to-end integration tests
 
 ### Phase 2: Linear History & CLI
 **Goal**: Users can inspect, navigate, and manipulate linear commit history through both the SDK and a CLI
@@ -111,7 +111,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundations | 0/3 | Not started | - |
+| 1. Foundations | 0/3 | Planned | - |
 | 2. Linear History & CLI | 0/2 | Not started | - |
 | 3. Branching & Merging | 0/4 | Not started | - |
 | 4. Compression | 0/2 | Not started | - |
