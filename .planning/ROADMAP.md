@@ -2,7 +2,7 @@
 
 ## Overview
 
-Trace delivers git-like version control for LLM context windows across five phases. Phase 1 establishes the data model, storage layer, and commit/materialize cycle -- the load-bearing foundation everything else depends on. Phase 2 proves the model works by building linear history operations and a CLI for debugging. Phase 3 front-loads the highest-risk work: branching, merging (including LLM-mediated semantic merge), and the LLM client infrastructure. Phase 4 delivers compression with token budget awareness, pinning, and commit reordering. Phase 5 adds multi-agent coordination (spawn, collapse, cross-repo queries) and packages the library for release.
+Trace delivers git-like version control for LLM context windows across five phases. Phase 1 establishes the data model, storage layer, and commit/compile cycle -- the load-bearing foundation everything else depends on. Phase 2 proves the model works by building linear history operations and a CLI for debugging. Phase 3 front-loads the highest-risk work: branching, merging (including LLM-mediated semantic merge), and the LLM client infrastructure. Phase 4 delivers compression with token budget awareness, pinning, and commit reordering. Phase 5 adds multi-agent coordination (spawn, collapse, cross-repo queries) and packages the library for release.
 
 ## Phases
 
@@ -12,7 +12,7 @@ Trace delivers git-like version control for LLM context windows across five phas
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Foundations** - Data model, storage, commit/materialize cycle, token accounting, and SDK entry point
+- [ ] **Phase 1: Foundations** - Data model, storage, commit/compile cycle, token accounting, and SDK entry point
 - [ ] **Phase 2: Linear History & CLI** - Log, status, diff, reset, checkout, and CLI wrapper for inspection
 - [ ] **Phase 3: Branching & Merging** - Branch, switch, merge (fast-forward + semantic), rebase, cherry-pick, and LLM client
 - [ ] **Phase 4: Compression** - Token-budget-aware compression, pinned commit preservation, commit reordering, garbage collection
@@ -21,20 +21,20 @@ Decimal phases appear between their surrounding integers in numeric order.
 ## Phase Details
 
 ### Phase 1: Foundations
-**Goal**: Users can create a trace, commit structured context snapshots, and materialize context for LLM consumption with accurate token counts
+**Goal**: Users can create a trace, commit structured context snapshots, and compile context for LLM consumption with accurate token counts
 **Depends on**: Nothing (first phase)
 **Requirements**: INFR-01, INFR-02, INFR-03, INFR-04, INFR-05, INFR-06, CORE-01, CORE-02, CORE-08, CORE-09, INTF-01
 **Success Criteria** (what must be TRUE):
   1. User can initialize a new trace via `Repo.open()` and it persists to SQLite storage
-  2. User can commit context with message, timestamp, and type (append/edit/pin) and retrieve it by hash
+  2. User can commit context with message, timestamp, and operation (append/edit) and retrieve it by hash; priority annotations (pin/skip/normal) control compilation inclusion
   3. User can commit structured content (plain text, conversation messages with roles, tool call results) and the structure is preserved through materialization
-  4. User can materialize the current context and get a coherent output suitable for LLM consumption, using either the default concatenation materializer or a custom one
-  5. Every commit and materialize operation reports token counts, and users can swap in a custom tokenizer or have API-reported counts used when available
+  4. User can compile the current context and get a coherent output suitable for LLM consumption, using either the default context compiler or a custom one
+  5. Every commit and compile operation reports token counts, and users can swap in a custom tokenizer or have API-reported counts used when available
 **Plans**: 3 plans
 
 Plans:
-- [ ] 01-01-PLAN.md -- Project scaffolding, domain models (7 content types), SQLAlchemy schema, repository pattern (ABCs + SQLite)
-- [ ] 01-02-PLAN.md -- Deterministic hashing, token counting, commit engine, and default materializer
+- [x] 01-01-PLAN.md -- Project scaffolding, domain models (7 content types), SQLAlchemy schema, repository pattern (ABCs + SQLite)
+- [ ] 01-02-PLAN.md -- Deterministic hashing, token counting, commit engine, and default context compiler
 - [ ] 01-03-PLAN.md -- Repo class (public SDK entry point) and end-to-end integration tests
 
 ### Phase 2: Linear History & CLI
@@ -111,7 +111,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundations | 0/3 | Planned | - |
+| 1. Foundations | 1/3 | In progress | - |
 | 2. Linear History & CLI | 0/2 | Not started | - |
 | 3. Branching & Merging | 0/4 | Not started | - |
 | 4. Compression | 0/2 | Not started | - |
