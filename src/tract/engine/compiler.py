@@ -62,7 +62,7 @@ class DefaultContextCompiler:
 
     def compile(
         self,
-        repo_id: str,
+        tract_id: str,
         head_hash: str,
         *,
         as_of: datetime | None = None,
@@ -72,7 +72,7 @@ class DefaultContextCompiler:
         """Compile commits into structured messages for LLM consumption.
 
         Args:
-            repo_id: Repository identifier (used for annotation lookups).
+            tract_id: Tract identifier (used for annotation lookups).
             head_hash: Hash of the HEAD commit to start walking from.
             as_of: Only include commits created at or before this datetime.
             up_to: Only include commits up to and including this commit hash.

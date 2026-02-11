@@ -79,10 +79,10 @@ class SqliteCommitRepository(CommitRepository):
 
         return ancestors
 
-    def get_by_type(self, content_type: str, repo_id: str) -> Sequence[CommitRow]:
+    def get_by_type(self, content_type: str, tract_id: str) -> Sequence[CommitRow]:
         stmt = (
             select(CommitRow)
-            .where(CommitRow.repo_id == repo_id, CommitRow.content_type == content_type)
+            .where(CommitRow.tract_id == tract_id, CommitRow.content_type == content_type)
             .order_by(CommitRow.created_at)
         )
         return list(self._session.execute(stmt).scalars().all())
@@ -102,52 +102,52 @@ class SqliteRefRepository(RefRepository):
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def get_head(self, repo_id: str) -> str | None:
+    def get_head(self, tract_id: str) -> str | None:
         stmt = select(RefRow).where(
-            RefRow.repo_id == repo_id, RefRow.ref_name == "HEAD"
+            RefRow.tract_id == tract_id, RefRow.ref_name == "HEAD"
         )
         ref = self._session.execute(stmt).scalar_one_or_none()
         return ref.commit_hash if ref else None
 
-    def update_head(self, repo_id: str, commit_hash: str) -> None:
+    def update_head(self, tract_id: str, commit_hash: str) -> None:
         stmt = select(RefRow).where(
-            RefRow.repo_id == repo_id, RefRow.ref_name == "HEAD"
+            RefRow.tract_id == tract_id, RefRow.ref_name == "HEAD"
         )
         ref = self._session.execute(stmt).scalar_one_or_none()
         if ref is None:
             self._session.add(
-                RefRow(repo_id=repo_id, ref_name="HEAD", commit_hash=commit_hash)
+                RefRow(tract_id=tract_id, ref_name="HEAD", commit_hash=commit_hash)
             )
         else:
             ref.commit_hash = commit_hash
         self._session.flush()
 
-    def get_branch(self, repo_id: str, branch_name: str) -> str | None:
+    def get_branch(self, tract_id: str, branch_name: str) -> str | None:
         ref_name = f"refs/heads/{branch_name}"
         stmt = select(RefRow).where(
-            RefRow.repo_id == repo_id, RefRow.ref_name == ref_name
+            RefRow.tract_id == tract_id, RefRow.ref_name == ref_name
         )
         ref = self._session.execute(stmt).scalar_one_or_none()
         return ref.commit_hash if ref else None
 
-    def set_branch(self, repo_id: str, branch_name: str, commit_hash: str) -> None:
+    def set_branch(self, tract_id: str, branch_name: str, commit_hash: str) -> None:
         ref_name = f"refs/heads/{branch_name}"
         stmt = select(RefRow).where(
-            RefRow.repo_id == repo_id, RefRow.ref_name == ref_name
+            RefRow.tract_id == tract_id, RefRow.ref_name == ref_name
         )
         ref = self._session.execute(stmt).scalar_one_or_none()
         if ref is None:
             self._session.add(
-                RefRow(repo_id=repo_id, ref_name=ref_name, commit_hash=commit_hash)
+                RefRow(tract_id=tract_id, ref_name=ref_name, commit_hash=commit_hash)
             )
         else:
             ref.commit_hash = commit_hash
         self._session.flush()
 
-    def list_branches(self, repo_id: str) -> list[str]:
+    def list_branches(self, tract_id: str) -> list[str]:
         prefix = "refs/heads/"
         stmt = select(RefRow).where(
-            RefRow.repo_id == repo_id,
+            RefRow.tract_id == tract_id,
             RefRow.ref_name.startswith(prefix),
         )
         refs = self._session.execute(stmt).scalars().all()

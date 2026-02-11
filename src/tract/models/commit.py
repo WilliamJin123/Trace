@@ -28,7 +28,7 @@ class CommitInfo(BaseModel):
     """
 
     commit_hash: str
-    repo_id: str
+    tract_id: str
     parent_hash: Optional[str] = None
     content_hash: str
     content_type: str

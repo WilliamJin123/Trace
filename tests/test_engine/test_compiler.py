@@ -35,7 +35,7 @@ from tract.storage.sqlite import (
 )
 
 
-REPO_ID = "compiler-test-repo"
+TRACT_ID = "compiler-test-tract"
 
 
 @pytest.fixture
@@ -47,7 +47,7 @@ def stack(session):
     annot_repo = SqliteAnnotationRepository(session)
     counter = TiktokenCounter()
 
-    engine = CommitEngine(commit_repo, blob_repo, ref_repo, annot_repo, counter, REPO_ID)
+    engine = CommitEngine(commit_repo, blob_repo, ref_repo, annot_repo, counter, TRACT_ID)
     compiler = DefaultContextCompiler(commit_repo, blob_repo, annot_repo, counter)
 
     return {
@@ -89,7 +89,7 @@ class TestCoreCompilation:
         compiler = DefaultContextCompiler(commit_repo, blob_repo, annot_repo, counter)
 
         # Nonexistent head hash - get_ancestors returns empty list
-        result = compiler.compile(REPO_ID, "nonexistent_hash_abc123")
+        result = compiler.compile(TRACT_ID, "nonexistent_hash_abc123")
         assert result.messages == []
         assert result.token_count == 0
         assert result.commit_count == 0
@@ -97,7 +97,7 @@ class TestCoreCompilation:
     def test_compile_single_instruction(self, commit_engine, compiler) -> None:
         """Single instruction compiles to one system message."""
         c = commit_engine.create_commit(InstructionContent(text="You are a helpful assistant."))
-        result = compiler.compile(REPO_ID, c.commit_hash)
+        result = compiler.compile(TRACT_ID, c.commit_hash)
 
         assert len(result.messages) == 1
         assert result.messages[0].role == "system"
@@ -110,7 +110,7 @@ class TestCoreCompilation:
         c2 = commit_engine.create_commit(DialogueContent(role="user", text="Hello!"))
         c3 = commit_engine.create_commit(DialogueContent(role="assistant", text="Hi there!"))
 
-        result = compiler.compile(REPO_ID, c3.commit_hash)
+        result = compiler.compile(TRACT_ID, c3.commit_hash)
 
         assert len(result.messages) == 3
         assert result.messages[0].role == "system"
@@ -126,7 +126,7 @@ class TestCoreCompilation:
         commit_engine.create_commit(DialogueContent(role="system", text="System via dialogue."))
         c2 = commit_engine.create_commit(DialogueContent(role="user", text="User message."))
 
-        result = compiler.compile(REPO_ID, c2.commit_hash)
+        result = compiler.compile(TRACT_ID, c2.commit_hash)
 
         assert result.messages[0].role == "system"
         assert result.messages[1].role == "user"
@@ -142,14 +142,14 @@ class TestRoleMapping:
 
     def test_instruction_maps_to_system(self, commit_engine, compiler) -> None:
         c = commit_engine.create_commit(InstructionContent(text="test"))
-        result = compiler.compile(REPO_ID, c.commit_hash)
+        result = compiler.compile(TRACT_ID, c.commit_hash)
         assert result.messages[0].role == "system"
 
     def test_dialogue_maps_from_content(self, commit_engine, compiler) -> None:
         """Dialogue role comes from the content's role field."""
         commit_engine.create_commit(DialogueContent(role="user", text="u"))
         c2 = commit_engine.create_commit(DialogueContent(role="assistant", text="a"))
-        result = compiler.compile(REPO_ID, c2.commit_hash)
+        result = compiler.compile(TRACT_ID, c2.commit_hash)
         assert result.messages[0].role == "user"
         assert result.messages[1].role == "assistant"
 
@@ -158,29 +158,29 @@ class TestRoleMapping:
             tool_name="search", direction="result",
             payload={"results": ["item1"]}, status="success",
         ))
-        result = compiler.compile(REPO_ID, c.commit_hash)
+        result = compiler.compile(TRACT_ID, c.commit_hash)
         assert result.messages[0].role == "tool"
 
     def test_reasoning_maps_to_assistant(self, commit_engine, compiler) -> None:
         c = commit_engine.create_commit(ReasoningContent(text="Let me think..."))
-        result = compiler.compile(REPO_ID, c.commit_hash)
+        result = compiler.compile(TRACT_ID, c.commit_hash)
         assert result.messages[0].role == "assistant"
 
     def test_artifact_maps_to_assistant(self, commit_engine, compiler) -> None:
         c = commit_engine.create_commit(ArtifactContent(
             artifact_type="code", content="print('hello')", language="python",
         ))
-        result = compiler.compile(REPO_ID, c.commit_hash)
+        result = compiler.compile(TRACT_ID, c.commit_hash)
         assert result.messages[0].role == "assistant"
 
     def test_output_maps_to_assistant(self, commit_engine, compiler) -> None:
         c = commit_engine.create_commit(OutputContent(text="Final answer"))
-        result = compiler.compile(REPO_ID, c.commit_hash)
+        result = compiler.compile(TRACT_ID, c.commit_hash)
         assert result.messages[0].role == "assistant"
 
     def test_freeform_maps_to_assistant(self, commit_engine, compiler) -> None:
         c = commit_engine.create_commit(FreeformContent(payload={"data": "value"}))
-        result = compiler.compile(REPO_ID, c.commit_hash)
+        result = compiler.compile(TRACT_ID, c.commit_hash)
         assert result.messages[0].role == "assistant"
 
 
@@ -205,8 +205,8 @@ class TestEditResolution:
             message="edit",
         )
         # Compile from current HEAD (which is the edit commit)
-        head = commit_engine._ref_repo.get_head(REPO_ID)
-        result = compiler.compile(REPO_ID, head)
+        head = commit_engine._ref_repo.get_head(TRACT_ID)
+        result = compiler.compile(TRACT_ID, head)
 
         # Should have 1 message (original replaced by edit, edit itself is not standalone)
         assert len(result.messages) == 1
@@ -230,8 +230,8 @@ class TestEditResolution:
             reply_to=original.commit_hash,
         )
 
-        head = commit_engine._ref_repo.get_head(REPO_ID)
-        result = compiler.compile(REPO_ID, head)
+        head = commit_engine._ref_repo.get_head(TRACT_ID)
+        result = compiler.compile(TRACT_ID, head)
 
         assert len(result.messages) == 1
         assert result.messages[0].content == "Version 3"
@@ -245,8 +245,8 @@ class TestEditResolution:
             reply_to=c1.commit_hash,
         )
 
-        head = commit_engine._ref_repo.get_head(REPO_ID)
-        result = compiler.compile(REPO_ID, head)
+        head = commit_engine._ref_repo.get_head(TRACT_ID)
+        result = compiler.compile(TRACT_ID, head)
 
         # Only one message (the original position, with edited content)
         assert len(result.messages) == 1
@@ -262,8 +262,8 @@ class TestEditResolution:
             reply_to=original.commit_hash,
         )
 
-        head = commit_engine._ref_repo.get_head(REPO_ID)
-        result = compiler.compile(REPO_ID, head, include_edit_annotations=True)
+        head = commit_engine._ref_repo.get_head(TRACT_ID)
+        result = compiler.compile(TRACT_ID, head, include_edit_annotations=True)
 
         assert len(result.messages) == 1
         assert result.messages[0].content.endswith(" [edited]")
@@ -285,8 +285,8 @@ class TestPriorityFiltering:
         # Mark c2 as SKIP
         commit_engine.annotate(c2.commit_hash, Priority.SKIP, reason="not relevant")
 
-        head = commit_engine._ref_repo.get_head(REPO_ID)
-        result = compiler.compile(REPO_ID, head)
+        head = commit_engine._ref_repo.get_head(TRACT_ID)
+        result = compiler.compile(TRACT_ID, head)
 
         assert len(result.messages) == 1
         assert result.messages[0].content == "keep me"
@@ -298,8 +298,8 @@ class TestPriorityFiltering:
 
         commit_engine.annotate(c2.commit_hash, Priority.PINNED)
 
-        head = commit_engine._ref_repo.get_head(REPO_ID)
-        result = compiler.compile(REPO_ID, head)
+        head = commit_engine._ref_repo.get_head(TRACT_ID)
+        result = compiler.compile(TRACT_ID, head)
 
         assert len(result.messages) == 2
         assert any(m.content == "pinned" for m in result.messages)
@@ -308,7 +308,7 @@ class TestPriorityFiltering:
         """InstructionContent with auto-PINNED annotation is always included."""
         c = commit_engine.create_commit(InstructionContent(text="System prompt"))
 
-        result = compiler.compile(REPO_ID, c.commit_hash)
+        result = compiler.compile(TRACT_ID, c.commit_hash)
 
         assert len(result.messages) == 1
         assert result.messages[0].role == "system"
@@ -330,8 +330,8 @@ class TestTimeTravel:
         time.sleep(0.01)
         c2 = commit_engine.create_commit(DialogueContent(role="assistant", text="second"))
 
-        head = commit_engine._ref_repo.get_head(REPO_ID)
-        result = compiler.compile(REPO_ID, head, as_of=cutoff)
+        head = commit_engine._ref_repo.get_head(TRACT_ID)
+        result = compiler.compile(TRACT_ID, head, as_of=cutoff)
 
         assert len(result.messages) == 1
         assert result.messages[0].content == "first"
@@ -342,8 +342,8 @@ class TestTimeTravel:
         c2 = commit_engine.create_commit(DialogueContent(role="assistant", text="second"))
         c3 = commit_engine.create_commit(DialogueContent(role="user", text="third"))
 
-        head = commit_engine._ref_repo.get_head(REPO_ID)
-        result = compiler.compile(REPO_ID, head, up_to=c2.commit_hash)
+        head = commit_engine._ref_repo.get_head(TRACT_ID)
+        result = compiler.compile(TRACT_ID, head, up_to=c2.commit_hash)
 
         assert len(result.messages) == 2
         assert result.messages[0].content == "first"
@@ -352,11 +352,11 @@ class TestTimeTravel:
     def test_both_as_of_and_up_to_raises(self, commit_engine, compiler) -> None:
         """Providing both as_of and up_to raises ValueError."""
         c = commit_engine.create_commit(DialogueContent(role="user", text="test"))
-        head = commit_engine._ref_repo.get_head(REPO_ID)
+        head = commit_engine._ref_repo.get_head(TRACT_ID)
 
         with pytest.raises(ValueError, match="Cannot specify both"):
             compiler.compile(
-                REPO_ID,
+                TRACT_ID,
                 head,
                 as_of=datetime.now(timezone.utc),
                 up_to=c.commit_hash,
@@ -376,7 +376,7 @@ class TestAggregation:
         commit_engine.create_commit(DialogueContent(role="user", text="Part 1"))
         c2 = commit_engine.create_commit(DialogueContent(role="user", text="Part 2"))
 
-        result = compiler.compile(REPO_ID, c2.commit_hash)
+        result = compiler.compile(TRACT_ID, c2.commit_hash)
 
         assert len(result.messages) == 1
         assert "Part 1" in result.messages[0].content
@@ -388,7 +388,7 @@ class TestAggregation:
         commit_engine.create_commit(DialogueContent(role="user", text="Hello"))
         c2 = commit_engine.create_commit(DialogueContent(role="assistant", text="Hi"))
 
-        result = compiler.compile(REPO_ID, c2.commit_hash)
+        result = compiler.compile(TRACT_ID, c2.commit_hash)
 
         assert len(result.messages) == 2
         assert result.messages[0].role == "user"
@@ -401,7 +401,7 @@ class TestAggregation:
         commit_engine.create_commit(DialogueContent(role="assistant", text="C"))
         c4 = commit_engine.create_commit(DialogueContent(role="user", text="D"))
 
-        result = compiler.compile(REPO_ID, c4.commit_hash)
+        result = compiler.compile(TRACT_ID, c4.commit_hash)
 
         assert len(result.messages) == 3
         assert result.messages[0].role == "user"
@@ -424,7 +424,7 @@ class TestTokenCounting:
     def test_positive_token_count(self, commit_engine, compiler) -> None:
         """Non-empty compilation has positive token count."""
         c = commit_engine.create_commit(InstructionContent(text="You are a helpful assistant."))
-        result = compiler.compile(REPO_ID, c.commit_hash)
+        result = compiler.compile(TRACT_ID, c.commit_hash)
         assert result.token_count > 0
 
     def test_token_count_reflects_compiled_output(self, commit_engine, compiler) -> None:
@@ -432,7 +432,7 @@ class TestTokenCounting:
         c1 = commit_engine.create_commit(InstructionContent(text="System prompt."))
         c2 = commit_engine.create_commit(DialogueContent(role="user", text="Hello!"))
 
-        result = compiler.compile(REPO_ID, c2.commit_hash)
+        result = compiler.compile(TRACT_ID, c2.commit_hash)
 
         # Token count should include per-message overhead and response primer
         # So it should be MORE than just the text tokens
@@ -443,7 +443,7 @@ class TestTokenCounting:
     def test_token_source_includes_encoding(self, commit_engine, compiler) -> None:
         """token_source field includes the tiktoken encoding name."""
         c = commit_engine.create_commit(InstructionContent(text="test"))
-        result = compiler.compile(REPO_ID, c.commit_hash)
+        result = compiler.compile(TRACT_ID, c.commit_hash)
         assert result.token_source.startswith("tiktoken:")
 
 
@@ -462,7 +462,7 @@ class TestContentTextExtraction:
             direction="call",
             payload={"query": "test"},
         ))
-        result = compiler.compile(REPO_ID, c.commit_hash)
+        result = compiler.compile(TRACT_ID, c.commit_hash)
 
         assert "Tool call: search" in result.messages[0].content
         assert "test" in result.messages[0].content
@@ -470,7 +470,7 @@ class TestContentTextExtraction:
     def test_freeform_as_json(self, commit_engine, compiler) -> None:
         """FreeformContent payload is rendered as JSON."""
         c = commit_engine.create_commit(FreeformContent(payload={"key": "value"}))
-        result = compiler.compile(REPO_ID, c.commit_hash)
+        result = compiler.compile(TRACT_ID, c.commit_hash)
 
         assert "key" in result.messages[0].content
         assert "value" in result.messages[0].content
@@ -480,5 +480,5 @@ class TestContentTextExtraction:
         c = commit_engine.create_commit(ArtifactContent(
             artifact_type="code", content="def hello(): pass", language="python",
         ))
-        result = compiler.compile(REPO_ID, c.commit_hash)
+        result = compiler.compile(TRACT_ID, c.commit_hash)
         assert "def hello(): pass" in result.messages[0].content

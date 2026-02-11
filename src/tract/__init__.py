@@ -7,7 +7,7 @@ Trace makes context a managed, version-controlled resource.
 from tract._version import __version__
 
 # Core entry point
-from tract.repo import Repo
+from tract.tract import Tract
 
 # Content types
 from tract.models.content import (
@@ -29,7 +29,7 @@ from tract.models.commit import CommitInfo, CommitOperation
 from tract.models.annotations import Priority, PriorityAnnotation
 
 # Configuration
-from tract.models.config import RepoConfig, TokenBudgetConfig, BudgetAction
+from tract.models.config import TractConfig, TokenBudgetConfig, BudgetAction
 
 # Protocols and output types
 from tract.protocols import (
@@ -53,7 +53,7 @@ from tract.exceptions import (
 
 __all__ = [
     "__version__",
-    "Repo",
+    "Tract",
     # Content types
     "ContentPayload",
     "InstructionContent",
@@ -73,7 +73,7 @@ __all__ = [
     "Priority",
     "PriorityAnnotation",
     # Config
-    "RepoConfig",
+    "TractConfig",
     "TokenBudgetConfig",
     "BudgetAction",
     # Protocols

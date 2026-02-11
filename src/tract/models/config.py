@@ -1,6 +1,6 @@
 """Configuration models for Trace.
 
-RepoConfig holds per-repository settings.
+TractConfig holds per-tract settings.
 TokenBudgetConfig controls token budget enforcement behavior.
 """
 
@@ -30,8 +30,8 @@ class TokenBudgetConfig(BaseModel):
     callback: Optional[Callable[[int, int], None]] = None  # (current, max) -> None
 
 
-class RepoConfig(BaseModel):
-    """Per-repository configuration."""
+class TractConfig(BaseModel):
+    """Per-tract configuration."""
 
     model_config = {"arbitrary_types_allowed": True}
 

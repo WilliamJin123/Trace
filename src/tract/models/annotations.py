@@ -25,7 +25,7 @@ class PriorityAnnotation(BaseModel):
     """SDK-facing priority annotation model."""
 
     id: Optional[int] = None
-    repo_id: str
+    tract_id: str
     target_hash: str
     priority: Priority
     reason: Optional[str] = None

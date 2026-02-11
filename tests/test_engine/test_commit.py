@@ -36,14 +36,14 @@ from tract.storage.sqlite import (
 
 
 @pytest.fixture
-def commit_engine(session, sample_repo_id):
+def commit_engine(session, sample_tract_id):
     """CommitEngine with real repos and TiktokenCounter."""
     commit_repo = SqliteCommitRepository(session)
     blob_repo = SqliteBlobRepository(session)
     ref_repo = SqliteRefRepository(session)
     annot_repo = SqliteAnnotationRepository(session)
     counter = TiktokenCounter()
-    return CommitEngine(commit_repo, blob_repo, ref_repo, annot_repo, counter, sample_repo_id)
+    return CommitEngine(commit_repo, blob_repo, ref_repo, annot_repo, counter, sample_tract_id)
 
 
 @pytest.fixture
@@ -87,7 +87,7 @@ class TestExtractText:
 class TestCreateCommit:
     """Tests for CommitEngine.create_commit."""
 
-    def test_append_creates_commit(self, commit_engine, repos, sample_repo_id) -> None:
+    def test_append_creates_commit(self, commit_engine, repos, sample_tract_id) -> None:
         """Basic append creates a commit, updates HEAD, stores blob."""
         info = commit_engine.create_commit(
             InstructionContent(text="You are a helpful assistant."),
@@ -96,7 +96,7 @@ class TestCreateCommit:
 
         assert info.commit_hash is not None
         assert len(info.commit_hash) == 64
-        assert info.repo_id == sample_repo_id
+        assert info.tract_id == sample_tract_id
         assert info.parent_hash is None  # first commit
         assert info.operation == CommitOperation.APPEND
         assert info.content_type == "instruction"
@@ -104,7 +104,7 @@ class TestCreateCommit:
         assert info.message == "system prompt"
 
         # HEAD should point to this commit
-        head = repos["ref"].get_head(sample_repo_id)
+        head = repos["ref"].get_head(sample_tract_id)
         assert head == info.commit_hash
 
         # Blob should exist
@@ -203,7 +203,7 @@ class TestCreateCommit:
 class TestTokenBudget:
     """Tests for token budget enforcement."""
 
-    def test_warn_mode_allows_commit(self, session, sample_repo_id, caplog) -> None:
+    def test_warn_mode_allows_commit(self, session, sample_tract_id, caplog) -> None:
         """WARN mode logs warning but allows commit."""
         commit_repo = SqliteCommitRepository(session)
         blob_repo = SqliteBlobRepository(session)
@@ -213,7 +213,7 @@ class TestTokenBudget:
         budget = TokenBudgetConfig(max_tokens=1, action=BudgetAction.WARN)
 
         engine = CommitEngine(
-            commit_repo, blob_repo, ref_repo, annot_repo, counter, sample_repo_id,
+            commit_repo, blob_repo, ref_repo, annot_repo, counter, sample_tract_id,
             token_budget=budget,
         )
 
@@ -223,7 +223,7 @@ class TestTokenBudget:
         assert info.commit_hash is not None
         assert "budget exceeded" in caplog.text.lower() or "Token budget" in caplog.text
 
-    def test_reject_mode_raises(self, session, sample_repo_id) -> None:
+    def test_reject_mode_raises(self, session, sample_tract_id) -> None:
         """REJECT mode raises BudgetExceededError."""
         commit_repo = SqliteCommitRepository(session)
         blob_repo = SqliteBlobRepository(session)
@@ -233,7 +233,7 @@ class TestTokenBudget:
         budget = TokenBudgetConfig(max_tokens=1, action=BudgetAction.REJECT)
 
         engine = CommitEngine(
-            commit_repo, blob_repo, ref_repo, annot_repo, counter, sample_repo_id,
+            commit_repo, blob_repo, ref_repo, annot_repo, counter, sample_tract_id,
             token_budget=budget,
         )
 
@@ -241,7 +241,7 @@ class TestTokenBudget:
             engine.create_commit(InstructionContent(text="This text definitely has more than 1 token"))
         assert exc_info.value.max_tokens == 1
 
-    def test_callback_mode_calls_callback(self, session, sample_repo_id) -> None:
+    def test_callback_mode_calls_callback(self, session, sample_tract_id) -> None:
         """CALLBACK mode calls the provided callback function."""
         commit_repo = SqliteCommitRepository(session)
         blob_repo = SqliteBlobRepository(session)
@@ -258,7 +258,7 @@ class TestTokenBudget:
         )
 
         engine = CommitEngine(
-            commit_repo, blob_repo, ref_repo, annot_repo, counter, sample_repo_id,
+            commit_repo, blob_repo, ref_repo, annot_repo, counter, sample_tract_id,
             token_budget=budget,
         )
 

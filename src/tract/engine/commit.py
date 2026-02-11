@@ -78,7 +78,7 @@ class CommitEngine:
         ref_repo: RefRepository,
         annotation_repo: AnnotationRepository,
         token_counter: TokenCounter,
-        repo_id: str,
+        tract_id: str,
         token_budget: TokenBudgetConfig | None = None,
     ) -> None:
         self._commit_repo = commit_repo
@@ -86,7 +86,7 @@ class CommitEngine:
         self._ref_repo = ref_repo
         self._annotation_repo = annotation_repo
         self._token_counter = token_counter
-        self._repo_id = repo_id
+        self._tract_id = tract_id
         self._token_budget = token_budget
 
     def create_commit(
@@ -137,7 +137,7 @@ class CommitEngine:
         self._blob_repo.save_if_absent(blob)
 
         # 5. Get current HEAD
-        parent_hash = self._ref_repo.get_head(self._repo_id)
+        parent_hash = self._ref_repo.get_head(self._tract_id)
 
         # 6. Check token budget
         if self._token_budget and self._token_budget.max_tokens is not None:
@@ -192,7 +192,7 @@ class CommitEngine:
         # 10. Create CommitRow and save
         commit_row = CommitRow(
             commit_hash=c_commit_hash,
-            repo_id=self._repo_id,
+            tract_id=self._tract_id,
             parent_hash=parent_hash,
             content_hash=c_hash,
             content_type=content_type,
@@ -206,13 +206,13 @@ class CommitEngine:
         self._commit_repo.save(commit_row)
 
         # 11. Update HEAD
-        self._ref_repo.update_head(self._repo_id, c_commit_hash)
+        self._ref_repo.update_head(self._tract_id, c_commit_hash)
 
         # 12. Auto-create priority annotation if content type has non-NORMAL default
         default_priority = DEFAULT_TYPE_PRIORITIES.get(content_type, Priority.NORMAL)
         if default_priority != Priority.NORMAL:
             annotation = AnnotationRow(
-                repo_id=self._repo_id,
+                tract_id=self._tract_id,
                 target_hash=c_commit_hash,
                 priority=default_priority,
                 reason=f"Default priority for {content_type}",
@@ -223,7 +223,7 @@ class CommitEngine:
         # 13. Return CommitInfo
         return CommitInfo(
             commit_hash=c_commit_hash,
-            repo_id=self._repo_id,
+            tract_id=self._tract_id,
             parent_hash=parent_hash,
             content_hash=c_hash,
             content_type=content_type,
@@ -274,7 +274,7 @@ class CommitEngine:
 
         now = datetime.now(timezone.utc)
         annotation = AnnotationRow(
-            repo_id=self._repo_id,
+            tract_id=self._tract_id,
             target_hash=target_hash,
             priority=priority,
             reason=reason,
@@ -284,7 +284,7 @@ class CommitEngine:
 
         return PriorityAnnotation(
             id=annotation.id,
-            repo_id=self._repo_id,
+            tract_id=self._tract_id,
             target_hash=target_hash,
             priority=priority,
             reason=reason,
@@ -295,7 +295,7 @@ class CommitEngine:
         """Convert a CommitRow ORM object to a CommitInfo Pydantic model."""
         return CommitInfo(
             commit_hash=row.commit_hash,
-            repo_id=row.repo_id,
+            tract_id=row.tract_id,
             parent_hash=row.parent_hash,
             content_hash=row.content_hash,
             content_type=row.content_type,

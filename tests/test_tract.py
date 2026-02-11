@@ -1,4 +1,4 @@
-"""Integration tests through the public Repo API.
+"""Integration tests through the public Tract API.
 
 Validates all 5 Phase 1 success criteria end-to-end using ONLY
 the public API surface (no internal imports).
@@ -29,8 +29,8 @@ from tract import (
     OutputContent,
     Priority,
     ReasoningContent,
-    Repo,
-    RepoConfig,
+    Tract,
+    TractConfig,
     TokenBudgetConfig,
     TokenCounter,
     ToolIOContent,
@@ -43,22 +43,22 @@ from tract import (
 
 
 @pytest.fixture()
-def repo():
-    """In-memory repo, cleaned up after test."""
-    r = Repo.open()
-    yield r
-    r.close()
+def tract():
+    """In-memory tract, cleaned up after test."""
+    t = Tract.open()
+    yield t
+    t.close()
 
 
 @pytest.fixture()
-def repo_with_commits(repo: Repo):
-    """Repo pre-loaded with 3 commits (instruction + user + assistant)."""
-    c1 = repo.commit(InstructionContent(text="You are helpful."), message="system")
-    c2 = repo.commit(DialogueContent(role="user", text="Hi"), message="greeting")
-    c3 = repo.commit(
+def tract_with_commits(tract: Tract):
+    """Tract pre-loaded with 3 commits (instruction + user + assistant)."""
+    c1 = tract.commit(InstructionContent(text="You are helpful."), message="system")
+    c2 = tract.commit(DialogueContent(role="user", text="Hi"), message="greeting")
+    c3 = tract.commit(
         DialogueContent(role="assistant", text="Hello!"), message="reply"
     )
-    return repo, c1, c2, c3
+    return tract, c1, c2, c3
 
 
 # ===========================================================================
@@ -67,54 +67,54 @@ def repo_with_commits(repo: Repo):
 
 
 class TestSC1Initialization:
-    """User can initialize a new trace via Repo.open() and it persists."""
+    """User can initialize a new trace via Tract.open() and it persists."""
 
     def test_open_in_memory(self):
-        r = Repo.open()
-        assert r.repo_id is not None
-        assert r.head is None
-        r.close()
+        t = Tract.open()
+        assert t.tract_id is not None
+        assert t.head is None
+        t.close()
 
     def test_open_file_backed(self, tmp_path):
         db_path = str(tmp_path / "test.db")
-        r = Repo.open(db_path)
-        assert r.repo_id is not None
-        r.close()
+        t = Tract.open(db_path)
+        assert t.tract_id is not None
+        t.close()
         assert (tmp_path / "test.db").exists()
 
-    def test_open_with_custom_repo_id(self):
-        r = Repo.open(repo_id="my-repo")
-        assert r.repo_id == "my-repo"
-        r.close()
+    def test_open_with_custom_tract_id(self):
+        t = Tract.open(tract_id="my-tract")
+        assert t.tract_id == "my-tract"
+        t.close()
 
     def test_open_as_context_manager(self):
-        with Repo.open() as r:
-            assert r.repo_id is not None
-            r.commit(InstructionContent(text="test"))
-            assert r.head is not None
+        with Tract.open() as t:
+            assert t.tract_id is not None
+            t.commit(InstructionContent(text="test"))
+            assert t.head is not None
         # after exit, should not raise on repr
-        rep = repr(r)
-        assert "Repo" in rep
+        rep = repr(t)
+        assert "Tract" in rep
         assert "closed=True" in rep
 
     def test_persistence_across_reopen(self, tmp_path):
         db_path = str(tmp_path / "persist.db")
-        repo_id = "persist-test"
+        tract_id = "persist-test"
 
         # First session: commit content
-        with Repo.open(db_path, repo_id=repo_id) as r1:
-            r1.commit(InstructionContent(text="Persist me"), message="first")
-            head1 = r1.head
+        with Tract.open(db_path, tract_id=tract_id) as t1:
+            t1.commit(InstructionContent(text="Persist me"), message="first")
+            head1 = t1.head
 
         # Second session: re-open and verify
-        with Repo.open(db_path, repo_id=repo_id) as r2:
-            assert r2.head == head1
-            result = r2.compile()
+        with Tract.open(db_path, tract_id=tract_id) as t2:
+            assert t2.head == head1
+            result = t2.compile()
             assert len(result.messages) == 1
             assert "Persist me" in result.messages[0].content
 
     def test_from_components_uses_injected_deps(self):
-        """Repo.from_components() creates a working Repo with injected components."""
+        """Tract.from_components() creates a working Tract with injected components."""
         from tract.engine.compiler import DefaultContextCompiler
         from tract.engine.tokens import TiktokenCounter
         from tract.storage.engine import create_session_factory, create_trace_engine, init_db
@@ -141,7 +141,7 @@ class TestSC1Initialization:
             token_counter=counter,
         )
 
-        r = Repo.from_components(
+        t = Tract.from_components(
             engine=engine,
             session=session,
             commit_repo=commit_repo,
@@ -150,14 +150,14 @@ class TestSC1Initialization:
             annotation_repo=annotation_repo,
             token_counter=counter,
             compiler=compiler,
-            repo_id="injected",
+            tract_id="injected",
         )
 
-        c = r.commit(InstructionContent(text="DI test"))
+        c = t.commit(InstructionContent(text="DI test"))
         assert c.commit_hash is not None
-        result = r.compile()
+        result = t.compile()
         assert len(result.messages) == 1
-        r.close()
+        t.close()
 
 
 # ===========================================================================
@@ -168,8 +168,8 @@ class TestSC1Initialization:
 class TestSC2CommitsAndAnnotations:
     """User can commit context, retrieve by hash, and use annotations."""
 
-    def test_commit_append(self, repo: Repo):
-        info = repo.commit(
+    def test_commit_append(self, tract: Tract):
+        info = tract.commit(
             InstructionContent(text="System prompt"),
             message="init",
         )
@@ -180,9 +180,9 @@ class TestSC2CommitsAndAnnotations:
         assert info.token_count > 0
         assert info.operation == CommitOperation.APPEND
 
-    def test_commit_edit(self, repo_with_commits):
-        repo, c1, c2, c3 = repo_with_commits
-        edit = repo.commit(
+    def test_commit_edit(self, tract_with_commits):
+        tract, c1, c2, c3 = tract_with_commits
+        edit = tract.commit(
             InstructionContent(text="Updated system prompt"),
             operation=CommitOperation.EDIT,
             reply_to=c1.commit_hash,
@@ -192,51 +192,51 @@ class TestSC2CommitsAndAnnotations:
         assert edit.reply_to == c1.commit_hash
 
         # Verify edit is reflected in compilation
-        result = repo.compile()
+        result = tract.compile()
         assert "Updated system prompt" in result.messages[0].content
 
-    def test_get_commit_by_hash(self, repo: Repo):
-        info = repo.commit(InstructionContent(text="findme"))
-        retrieved = repo.get_commit(info.commit_hash)
+    def test_get_commit_by_hash(self, tract: Tract):
+        info = tract.commit(InstructionContent(text="findme"))
+        retrieved = tract.get_commit(info.commit_hash)
         assert retrieved is not None
         assert retrieved.commit_hash == info.commit_hash
         assert retrieved.message is None
 
-    def test_get_commit_nonexistent(self, repo: Repo):
-        result = repo.get_commit("0000000000000000000000000000000000000000")
+    def test_get_commit_nonexistent(self, tract: Tract):
+        result = tract.get_commit("0000000000000000000000000000000000000000")
         assert result is None
 
-    def test_commit_chain(self, repo_with_commits):
-        repo, c1, c2, c3 = repo_with_commits
+    def test_commit_chain(self, tract_with_commits):
+        tract, c1, c2, c3 = tract_with_commits
         assert c1.parent_hash is None
         assert c2.parent_hash == c1.commit_hash
         assert c3.parent_hash == c2.commit_hash
 
-    def test_delete_via_skip_annotation(self, repo_with_commits):
-        repo, c1, c2, c3 = repo_with_commits
+    def test_delete_via_skip_annotation(self, tract_with_commits):
+        tract, c1, c2, c3 = tract_with_commits
 
         # Annotate c2 with SKIP
-        repo.annotate(c2.commit_hash, Priority.SKIP, reason="not needed")
-        result = repo.compile()
+        tract.annotate(c2.commit_hash, Priority.SKIP, reason="not needed")
+        result = tract.compile()
         # Should have system + assistant only (c2 user skipped)
         roles = [m.role for m in result.messages]
         assert "user" not in roles
 
         # Restore to NORMAL
-        repo.annotate(c2.commit_hash, Priority.NORMAL, reason="restored")
-        result2 = repo.compile()
+        tract.annotate(c2.commit_hash, Priority.NORMAL, reason="restored")
+        result2 = tract.compile()
         roles2 = [m.role for m in result2.messages]
         assert "user" in roles2
 
-    def test_batch_context_manager(self, repo: Repo):
-        with repo.batch():
+    def test_batch_context_manager(self, tract: Tract):
+        with tract.batch():
             for i in range(10):
-                repo.commit(
+                tract.commit(
                     DialogueContent(role="user", text=f"Message {i}"),
                     message=f"msg-{i}",
                 )
         # All 10 should be committed
-        history = repo.log(limit=20)
+        history = tract.log(limit=20)
         assert len(history) == 10
 
 
@@ -248,73 +248,73 @@ class TestSC2CommitsAndAnnotations:
 class TestSC3ContentTypes:
     """All 7 content types commit and compile correctly."""
 
-    def test_instruction_content(self, repo: Repo):
-        repo.commit(InstructionContent(text="Be concise."))
-        result = repo.compile()
+    def test_instruction_content(self, tract: Tract):
+        tract.commit(InstructionContent(text="Be concise."))
+        result = tract.compile()
         assert len(result.messages) == 1
         assert result.messages[0].role == "system"
         assert "Be concise." in result.messages[0].content
 
-    def test_dialogue_content_user(self, repo: Repo):
-        repo.commit(DialogueContent(role="user", text="Hello"))
-        result = repo.compile()
+    def test_dialogue_content_user(self, tract: Tract):
+        tract.commit(DialogueContent(role="user", text="Hello"))
+        result = tract.compile()
         assert result.messages[0].role == "user"
         assert "Hello" in result.messages[0].content
 
-    def test_dialogue_content_assistant(self, repo: Repo):
-        repo.commit(DialogueContent(role="assistant", text="Hi there"))
-        result = repo.compile()
+    def test_dialogue_content_assistant(self, tract: Tract):
+        tract.commit(DialogueContent(role="assistant", text="Hi there"))
+        result = tract.compile()
         assert result.messages[0].role == "assistant"
         assert "Hi there" in result.messages[0].content
 
-    def test_tool_io_content(self, repo: Repo):
-        repo.commit(
+    def test_tool_io_content(self, tract: Tract):
+        tract.commit(
             ToolIOContent(
                 tool_name="calculator",
                 direction="call",
                 payload={"expression": "2+2"},
             )
         )
-        result = repo.compile()
+        result = tract.compile()
         assert result.messages[0].role == "tool"
         assert "calculator" in result.messages[0].content
 
-    def test_reasoning_content(self, repo: Repo):
-        repo.commit(ReasoningContent(text="Let me think..."))
-        result = repo.compile()
+    def test_reasoning_content(self, tract: Tract):
+        tract.commit(ReasoningContent(text="Let me think..."))
+        result = tract.compile()
         assert result.messages[0].role == "assistant"
         assert "Let me think..." in result.messages[0].content
 
-    def test_artifact_content(self, repo: Repo):
-        repo.commit(
+    def test_artifact_content(self, tract: Tract):
+        tract.commit(
             ArtifactContent(
                 artifact_type="code",
                 content="print('hello')",
                 language="python",
             )
         )
-        result = repo.compile()
+        result = tract.compile()
         assert "print('hello')" in result.messages[0].content
 
-    def test_output_content(self, repo: Repo):
-        repo.commit(OutputContent(text="Final answer: 42"))
-        result = repo.compile()
+    def test_output_content(self, tract: Tract):
+        tract.commit(OutputContent(text="Final answer: 42"))
+        result = tract.compile()
         assert "Final answer: 42" in result.messages[0].content
 
-    def test_freeform_content(self, repo: Repo):
-        repo.commit(FreeformContent(payload={"custom": "data", "num": 42}))
-        result = repo.compile()
+    def test_freeform_content(self, tract: Tract):
+        tract.commit(FreeformContent(payload={"custom": "data", "num": 42}))
+        result = tract.compile()
         assert "custom" in result.messages[0].content
 
-    def test_content_from_dict(self, repo: Repo):
-        repo.commit({"content_type": "instruction", "text": "From dict"})
-        result = repo.compile()
+    def test_content_from_dict(self, tract: Tract):
+        tract.commit({"content_type": "instruction", "text": "From dict"})
+        result = tract.compile()
         assert "From dict" in result.messages[0].content
 
-    def test_mixed_content_types(self, repo: Repo):
-        repo.commit(InstructionContent(text="System"))
-        repo.commit(DialogueContent(role="user", text="Question"))
-        repo.commit(
+    def test_mixed_content_types(self, tract: Tract):
+        tract.commit(InstructionContent(text="System"))
+        tract.commit(DialogueContent(role="user", text="Question"))
+        tract.commit(
             ToolIOContent(
                 tool_name="search",
                 direction="result",
@@ -322,21 +322,21 @@ class TestSC3ContentTypes:
                 status="success",
             )
         )
-        result = repo.compile()
+        result = tract.compile()
         assert len(result.messages) == 3
         assert result.messages[0].role == "system"
         assert result.messages[1].role == "user"
         assert result.messages[2].role == "tool"
 
-    def test_custom_content_type(self, repo: Repo):
+    def test_custom_content_type(self, tract: Tract):
         class CustomContent(BaseModel):
             content_type: str = "custom_note"
             note: str
 
-        repo.register_content_type("custom_note", CustomContent)
-        repo.commit({"content_type": "custom_note", "note": "My custom note"})
+        tract.register_content_type("custom_note", CustomContent)
+        tract.commit({"content_type": "custom_note", "note": "My custom note"})
         # Should not raise -- custom type registered and validated
-        info = repo.get_commit(repo.head)
+        info = tract.get_commit(tract.head)
         assert info is not None
         assert info.content_type == "custom_note"
 
@@ -349,75 +349,75 @@ class TestSC3ContentTypes:
 class TestSC4Compilation:
     """Compilation with default and custom compilers."""
 
-    def test_compile_empty_repo(self, repo: Repo):
-        result = repo.compile()
+    def test_compile_empty_tract(self, tract: Tract):
+        result = tract.compile()
         assert result.messages == []
         assert result.token_count == 0
 
-    def test_compile_default(self, repo_with_commits):
-        repo, c1, c2, c3 = repo_with_commits
-        result = repo.compile()
+    def test_compile_default(self, tract_with_commits):
+        tract, c1, c2, c3 = tract_with_commits
+        result = tract.compile()
         assert len(result.messages) == 3
         assert result.messages[0].role == "system"
         assert result.messages[1].role == "user"
         assert result.messages[2].role == "assistant"
 
-    def test_compile_edit_resolution(self, repo_with_commits):
-        repo, c1, c2, c3 = repo_with_commits
-        repo.commit(
+    def test_compile_edit_resolution(self, tract_with_commits):
+        tract, c1, c2, c3 = tract_with_commits
+        tract.commit(
             InstructionContent(text="Updated instructions"),
             operation=CommitOperation.EDIT,
             reply_to=c1.commit_hash,
         )
-        result = repo.compile()
+        result = tract.compile()
         assert "Updated instructions" in result.messages[0].content
 
-    def test_compile_skip_annotation(self, repo_with_commits):
-        repo, c1, c2, c3 = repo_with_commits
-        repo.annotate(c2.commit_hash, Priority.SKIP)
-        result = repo.compile()
+    def test_compile_skip_annotation(self, tract_with_commits):
+        tract, c1, c2, c3 = tract_with_commits
+        tract.annotate(c2.commit_hash, Priority.SKIP)
+        result = tract.compile()
         # Only system + assistant remain
         roles = [m.role for m in result.messages]
         assert "user" not in roles
 
-    def test_compile_time_travel_datetime(self, repo: Repo):
-        c1 = repo.commit(InstructionContent(text="First"))
+    def test_compile_time_travel_datetime(self, tract: Tract):
+        c1 = tract.commit(InstructionContent(text="First"))
         # Small delay so timestamps differ
         time.sleep(0.05)
         cutoff = datetime.now(timezone.utc)
         time.sleep(0.05)
-        c2 = repo.commit(DialogueContent(role="user", text="Second"))
+        c2 = tract.commit(DialogueContent(role="user", text="Second"))
 
-        result = repo.compile(as_of=cutoff)
+        result = tract.compile(as_of=cutoff)
         assert len(result.messages) == 1
         assert "First" in result.messages[0].content
 
-    def test_compile_time_travel_hash(self, repo: Repo):
-        c1 = repo.commit(InstructionContent(text="First"))
-        c2 = repo.commit(DialogueContent(role="user", text="Second"))
-        c3 = repo.commit(DialogueContent(role="assistant", text="Third"))
+    def test_compile_time_travel_hash(self, tract: Tract):
+        c1 = tract.commit(InstructionContent(text="First"))
+        c2 = tract.commit(DialogueContent(role="user", text="Second"))
+        c3 = tract.commit(DialogueContent(role="assistant", text="Third"))
 
-        result = repo.compile(up_to=c2.commit_hash)
+        result = tract.compile(up_to=c2.commit_hash)
         assert len(result.messages) == 2
 
-    def test_compile_aggregation(self, repo: Repo):
+    def test_compile_aggregation(self, tract: Tract):
         """Consecutive same-role messages are aggregated."""
-        repo.commit(DialogueContent(role="user", text="Part 1"))
-        repo.commit(DialogueContent(role="user", text="Part 2"))
-        result = repo.compile()
+        tract.commit(DialogueContent(role="user", text="Part 1"))
+        tract.commit(DialogueContent(role="user", text="Part 2"))
+        result = tract.compile()
         assert len(result.messages) == 1
         assert "Part 1" in result.messages[0].content
         assert "Part 2" in result.messages[0].content
 
     def test_custom_compiler(self):
-        """Custom compiler is used when provided to Repo.open()."""
+        """Custom compiler is used when provided to Tract.open()."""
 
         class FixedCompiler:
             """A trivial compiler that always returns a fixed result."""
 
             def compile(
                 self,
-                repo_id: str,
+                tract_id: str,
                 head_hash: str,
                 *,
                 as_of=None,
@@ -431,19 +431,19 @@ class TestSC4Compilation:
                     token_source="custom",
                 )
 
-        with Repo.open(compiler=FixedCompiler()) as r:
-            r.commit(InstructionContent(text="anything"))
-            result = r.compile()
+        with Tract.open(compiler=FixedCompiler()) as t:
+            t.commit(InstructionContent(text="anything"))
+            result = t.compile()
             assert result.messages[0].content == "custom-compiled"
             assert result.token_count == 99
 
-    def test_compile_cache_invalidated_on_commit(self, repo: Repo):
-        repo.commit(InstructionContent(text="First"))
-        result1 = repo.compile()
+    def test_compile_cache_invalidated_on_commit(self, tract: Tract):
+        tract.commit(InstructionContent(text="First"))
+        result1 = tract.compile()
         assert len(result1.messages) == 1
 
-        repo.commit(DialogueContent(role="user", text="Second"))
-        result2 = repo.compile()
+        tract.commit(DialogueContent(role="user", text="Second"))
+        result2 = tract.compile()
         # Cache should have been cleared; new result has 2 messages
         assert len(result2.messages) == 2
 
@@ -456,13 +456,13 @@ class TestSC4Compilation:
 class TestSC5TokenCounting:
     """Token counting with pluggable tokenizer."""
 
-    def test_commit_has_token_count(self, repo: Repo):
-        info = repo.commit(InstructionContent(text="Some text for counting"))
+    def test_commit_has_token_count(self, tract: Tract):
+        info = tract.commit(InstructionContent(text="Some text for counting"))
         assert info.token_count > 0
 
-    def test_compile_has_token_count(self, repo_with_commits):
-        repo, *_ = repo_with_commits
-        result = repo.compile()
+    def test_compile_has_token_count(self, tract_with_commits):
+        tract, *_ = tract_with_commits
+        result = tract.compile()
         assert result.token_count > 0
 
     def test_custom_tokenizer(self):
@@ -475,32 +475,32 @@ class TestSC5TokenCounting:
             def count_messages(self, messages: list[dict]) -> int:
                 return 100
 
-        with Repo.open(tokenizer=FixedCounter()) as r:
-            info = r.commit(InstructionContent(text="test"))
+        with Tract.open(tokenizer=FixedCounter()) as t:
+            info = t.commit(InstructionContent(text="test"))
             assert info.token_count == 42
-            result = r.compile()
+            result = t.compile()
             assert result.token_count == 100
 
-    def test_token_budget_warn(self, repo: Repo):
+    def test_token_budget_warn(self, tract: Tract):
         """WARN mode: commit succeeds despite exceeding budget."""
-        config = RepoConfig(
+        config = TractConfig(
             token_budget=TokenBudgetConfig(max_tokens=5, action=BudgetAction.WARN)
         )
-        with Repo.open(config=config) as r:
+        with Tract.open(config=config) as t:
             # First commit is small enough, second pushes over budget
-            r.commit(InstructionContent(text="a"))
+            t.commit(InstructionContent(text="a"))
             # Should NOT raise -- warn mode just logs
-            r.commit(DialogueContent(role="user", text="This has many tokens in it"))
+            t.commit(DialogueContent(role="user", text="This has many tokens in it"))
 
     def test_token_budget_reject(self):
         """REJECT mode: commit raises BudgetExceededError."""
-        config = RepoConfig(
+        config = TractConfig(
             token_budget=TokenBudgetConfig(max_tokens=5, action=BudgetAction.REJECT)
         )
-        with Repo.open(config=config) as r:
-            r.commit(InstructionContent(text="a"))
+        with Tract.open(config=config) as t:
+            t.commit(InstructionContent(text="a"))
             with pytest.raises(BudgetExceededError):
-                r.commit(
+                t.commit(
                     DialogueContent(
                         role="user",
                         text="This sentence definitely exceeds five tokens",
@@ -514,24 +514,24 @@ class TestSC5TokenCounting:
 
 
 class TestHistory:
-    """repo.log() returns commit history."""
+    """tract.log() returns commit history."""
 
-    def test_log_returns_commits_newest_first(self, repo_with_commits):
-        repo, c1, c2, c3 = repo_with_commits
-        history = repo.log()
+    def test_log_returns_commits_newest_first(self, tract_with_commits):
+        tract, c1, c2, c3 = tract_with_commits
+        history = tract.log()
         assert len(history) == 3
         assert history[0].commit_hash == c3.commit_hash
         assert history[1].commit_hash == c2.commit_hash
         assert history[2].commit_hash == c1.commit_hash
 
-    def test_log_respects_limit(self, repo: Repo):
+    def test_log_respects_limit(self, tract: Tract):
         for i in range(5):
-            repo.commit(DialogueContent(role="user", text=f"msg {i}"))
-        history = repo.log(limit=2)
+            tract.commit(DialogueContent(role="user", text=f"msg {i}"))
+        history = tract.log(limit=2)
         assert len(history) == 2
 
-    def test_log_empty_repo_returns_empty_list(self, repo: Repo):
-        assert repo.log() == []
+    def test_log_empty_tract_returns_empty_list(self, tract: Tract):
+        assert tract.log() == []
 
 
 # ===========================================================================
@@ -542,48 +542,48 @@ class TestHistory:
 class TestEdgeCases:
     """Edge cases and error paths."""
 
-    def test_edit_requires_reply_to(self, repo: Repo):
-        repo.commit(InstructionContent(text="original"))
+    def test_edit_requires_reply_to(self, tract: Tract):
+        tract.commit(InstructionContent(text="original"))
         with pytest.raises(EditTargetError):
-            repo.commit(
+            tract.commit(
                 InstructionContent(text="edited"),
                 operation=CommitOperation.EDIT,
                 # reply_to intentionally omitted
             )
 
-    def test_edit_cannot_target_edit(self, repo: Repo):
-        c1 = repo.commit(InstructionContent(text="original"))
-        c2 = repo.commit(
+    def test_edit_cannot_target_edit(self, tract: Tract):
+        c1 = tract.commit(InstructionContent(text="original"))
+        c2 = tract.commit(
             InstructionContent(text="first edit"),
             operation=CommitOperation.EDIT,
             reply_to=c1.commit_hash,
         )
         with pytest.raises(EditTargetError):
-            repo.commit(
+            tract.commit(
                 InstructionContent(text="edit of edit"),
                 operation=CommitOperation.EDIT,
                 reply_to=c2.commit_hash,
             )
 
-    def test_annotate_priority_changes(self, repo: Repo):
-        c1 = repo.commit(DialogueContent(role="user", text="test"))
+    def test_annotate_priority_changes(self, tract: Tract):
+        c1 = tract.commit(DialogueContent(role="user", text="test"))
 
         # SKIP it
-        repo.annotate(c1.commit_hash, Priority.SKIP)
-        result1 = repo.compile()
+        tract.annotate(c1.commit_hash, Priority.SKIP)
+        result1 = tract.compile()
         assert len(result1.messages) == 0
 
         # PIN it
-        repo.annotate(c1.commit_hash, Priority.PINNED)
-        result2 = repo.compile()
+        tract.annotate(c1.commit_hash, Priority.PINNED)
+        result2 = tract.compile()
         assert len(result2.messages) == 1
 
-    def test_annotation_history(self, repo: Repo):
-        c1 = repo.commit(DialogueContent(role="user", text="test"))
-        repo.annotate(c1.commit_hash, Priority.SKIP, reason="hide")
-        repo.annotate(c1.commit_hash, Priority.NORMAL, reason="show")
+    def test_annotation_history(self, tract: Tract):
+        c1 = tract.commit(DialogueContent(role="user", text="test"))
+        tract.annotate(c1.commit_hash, Priority.SKIP, reason="hide")
+        tract.annotate(c1.commit_hash, Priority.NORMAL, reason="show")
 
-        history = repo.get_annotations(c1.commit_hash)
+        history = tract.get_annotations(c1.commit_hash)
         # instruction auto-annotation from PINNED default not applicable here,
         # but we get the 2 manual annotations at minimum
         assert len(history) >= 2
@@ -591,14 +591,14 @@ class TestEdgeCases:
         assert "hide" in reasons
         assert "show" in reasons
 
-    def test_repo_repr(self, repo: Repo):
-        rep = repr(repo)
-        assert "Repo(" in rep
-        assert repo.repo_id in rep
+    def test_tract_repr(self, tract: Tract):
+        rep = repr(tract)
+        assert "Tract(" in rep
+        assert tract.tract_id in rep
 
-    def test_repo_config_accessible(self, repo: Repo):
-        assert repo.config is not None
-        assert isinstance(repo.config, RepoConfig)
+    def test_tract_config_accessible(self, tract: Tract):
+        assert tract.config is not None
+        assert isinstance(tract.config, TractConfig)
 
 
 # ===========================================================================
@@ -616,30 +616,30 @@ class TestIncrementalCompileCache:
 
     def test_append_fast_path_matches_full_compile(self):
         """Incremental compile after APPEND produces identical output to full compile."""
-        with Repo.open(":memory:", repo_id="inc-test") as repo:
+        with Tract.open(":memory:", tract_id="inc-test") as t:
             # Build up 5 commits
             for i in range(5):
-                repo.commit(DialogueContent(role="user", text=f"Message {i}"))
-            result_5 = repo.compile()
+                t.commit(DialogueContent(role="user", text=f"Message {i}"))
+            result_5 = t.compile()
 
             # 6th APPEND triggers incremental path
-            repo.commit(DialogueContent(role="assistant", text="Response"))
-            result_incremental = repo.compile()
+            t.commit(DialogueContent(role="assistant", text="Response"))
+            result_incremental = t.compile()
 
         # Verify via a fresh full compile on same DB
         import tempfile
         import os
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = os.path.join(tmpdir, "test.db")
-            with Repo.open(db_path, repo_id="full-test") as repo1:
+            with Tract.open(db_path, tract_id="full-test") as t1:
                 for i in range(5):
-                    repo1.commit(DialogueContent(role="user", text=f"Message {i}"))
-                repo1.commit(DialogueContent(role="assistant", text="Response"))
-                head = repo1.head
+                    t1.commit(DialogueContent(role="user", text=f"Message {i}"))
+                t1.commit(DialogueContent(role="assistant", text="Response"))
+                head = t1.head
 
             # Re-open for fresh compile (no cached snapshot)
-            with Repo.open(db_path, repo_id="full-test") as repo2:
-                result_full = repo2.compile()
+            with Tract.open(db_path, tract_id="full-test") as t2:
+                result_full = t2.compile()
 
         assert result_incremental.messages == result_full.messages
         assert result_incremental.token_count == result_full.token_count
@@ -647,115 +647,115 @@ class TestIncrementalCompileCache:
 
     def test_append_same_role_aggregation(self):
         """Incremental extend correctly aggregates consecutive same-role messages."""
-        with Repo.open(":memory:", repo_id="agg-test") as repo:
-            repo.commit(DialogueContent(role="user", text="Part 1"))
-            r1 = repo.compile()
+        with Tract.open(":memory:", tract_id="agg-test") as t:
+            t.commit(DialogueContent(role="user", text="Part 1"))
+            r1 = t.compile()
             assert len(r1.messages) == 1
 
-            repo.commit(DialogueContent(role="user", text="Part 2"))
-            r2 = repo.compile()
+            t.commit(DialogueContent(role="user", text="Part 2"))
+            r2 = t.compile()
             assert len(r2.messages) == 1
             assert "Part 1" in r2.messages[0].content
             assert "Part 2" in r2.messages[0].content
 
-            repo.commit(DialogueContent(role="user", text="Part 3"))
-            r3 = repo.compile()
+            t.commit(DialogueContent(role="user", text="Part 3"))
+            r3 = t.compile()
             assert len(r3.messages) == 1
             assert "Part 1" in r3.messages[0].content
             assert "Part 2" in r3.messages[0].content
             assert "Part 3" in r3.messages[0].content
 
         # Verify equivalence with full compile
-        with Repo.open(":memory:", repo_id="agg-full") as repo2:
-            repo2.commit(DialogueContent(role="user", text="Part 1"))
-            repo2.commit(DialogueContent(role="user", text="Part 2"))
-            repo2.commit(DialogueContent(role="user", text="Part 3"))
-            full_result = repo2.compile()
+        with Tract.open(":memory:", tract_id="agg-full") as t2:
+            t2.commit(DialogueContent(role="user", text="Part 1"))
+            t2.commit(DialogueContent(role="user", text="Part 2"))
+            t2.commit(DialogueContent(role="user", text="Part 3"))
+            full_result = t2.compile()
 
         assert r3.messages == full_result.messages
         assert r3.token_count == full_result.token_count
 
     def test_edit_invalidates_cache(self):
         """EDIT commit invalidates the compile snapshot."""
-        with Repo.open(":memory:", repo_id="edit-inv") as repo:
-            c1 = repo.commit(InstructionContent(text="Original instruction"))
-            repo.compile()  # Populate snapshot
+        with Tract.open(":memory:", tract_id="edit-inv") as t:
+            c1 = t.commit(InstructionContent(text="Original instruction"))
+            t.compile()  # Populate snapshot
 
             # Verify snapshot is populated
-            assert repo._compile_snapshot is not None
+            assert t._compile_snapshot is not None
 
             # EDIT commit should invalidate
-            repo.commit(
+            t.commit(
                 InstructionContent(text="Updated instruction"),
                 operation=CommitOperation.EDIT,
                 reply_to=c1.commit_hash,
             )
-            assert repo._compile_snapshot is None
+            assert t._compile_snapshot is None
 
             # Compile should reflect the edit
-            result = repo.compile()
+            result = t.compile()
             assert "Updated instruction" in result.messages[0].content
             assert "Original instruction" not in result.messages[0].content
 
     def test_annotate_invalidates_cache(self):
         """annotate() invalidates the compile snapshot."""
-        with Repo.open(":memory:", repo_id="annot-inv") as repo:
-            c1 = repo.commit(DialogueContent(role="user", text="Keep"))
-            c2 = repo.commit(DialogueContent(role="assistant", text="Skip me"))
-            c3 = repo.commit(DialogueContent(role="user", text="Also keep"))
-            repo.compile()  # Populate snapshot
+        with Tract.open(":memory:", tract_id="annot-inv") as t:
+            c1 = t.commit(DialogueContent(role="user", text="Keep"))
+            c2 = t.commit(DialogueContent(role="assistant", text="Skip me"))
+            c3 = t.commit(DialogueContent(role="user", text="Also keep"))
+            t.compile()  # Populate snapshot
 
-            assert repo._compile_snapshot is not None
+            assert t._compile_snapshot is not None
 
             # Annotate with SKIP should invalidate snapshot
-            repo.annotate(c2.commit_hash, Priority.SKIP)
-            assert repo._compile_snapshot is None
+            t.annotate(c2.commit_hash, Priority.SKIP)
+            assert t._compile_snapshot is None
 
-            result = repo.compile()
+            result = t.compile()
             contents = " ".join(m.content for m in result.messages)
             assert "Skip me" not in contents
             assert "Keep" in contents
 
     def test_batch_invalidates_and_rebuilds(self):
         """batch() invalidates snapshot on entry; compile after batch rebuilds."""
-        with Repo.open(":memory:", repo_id="batch-inv") as repo:
+        with Tract.open(":memory:", tract_id="batch-inv") as t:
             # Pre-populate with a commit and compile to get a snapshot
-            repo.commit(InstructionContent(text="Before batch"))
-            repo.compile()
-            assert repo._compile_snapshot is not None
+            t.commit(InstructionContent(text="Before batch"))
+            t.compile()
+            assert t._compile_snapshot is not None
 
-            with repo.batch():
+            with t.batch():
                 # Inside batch, snapshot should have been cleared
                 # (commit() sets it to None for non-incremental cases during batch)
-                repo.commit(DialogueContent(role="user", text="Batch 1"))
-                repo.commit(DialogueContent(role="assistant", text="Batch 2"))
-                repo.commit(DialogueContent(role="user", text="Batch 3"))
+                t.commit(DialogueContent(role="user", text="Batch 1"))
+                t.commit(DialogueContent(role="assistant", text="Batch 2"))
+                t.commit(DialogueContent(role="user", text="Batch 3"))
 
             # After batch, compile should work with full rebuild
-            result = repo.compile()
+            result = t.compile()
             assert result.commit_count == 4  # 1 before + 3 in batch
             assert len(result.messages) >= 3  # system + some aggregation
 
     def test_time_travel_bypasses_cache(self):
         """Time-travel params bypass cache without overwriting the snapshot."""
-        with Repo.open(":memory:", repo_id="tt-bypass") as repo:
-            c1 = repo.commit(InstructionContent(text="First"))
-            c2 = repo.commit(DialogueContent(role="user", text="Second"))
-            c3 = repo.commit(DialogueContent(role="assistant", text="Third"))
+        with Tract.open(":memory:", tract_id="tt-bypass") as t:
+            c1 = t.commit(InstructionContent(text="First"))
+            c2 = t.commit(DialogueContent(role="user", text="Second"))
+            c3 = t.commit(DialogueContent(role="assistant", text="Third"))
 
             # Compile to populate snapshot for full HEAD
-            full_result = repo.compile()
-            assert repo._compile_snapshot is not None
-            snapshot_head = repo._compile_snapshot.head_hash
+            full_result = t.compile()
+            assert t._compile_snapshot is not None
+            snapshot_head = t._compile_snapshot.head_hash
 
             # Time-travel compile should NOT overwrite the snapshot
-            tt_result = repo.compile(up_to=c1.commit_hash)
+            tt_result = t.compile(up_to=c1.commit_hash)
             assert len(tt_result.messages) == 1
             assert "First" in tt_result.messages[0].content
 
             # Snapshot should still be for the full HEAD
-            assert repo._compile_snapshot is not None
-            assert repo._compile_snapshot.head_hash == snapshot_head
+            assert t._compile_snapshot is not None
+            assert t._compile_snapshot.head_hash == snapshot_head
 
     def test_custom_compiler_bypasses_incremental(self):
         """Custom compiler bypasses incremental cache entirely."""
@@ -766,7 +766,7 @@ class TestIncrementalCompileCache:
 
             def compile(
                 self,
-                repo_id: str,
+                tract_id: str,
                 head_hash: str,
                 *,
                 as_of=None,
@@ -782,13 +782,13 @@ class TestIncrementalCompileCache:
                     token_source="custom",
                 )
 
-        with Repo.open(compiler=CountingCompiler()) as repo:
-            repo.commit(InstructionContent(text="First"))
-            r1 = repo.compile()
+        with Tract.open(compiler=CountingCompiler()) as t:
+            t.commit(InstructionContent(text="First"))
+            r1 = t.compile()
             assert r1.messages[0].content == "call-1"
 
-            repo.commit(DialogueContent(role="user", text="Second"))
-            r2 = repo.compile()
+            t.commit(DialogueContent(role="user", text="Second"))
+            r2 = t.compile()
             assert r2.messages[0].content == "call-2"
 
             # Both compiles invoked the custom compiler (no caching)
@@ -801,15 +801,15 @@ class TestIncrementalCompileCache:
 
 
 class TestRecordUsage:
-    """Tests for repo.record_usage() -- post-call API token recording."""
+    """Tests for tract.record_usage() -- post-call API token recording."""
 
     def test_record_usage_openai_dict(self):
         """OpenAI-format dict updates CompiledContext with API-reported counts."""
-        with Repo.open() as repo:
-            repo.commit(InstructionContent(text="System prompt"))
-            repo.compile()
+        with Tract.open() as t:
+            t.commit(InstructionContent(text="System prompt"))
+            t.compile()
 
-            result = repo.record_usage({
+            result = t.record_usage({
                 "prompt_tokens": 100,
                 "completion_tokens": 50,
                 "total_tokens": 150,
@@ -819,11 +819,11 @@ class TestRecordUsage:
 
     def test_record_usage_anthropic_dict(self):
         """Anthropic-format dict updates CompiledContext with API-reported counts."""
-        with Repo.open() as repo:
-            repo.commit(InstructionContent(text="System prompt"))
-            repo.compile()
+        with Tract.open() as t:
+            t.commit(InstructionContent(text="System prompt"))
+            t.compile()
 
-            result = repo.record_usage({
+            result = t.record_usage({
                 "input_tokens": 200,
                 "output_tokens": 80,
             })
@@ -834,11 +834,11 @@ class TestRecordUsage:
         """TokenUsage dataclass directly updates CompiledContext."""
         from tract.protocols import TokenUsage
 
-        with Repo.open() as repo:
-            repo.commit(InstructionContent(text="System prompt"))
-            repo.compile()
+        with Tract.open() as t:
+            t.commit(InstructionContent(text="System prompt"))
+            t.compile()
 
-            result = repo.record_usage(TokenUsage(
+            result = t.record_usage(TokenUsage(
                 prompt_tokens=300,
                 completion_tokens=100,
                 total_tokens=400,
@@ -848,28 +848,28 @@ class TestRecordUsage:
 
     def test_record_usage_updates_snapshot(self):
         """After record_usage, subsequent compile() (without new commits) returns API counts."""
-        with Repo.open() as repo:
-            repo.commit(InstructionContent(text="System prompt"))
-            repo.compile()
+        with Tract.open() as t:
+            t.commit(InstructionContent(text="System prompt"))
+            t.compile()
 
-            repo.record_usage({
+            t.record_usage({
                 "prompt_tokens": 500,
                 "completion_tokens": 200,
                 "total_tokens": 700,
             })
 
             # Compile again without new commits -- should return cached API counts
-            cached = repo.compile()
+            cached = t.compile()
             assert cached.token_count == 500
             assert cached.token_source == "api:500+200"
 
     def test_record_usage_no_commits_raises(self):
-        """record_usage on empty repo raises TraceError."""
+        """record_usage on empty tract raises TraceError."""
         from tract.exceptions import TraceError
 
-        with Repo.open() as repo:
+        with Tract.open() as t:
             with pytest.raises(TraceError, match="Cannot record usage: no commits exist"):
-                repo.record_usage({
+                t.record_usage({
                     "prompt_tokens": 100,
                     "completion_tokens": 50,
                     "total_tokens": 150,
@@ -879,20 +879,20 @@ class TestRecordUsage:
         """Unrecognized dict format raises ContentValidationError."""
         from tract.exceptions import ContentValidationError
 
-        with Repo.open() as repo:
-            repo.commit(InstructionContent(text="System prompt"))
-            repo.compile()
+        with Tract.open() as t:
+            t.commit(InstructionContent(text="System prompt"))
+            t.compile()
 
             with pytest.raises(ContentValidationError, match="Unrecognized usage dict format"):
-                repo.record_usage({"foo": 42})
+                t.record_usage({"foo": 42})
 
     def test_record_usage_no_prior_compile(self):
         """record_usage works even if compile() has not been called yet."""
-        with Repo.open() as repo:
-            repo.commit(InstructionContent(text="System prompt"))
+        with Tract.open() as t:
+            t.commit(InstructionContent(text="System prompt"))
             # Do NOT call compile()
 
-            result = repo.record_usage({
+            result = t.record_usage({
                 "prompt_tokens": 100,
                 "completion_tokens": 50,
                 "total_tokens": 150,
@@ -904,42 +904,42 @@ class TestRecordUsage:
         """record_usage with explicit head_hash works for matching head."""
         from tract.exceptions import TraceError
 
-        with Repo.open() as repo:
-            repo.commit(InstructionContent(text="A"))
-            repo.commit(DialogueContent(role="user", text="B"))
-            c3 = repo.commit(DialogueContent(role="assistant", text="C"))
-            repo.compile()
+        with Tract.open() as t:
+            t.commit(InstructionContent(text="A"))
+            t.commit(DialogueContent(role="user", text="B"))
+            c3 = t.commit(DialogueContent(role="assistant", text="C"))
+            t.compile()
 
-            result = repo.record_usage(
+            result = t.record_usage(
                 {"prompt_tokens": 500, "completion_tokens": 200, "total_tokens": 700},
                 head_hash=c3.commit_hash,
             )
             assert result.token_count == 500
 
             with pytest.raises(TraceError, match="does not match current HEAD"):
-                repo.record_usage(
+                t.record_usage(
                     {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
                     head_hash="nonexistent",
                 )
 
     def test_token_source_reflects_api_after_record(self):
         """Token source transitions: tiktoken -> api -> tiktoken (after new commit)."""
-        with Repo.open() as repo:
-            repo.commit(InstructionContent(text="System prompt"))
-            ctx1 = repo.compile()
+        with Tract.open() as t:
+            t.commit(InstructionContent(text="System prompt"))
+            ctx1 = t.compile()
             assert ctx1.token_source.startswith("tiktoken:")
 
-            repo.record_usage({
+            t.record_usage({
                 "prompt_tokens": 100,
                 "completion_tokens": 50,
                 "total_tokens": 150,
             })
-            ctx2 = repo.compile()
+            ctx2 = t.compile()
             assert ctx2.token_source.startswith("api:")
 
             # New commit resets to tiktoken
-            repo.commit(DialogueContent(role="user", text="New message"))
-            ctx3 = repo.compile()
+            t.commit(DialogueContent(role="user", text="New message"))
+            ctx3 = t.compile()
             assert ctx3.token_source.startswith("tiktoken:")
 
 
@@ -957,12 +957,12 @@ class TestTwoTierTokenTracking:
 
     def test_full_workflow_tiktoken_then_api(self):
         """Simulates a real agent loop: compile -> API call -> record_usage."""
-        with Repo.open() as repo:
-            repo.commit(InstructionContent(text="System prompt"))
-            repo.commit(DialogueContent(role="user", text="Hello"))
+        with Tract.open() as t:
+            t.commit(InstructionContent(text="System prompt"))
+            t.commit(DialogueContent(role="user", text="Hello"))
 
             # Pre-call: tiktoken estimate
-            ctx = repo.compile()
+            ctx = t.compile()
             assert ctx.token_source.startswith("tiktoken:")
             assert ctx.token_count > 0
             tiktoken_count = ctx.token_count
@@ -973,45 +973,45 @@ class TestTwoTierTokenTracking:
                 "completion_tokens": 42,
                 "total_tokens": tiktoken_count + 47,
             }
-            updated = repo.record_usage(api_usage)
+            updated = t.record_usage(api_usage)
             assert updated.token_source == f"api:{tiktoken_count + 5}+42"
             assert updated.token_count == tiktoken_count + 5
 
             # Cached compile returns API counts
-            cached = repo.compile()
+            cached = t.compile()
             assert cached.token_source == updated.token_source
             assert cached.token_count == updated.token_count
 
             # New commit resets to tiktoken
-            repo.commit(DialogueContent(role="assistant", text="Hi there!"))
-            fresh = repo.compile()
+            t.commit(DialogueContent(role="assistant", text="Hi there!"))
+            fresh = t.compile()
             assert fresh.token_source.startswith("tiktoken:")
 
     def test_record_usage_survives_append_incremental(self):
         """After record_usage, a new APPEND commit recounts with tiktoken."""
-        with Repo.open() as repo:
-            repo.commit(InstructionContent(text="System"))
-            ctx = repo.compile()
-            repo.record_usage({
+        with Tract.open() as t:
+            t.commit(InstructionContent(text="System"))
+            ctx = t.compile()
+            t.record_usage({
                 "prompt_tokens": 999,
                 "completion_tokens": 1,
                 "total_tokens": 1000,
             })
 
-            repo.commit(DialogueContent(role="user", text="New message"))
-            ctx2 = repo.compile()
+            t.commit(DialogueContent(role="user", text="New message"))
+            ctx2 = t.compile()
             # The incremental extension recounted tokens with tiktoken
             assert ctx2.token_source.startswith("tiktoken:")
             assert ctx2.token_count != 999  # Not carrying forward the old API count
 
     def test_multiple_provider_formats_in_sequence(self):
         """Record OpenAI usage, then Anthropic usage in sequence."""
-        with Repo.open() as repo:
-            repo.commit(InstructionContent(text="System"))
-            repo.compile()
+        with Tract.open() as t:
+            t.commit(InstructionContent(text="System"))
+            t.compile()
 
             # OpenAI format
-            r1 = repo.record_usage({
+            r1 = t.record_usage({
                 "prompt_tokens": 100,
                 "completion_tokens": 50,
                 "total_tokens": 150,
@@ -1020,7 +1020,7 @@ class TestTwoTierTokenTracking:
             assert r1.token_count == 100
 
             # Anthropic format (overwrites previous)
-            r2 = repo.record_usage({
+            r2 = t.record_usage({
                 "input_tokens": 200,
                 "output_tokens": 80,
             })
@@ -1029,9 +1029,9 @@ class TestTwoTierTokenTracking:
 
     def test_token_source_string_format(self):
         """Verify exact string format for both token sources."""
-        with Repo.open() as repo:
-            repo.commit(InstructionContent(text="System"))
-            ctx = repo.compile()
+        with Tract.open() as t:
+            t.commit(InstructionContent(text="System"))
+            ctx = t.compile()
 
             # tiktoken format: "tiktoken:{encoding_name}"
             assert ctx.token_source.startswith("tiktoken:")
@@ -1040,10 +1040,10 @@ class TestTwoTierTokenTracking:
             assert len(encoding) > 0
 
             # api format: "api:{prompt}+{completion}"
-            repo.record_usage({
+            t.record_usage({
                 "prompt_tokens": 0,
                 "completion_tokens": 0,
                 "total_tokens": 0,
             })
-            ctx2 = repo.compile()
+            ctx2 = t.compile()
             assert ctx2.token_source == "api:0+0"

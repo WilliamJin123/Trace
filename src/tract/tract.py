@@ -1,10 +1,10 @@
-"""Repo -- the public SDK entry point for Trace.
+"""Tract -- the public SDK entry point for Trace.
 
 Ties together storage, commit engine, and context compiler into a clean,
-user-facing API.  Users interact with ``Repo.open()``, ``repo.commit()``,
-``repo.compile()``, etc.
+user-facing API.  Users interact with ``Tract.open()``, ``t.commit()``,
+``t.compile()``, etc.
 
-Not thread-safe in v1.  Each thread should open its own ``Repo``.
+Not thread-safe in v1.  Each thread should open its own ``Tract``.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from tract.engine.compiler import DefaultContextCompiler
 from tract.engine.tokens import TiktokenCounter
 from tract.models.annotations import Priority, PriorityAnnotation
 from tract.models.commit import CommitInfo, CommitOperation
-from tract.models.config import RepoConfig
+from tract.models.config import TractConfig
 from tract.models.content import validate_content
 from tract.exceptions import ContentValidationError, TraceError
 from tract.protocols import CompiledContext, CompileSnapshot, ContextCompiler, Message, TokenCounter, TokenUsage
@@ -40,18 +40,18 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 
-class Repo:
+class Tract:
     """Primary entry point for Trace -- git-like version control for LLM context.
 
-    Create a repo via :meth:`Repo.open` (recommended) or
-    :meth:`Repo.from_components` (testing / DI).
+    Create a tract via :meth:`Tract.open` (recommended) or
+    :meth:`Tract.from_components` (testing / DI).
 
     Example::
 
-        with Repo.open() as repo:
-            repo.commit(InstructionContent(text="You are helpful."))
-            repo.commit(DialogueContent(role="user", text="Hi"))
-            result = repo.compile()
+        with Tract.open() as t:
+            t.commit(InstructionContent(text="You are helpful."))
+            t.commit(DialogueContent(role="user", text="Hi"))
+            result = t.compile()
             print(result.messages)
     """
 
@@ -66,8 +66,8 @@ class Repo:
         session: Session,
         commit_engine: CommitEngine,
         compiler: ContextCompiler,
-        repo_id: str,
-        config: RepoConfig,
+        tract_id: str,
+        config: TractConfig,
         commit_repo: SqliteCommitRepository,
         blob_repo: SqliteBlobRepository,
         ref_repo: SqliteRefRepository,
@@ -78,7 +78,7 @@ class Repo:
         self._session = session
         self._commit_engine = commit_engine
         self._compiler = compiler
-        self._repo_id = repo_id
+        self._tract_id = tract_id
         self._config = config
         self._commit_repo = commit_repo
         self._blob_repo = blob_repo
@@ -94,28 +94,28 @@ class Repo:
         cls,
         path: str = ":memory:",
         *,
-        repo_id: str | None = None,
-        config: RepoConfig | None = None,
+        tract_id: str | None = None,
+        config: TractConfig | None = None,
         tokenizer: TokenCounter | None = None,
         compiler: ContextCompiler | None = None,
-    ) -> Repo:
+    ) -> Tract:
         """Open (or create) a Trace repository.
 
         Args:
             path: SQLite path.  ``":memory:"`` for in-memory (default).
-            repo_id: Unique repo identifier.  Generated if not provided.
-            config: Repository configuration.  Defaults created if *None*.
+            tract_id: Unique tract identifier.  Generated if not provided.
+            config: Tract configuration.  Defaults created if *None*.
             tokenizer: Pluggable token counter.  TiktokenCounter by default.
             compiler: Pluggable context compiler.  DefaultContextCompiler by default.
 
         Returns:
-            A ready-to-use ``Repo`` instance.
+            A ready-to-use ``Tract`` instance.
         """
-        if repo_id is None:
-            repo_id = uuid.uuid4().hex
+        if tract_id is None:
+            tract_id = uuid.uuid4().hex
 
         if config is None:
-            config = RepoConfig(db_path=path)
+            config = TractConfig(db_path=path)
 
         # Engine / session
         engine = create_trace_engine(path)
@@ -141,7 +141,7 @@ class Repo:
             ref_repo=ref_repo,
             annotation_repo=annotation_repo,
             token_counter=token_counter,
-            repo_id=repo_id,
+            tract_id=tract_id,
             token_budget=config.token_budget,
         )
 
@@ -154,7 +154,7 @@ class Repo:
         )
 
         # Ensure "main" branch ref exists (idempotent)
-        head = ref_repo.get_head(repo_id)
+        head = ref_repo.get_head(tract_id)
         if head is None:
             # No HEAD yet -- that is fine, first commit will set it.
             pass
@@ -164,7 +164,7 @@ class Repo:
             session=session,
             commit_engine=commit_engine,
             compiler=ctx_compiler,
-            repo_id=repo_id,
+            tract_id=tract_id,
             config=config,
             commit_repo=commit_repo,
             blob_repo=blob_repo,
@@ -185,15 +185,15 @@ class Repo:
         annotation_repo: SqliteAnnotationRepository,
         token_counter: TokenCounter,
         compiler: ContextCompiler,
-        repo_id: str,
-        config: RepoConfig | None = None,
-    ) -> Repo:
-        """Create a ``Repo`` from pre-built components.
+        tract_id: str,
+        config: TractConfig | None = None,
+    ) -> Tract:
+        """Create a ``Tract`` from pre-built components.
 
         Skips engine/session creation.  Useful for testing and DI.
         """
         if config is None:
-            config = RepoConfig()
+            config = TractConfig()
 
         commit_engine = CommitEngine(
             commit_repo=commit_repo,
@@ -201,7 +201,7 @@ class Repo:
             ref_repo=ref_repo,
             annotation_repo=annotation_repo,
             token_counter=token_counter,
-            repo_id=repo_id,
+            tract_id=tract_id,
             token_budget=config.token_budget,
         )
 
@@ -210,7 +210,7 @@ class Repo:
             session=session,
             commit_engine=commit_engine,
             compiler=compiler,
-            repo_id=repo_id,
+            tract_id=tract_id,
             config=config,
             commit_repo=commit_repo,
             blob_repo=blob_repo,
@@ -224,18 +224,18 @@ class Repo:
     # ------------------------------------------------------------------
 
     @property
-    def repo_id(self) -> str:
-        """The repository identifier."""
-        return self._repo_id
+    def tract_id(self) -> str:
+        """The tract identifier."""
+        return self._tract_id
 
     @property
     def head(self) -> str | None:
         """Current HEAD commit hash, or *None* if no commits yet."""
-        return self._ref_repo.get_head(self._repo_id)
+        return self._ref_repo.get_head(self._tract_id)
 
     @property
-    def config(self) -> RepoConfig:
-        """The repository configuration."""
+    def config(self) -> TractConfig:
+        """The tract configuration."""
         return self._config
 
     # ------------------------------------------------------------------
@@ -315,7 +315,7 @@ class Repo:
         # Time-travel and edit annotations: always full compile, don't touch snapshot
         if as_of is not None or up_to is not None or include_edit_annotations:
             return self._compiler.compile(
-                self._repo_id,
+                self._tract_id,
                 current_head,
                 as_of=as_of,
                 up_to=up_to,
@@ -327,7 +327,7 @@ class Repo:
             return self._snapshot_to_compiled(self._compile_snapshot)
 
         # Cache miss: full compile and build snapshot
-        result = self._compiler.compile(self._repo_id, current_head)
+        result = self._compiler.compile(self._tract_id, current_head)
         self._compile_snapshot = self._build_snapshot_from_compiled(current_head, result)
         return result
 
@@ -371,7 +371,7 @@ class Repo:
         return [
             PriorityAnnotation(
                 id=row.id,
-                repo_id=row.repo_id,
+                tract_id=row.tract_id,
                 target_hash=row.target_hash,
                 priority=row.priority,
                 reason=row.reason,
@@ -504,9 +504,9 @@ class Repo:
 
         Example::
 
-            with repo.batch():
-                repo.commit(InstructionContent(text="System prompt"))
-                repo.commit(DialogueContent(role="user", text="Hi"))
+            with t.batch():
+                t.commit(InstructionContent(text="System prompt"))
+                t.commit(DialogueContent(role="user", text="Hi"))
         """
         # Invalidate compile snapshot on batch entry
         self._compile_snapshot = None
@@ -623,7 +623,7 @@ class Repo:
         )
 
     def register_content_type(self, name: str, model: type[BaseModel]) -> None:
-        """Register a custom content type for this repo instance.
+        """Register a custom content type for this tract instance.
 
         Args:
             name: The ``content_type`` discriminator value.
@@ -644,7 +644,7 @@ class Repo:
     # Context manager
     # ------------------------------------------------------------------
 
-    def __enter__(self) -> Repo:
+    def __enter__(self) -> Tract:
         return self
 
     def __exit__(self, exc_type: type | None, exc_val: BaseException | None, exc_tb: object) -> None:
@@ -656,5 +656,5 @@ class Repo:
 
     def __repr__(self) -> str:
         if self._closed:
-            return f"Repo(repo_id='{self._repo_id}', closed=True)"
-        return f"Repo(repo_id='{self._repo_id}', head='{self.head}')"
+            return f"Tract(tract_id='{self._tract_id}', closed=True)"
+        return f"Tract(tract_id='{self._tract_id}', head='{self.head}')"

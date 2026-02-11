@@ -50,7 +50,7 @@ class CommitRow(Base):
     __tablename__ = "commits"
 
     commit_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
-    repo_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    tract_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     parent_hash: Mapped[Optional[str]] = mapped_column(
         String(64),
         ForeignKey("commits.commit_hash", ondelete="SET NULL"),
@@ -82,8 +82,8 @@ class CommitRow(Base):
     )
 
     __table_args__ = (
-        Index("ix_commits_repo_time", "repo_id", "created_at"),
-        Index("ix_commits_repo_type", "repo_id", "content_type"),
+        Index("ix_commits_tract_time", "tract_id", "created_at"),
+        Index("ix_commits_tract_type", "tract_id", "content_type"),
         Index("ix_commits_reply_to", "reply_to"),
     )
 
@@ -93,7 +93,7 @@ class RefRow(Base):
 
     __tablename__ = "refs"
 
-    repo_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tract_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     ref_name: Mapped[str] = mapped_column(String(255), primary_key=True)
     commit_hash: Mapped[Optional[str]] = mapped_column(
         String(64),
@@ -113,7 +113,7 @@ class AnnotationRow(Base):
     __tablename__ = "annotations"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    repo_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    tract_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     target_hash: Mapped[str] = mapped_column(
         String(64),
         ForeignKey("commits.commit_hash"),

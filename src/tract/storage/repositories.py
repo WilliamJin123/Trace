@@ -37,8 +37,8 @@ class CommitRepository(ABC):
         ...
 
     @abstractmethod
-    def get_by_type(self, content_type: str, repo_id: str) -> Sequence[CommitRow]:
-        """Get all commits of a given content type in a repo."""
+    def get_by_type(self, content_type: str, tract_id: str) -> Sequence[CommitRow]:
+        """Get all commits of a given content type in a tract."""
         ...
 
     @abstractmethod
@@ -68,28 +68,28 @@ class RefRepository(ABC):
     """Abstract interface for ref (branch/HEAD pointer) operations."""
 
     @abstractmethod
-    def get_head(self, repo_id: str) -> str | None:
-        """Get the HEAD commit hash for a repo. Returns None if no HEAD."""
+    def get_head(self, tract_id: str) -> str | None:
+        """Get the HEAD commit hash for a tract. Returns None if no HEAD."""
         ...
 
     @abstractmethod
-    def update_head(self, repo_id: str, commit_hash: str) -> None:
-        """Update the HEAD pointer for a repo."""
+    def update_head(self, tract_id: str, commit_hash: str) -> None:
+        """Update the HEAD pointer for a tract."""
         ...
 
     @abstractmethod
-    def get_branch(self, repo_id: str, branch_name: str) -> str | None:
+    def get_branch(self, tract_id: str, branch_name: str) -> str | None:
         """Get the commit hash for a named branch. Returns None if not found."""
         ...
 
     @abstractmethod
-    def set_branch(self, repo_id: str, branch_name: str, commit_hash: str) -> None:
+    def set_branch(self, tract_id: str, branch_name: str, commit_hash: str) -> None:
         """Set or update a named branch to point at a commit."""
         ...
 
     @abstractmethod
-    def list_branches(self, repo_id: str) -> list[str]:
-        """List all branch names for a repo."""
+    def list_branches(self, tract_id: str) -> list[str]:
+        """List all branch names for a tract."""
         ...
 
 

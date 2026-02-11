@@ -91,7 +91,7 @@ class TestCommitRow:
 
         commit = CommitRow(
             commit_hash="commit_" + "a" * 57,
-            repo_id="test-repo",
+            tract_id="test-tract",
             parent_hash=None,
             content_hash=blob.content_hash,
             content_type="instruction",
@@ -110,7 +110,7 @@ class TestCommitRow:
         ).scalar_one()
 
         assert result.commit_hash == commit.commit_hash
-        assert result.repo_id == "test-repo"
+        assert result.tract_id == "test-tract"
         assert result.operation == CommitOperation.APPEND
         assert result.message == "Initial commit"
         assert result.metadata_json == {"key": "value"}
@@ -123,7 +123,7 @@ class TestCommitRow:
         # Create original commit
         original = CommitRow(
             commit_hash="original_" + "a" * 55,
-            repo_id="test-repo",
+            tract_id="test-tract",
             content_hash=blob.content_hash,
             content_type="instruction",
             operation=CommitOperation.APPEND,
@@ -138,7 +138,7 @@ class TestCommitRow:
 
         edit = CommitRow(
             commit_hash="edit_" + "b" * 60,
-            repo_id="test-repo",
+            tract_id="test-tract",
             parent_hash=original.commit_hash,
             content_hash=edit_blob.content_hash,
             content_type="instruction",
@@ -161,7 +161,7 @@ class TestCommitRow:
         now = datetime.now(timezone.utc)
         commit = CommitRow(
             commit_hash="bad_commit_" + "x" * 53,
-            repo_id="test-repo",
+            tract_id="test-tract",
             content_hash="nonexistent_blob_hash_" + "0" * 42,
             content_type="instruction",
             operation=CommitOperation.APPEND,
@@ -174,7 +174,7 @@ class TestCommitRow:
 
 
 class TestRefRow:
-    def _make_commit_with_blob(self, session, commit_hash, repo_id="test-repo"):
+    def _make_commit_with_blob(self, session, commit_hash, tract_id="test-tract"):
         """Helper: create blob + commit for FK satisfaction."""
         now = datetime.now(timezone.utc)
         blob_hash = f"blob_{commit_hash}"[:64]
@@ -190,7 +190,7 @@ class TestRefRow:
 
         commit = CommitRow(
             commit_hash=commit_hash,
-            repo_id=repo_id,
+            tract_id=tract_id,
             content_hash=blob_hash,
             content_type="instruction",
             operation=CommitOperation.APPEND,
@@ -202,11 +202,11 @@ class TestRefRow:
         return commit
 
     def test_composite_pk(self, session):
-        """RefRow uses (repo_id, ref_name) as composite PK."""
+        """RefRow uses (tract_id, ref_name) as composite PK."""
         commit = self._make_commit_with_blob(session, "ref_commit_" + "a" * 53)
 
         ref = RefRow(
-            repo_id="test-repo",
+            tract_id="test-tract",
             ref_name="HEAD",
             commit_hash=commit.commit_hash,
         )
@@ -215,31 +215,31 @@ class TestRefRow:
 
         result = session.execute(
             select(RefRow).where(
-                RefRow.repo_id == "test-repo", RefRow.ref_name == "HEAD"
+                RefRow.tract_id == "test-tract", RefRow.ref_name == "HEAD"
             )
         ).scalar_one()
         assert result.commit_hash == commit.commit_hash
 
-    def test_different_repos_same_ref_name(self, session):
-        """Different repos can have refs with the same name."""
-        c1 = self._make_commit_with_blob(session, "commit1_" + "a" * 56, "repo-1")
-        c2 = self._make_commit_with_blob(session, "commit2_" + "b" * 56, "repo-2")
+    def test_different_tracts_same_ref_name(self, session):
+        """Different tracts can have refs with the same name."""
+        c1 = self._make_commit_with_blob(session, "commit1_" + "a" * 56, "tract-1")
+        c2 = self._make_commit_with_blob(session, "commit2_" + "b" * 56, "tract-2")
 
-        session.add(RefRow(repo_id="repo-1", ref_name="HEAD", commit_hash=c1.commit_hash))
-        session.add(RefRow(repo_id="repo-2", ref_name="HEAD", commit_hash=c2.commit_hash))
+        session.add(RefRow(tract_id="tract-1", ref_name="HEAD", commit_hash=c1.commit_hash))
+        session.add(RefRow(tract_id="tract-2", ref_name="HEAD", commit_hash=c2.commit_hash))
         session.flush()
 
         r1 = session.execute(
-            select(RefRow).where(RefRow.repo_id == "repo-1", RefRow.ref_name == "HEAD")
+            select(RefRow).where(RefRow.tract_id == "tract-1", RefRow.ref_name == "HEAD")
         ).scalar_one()
         r2 = session.execute(
-            select(RefRow).where(RefRow.repo_id == "repo-2", RefRow.ref_name == "HEAD")
+            select(RefRow).where(RefRow.tract_id == "tract-2", RefRow.ref_name == "HEAD")
         ).scalar_one()
         assert r1.commit_hash != r2.commit_hash
 
 
 class TestAnnotationRow:
-    def _make_commit_with_blob(self, session, commit_hash, repo_id="test-repo"):
+    def _make_commit_with_blob(self, session, commit_hash, tract_id="test-tract"):
         """Helper: create blob + commit for FK satisfaction."""
         now = datetime.now(timezone.utc)
         blob_hash = f"blob_{commit_hash}"[:64]
@@ -255,7 +255,7 @@ class TestAnnotationRow:
 
         commit = CommitRow(
             commit_hash=commit_hash,
-            repo_id=repo_id,
+            tract_id=tract_id,
             content_hash=blob_hash,
             content_type="instruction",
             operation=CommitOperation.APPEND,
@@ -272,7 +272,7 @@ class TestAnnotationRow:
         now = datetime.now(timezone.utc)
 
         a1 = AnnotationRow(
-            repo_id="test-repo",
+            tract_id="test-tract",
             target_hash=commit.commit_hash,
             priority=Priority.NORMAL,
             created_at=now,
@@ -281,7 +281,7 @@ class TestAnnotationRow:
         session.flush()
 
         a2 = AnnotationRow(
-            repo_id="test-repo",
+            tract_id="test-tract",
             target_hash=commit.commit_hash,
             priority=Priority.PINNED,
             reason="Important",
@@ -303,8 +303,8 @@ class TestIndexes:
         # Check commits table indexes
         commit_indexes = inspector.get_indexes("commits")
         commit_index_names = {idx["name"] for idx in commit_indexes}
-        assert "ix_commits_repo_time" in commit_index_names
-        assert "ix_commits_repo_type" in commit_index_names
+        assert "ix_commits_tract_time" in commit_index_names
+        assert "ix_commits_tract_type" in commit_index_names
         assert "ix_commits_reply_to" in commit_index_names
 
         # Check annotations table indexes

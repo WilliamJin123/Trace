@@ -84,7 +84,7 @@ class ContextCompiler(Protocol):
 
     def compile(
         self,
-        repo_id: str,
+        tract_id: str,
         head_hash: str,
         *,
         as_of: datetime | None = None,

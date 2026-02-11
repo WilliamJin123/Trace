@@ -35,8 +35,8 @@ def session(engine):
 
 
 @pytest.fixture
-def sample_repo_id() -> str:
-    return "test-repo-001"
+def sample_tract_id() -> str:
+    return "test-tract-001"
 
 
 @pytest.fixture
