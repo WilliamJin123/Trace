@@ -96,6 +96,7 @@ class CommitEngine:
         message: str | None = None,
         response_to: str | None = None,
         metadata: dict | None = None,
+        generation_config: dict | None = None,
     ) -> CommitInfo:
         """Create a new commit in the repository.
 
@@ -201,6 +202,7 @@ class CommitEngine:
             message=message,
             token_count=token_count,
             metadata_json=metadata,
+            generation_config_json=generation_config,
             created_at=timestamp,
         )
         self._commit_repo.save(commit_row)
@@ -232,6 +234,7 @@ class CommitEngine:
             message=message,
             token_count=token_count,
             metadata=metadata,
+            generation_config=generation_config,
             created_at=timestamp,
         )
 
@@ -304,5 +307,6 @@ class CommitEngine:
             message=row.message,
             token_count=row.token_count,
             metadata=row.metadata_json,
+            generation_config=row.generation_config_json,
             created_at=row.created_at,
         )

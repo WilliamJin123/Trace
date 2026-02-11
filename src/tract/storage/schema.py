@@ -71,6 +71,7 @@ class CommitRow(Base):
     message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     token_count: Mapped[int] = mapped_column(Integer, nullable=False)
     metadata_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    generation_config_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
     # Relationships

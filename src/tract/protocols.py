@@ -34,6 +34,7 @@ class CompiledContext:
     token_count: int = 0
     commit_count: int = 0
     token_source: str = ""
+    generation_configs: list[dict] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -51,6 +52,7 @@ class CompileSnapshot:
     commit_count: int
     token_count: int
     token_source: str
+    generation_configs: tuple[dict, ...] = ()
 
 
 @dataclass(frozen=True)

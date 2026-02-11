@@ -103,6 +103,18 @@ class DefaultContextCompiler:
         # Step 4: Build effective commit list
         effective_commits = self._build_effective_commits(commits, edit_map, priority_map)
 
+        # Step 4b: Collect generation configs for effective commits
+        generation_configs: list[dict] = []
+        for c in effective_commits:
+            # If this commit was edited, prefer the edit's config;
+            # fall back to the original commit's config if the edit has none.
+            edit_commit = edit_map.get(c.commit_hash)
+            if edit_commit is not None and edit_commit.generation_config_json is not None:
+                config = edit_commit.generation_config_json
+            else:
+                config = c.generation_config_json or {}
+            generation_configs.append(config)
+
         # Step 5-6: Map to messages
         messages = self._build_messages(effective_commits, edit_map, include_edit_annotations)
 
@@ -126,6 +138,7 @@ class DefaultContextCompiler:
             token_count=token_count,
             commit_count=len(effective_commits),
             token_source=token_source,
+            generation_configs=generation_configs,
         )
 
     def _walk_chain(

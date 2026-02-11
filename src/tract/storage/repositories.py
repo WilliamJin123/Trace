@@ -46,6 +46,23 @@ class CommitRepository(ABC):
         """Get all commits whose parent_hash is the given hash."""
         ...
 
+    @abstractmethod
+    def get_by_config(
+        self, tract_id: str, json_path: str, operator: str, value: object
+    ) -> Sequence[CommitRow]:
+        """Get commits where generation_config matches the given condition.
+
+        Args:
+            tract_id: Tract identifier to scope the query.
+            json_path: JSON field name (e.g., "temperature", "model").
+            operator: Comparison operator ("=", "!=", ">", "<", ">=", "<=").
+            value: Value to compare against.
+
+        Returns:
+            Matching commits ordered by created_at ascending.
+        """
+        ...
+
 
 class BlobRepository(ABC):
     """Abstract interface for blob storage operations."""

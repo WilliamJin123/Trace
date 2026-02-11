@@ -91,6 +91,30 @@ class SqliteCommitRepository(CommitRepository):
         stmt = select(CommitRow).where(CommitRow.parent_hash == commit_hash)
         return list(self._session.execute(stmt).scalars().all())
 
+    def get_by_config(
+        self, tract_id: str, json_path: str, operator: str, value: object
+    ) -> Sequence[CommitRow]:
+        extracted = func.json_extract(
+            CommitRow.generation_config_json, f'$.{json_path}'
+        )
+        ops = {
+            "=": lambda e, v: e == v,
+            "!=": lambda e, v: e != v,
+            ">": lambda e, v: e > v,
+            "<": lambda e, v: e < v,
+            ">=": lambda e, v: e >= v,
+            "<=": lambda e, v: e <= v,
+        }
+        if operator not in ops:
+            raise ValueError(f"Unsupported operator: {operator}. Use one of: {list(ops.keys())}")
+        condition = ops[operator](extracted, value)
+        stmt = (
+            select(CommitRow)
+            .where(CommitRow.tract_id == tract_id, condition)
+            .order_by(CommitRow.created_at)
+        )
+        return list(self._session.execute(stmt).scalars().all())
+
 
 class SqliteRefRepository(RefRepository):
     """SQLite implementation of ref repository.

@@ -37,4 +37,5 @@ class CommitInfo(BaseModel):
     message: Optional[str] = None
     token_count: int
     metadata: Optional[dict] = None
+    generation_config: Optional[dict] = None
     created_at: datetime
