@@ -599,3 +599,197 @@ class TestEdgeCases:
     def test_repo_config_accessible(self, repo: Repo):
         assert repo.config is not None
         assert isinstance(repo.config, RepoConfig)
+
+
+# ===========================================================================
+# Incremental compile cache tests
+# ===========================================================================
+
+
+class TestIncrementalCompileCache:
+    """Tests for the incremental compile cache (CompileSnapshot-based).
+
+    Validates that APPEND-only paths use incremental extension
+    while EDIT/annotate/batch/time-travel/custom-compiler correctly
+    invalidate or bypass the cache.
+    """
+
+    def test_append_fast_path_matches_full_compile(self):
+        """Incremental compile after APPEND produces identical output to full compile."""
+        with Repo.open(":memory:", repo_id="inc-test") as repo:
+            # Build up 5 commits
+            for i in range(5):
+                repo.commit(DialogueContent(role="user", text=f"Message {i}"))
+            result_5 = repo.compile()
+
+            # 6th APPEND triggers incremental path
+            repo.commit(DialogueContent(role="assistant", text="Response"))
+            result_incremental = repo.compile()
+
+        # Verify via a fresh full compile on same DB
+        import tempfile
+        import os
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "test.db")
+            with Repo.open(db_path, repo_id="full-test") as repo1:
+                for i in range(5):
+                    repo1.commit(DialogueContent(role="user", text=f"Message {i}"))
+                repo1.commit(DialogueContent(role="assistant", text="Response"))
+                head = repo1.head
+
+            # Re-open for fresh compile (no cached snapshot)
+            with Repo.open(db_path, repo_id="full-test") as repo2:
+                result_full = repo2.compile()
+
+        assert result_incremental.messages == result_full.messages
+        assert result_incremental.token_count == result_full.token_count
+        assert result_incremental.commit_count == result_full.commit_count
+
+    def test_append_same_role_aggregation(self):
+        """Incremental extend correctly aggregates consecutive same-role messages."""
+        with Repo.open(":memory:", repo_id="agg-test") as repo:
+            repo.commit(DialogueContent(role="user", text="Part 1"))
+            r1 = repo.compile()
+            assert len(r1.messages) == 1
+
+            repo.commit(DialogueContent(role="user", text="Part 2"))
+            r2 = repo.compile()
+            assert len(r2.messages) == 1
+            assert "Part 1" in r2.messages[0].content
+            assert "Part 2" in r2.messages[0].content
+
+            repo.commit(DialogueContent(role="user", text="Part 3"))
+            r3 = repo.compile()
+            assert len(r3.messages) == 1
+            assert "Part 1" in r3.messages[0].content
+            assert "Part 2" in r3.messages[0].content
+            assert "Part 3" in r3.messages[0].content
+
+        # Verify equivalence with full compile
+        with Repo.open(":memory:", repo_id="agg-full") as repo2:
+            repo2.commit(DialogueContent(role="user", text="Part 1"))
+            repo2.commit(DialogueContent(role="user", text="Part 2"))
+            repo2.commit(DialogueContent(role="user", text="Part 3"))
+            full_result = repo2.compile()
+
+        assert r3.messages == full_result.messages
+        assert r3.token_count == full_result.token_count
+
+    def test_edit_invalidates_cache(self):
+        """EDIT commit invalidates the compile snapshot."""
+        with Repo.open(":memory:", repo_id="edit-inv") as repo:
+            c1 = repo.commit(InstructionContent(text="Original instruction"))
+            repo.compile()  # Populate snapshot
+
+            # Verify snapshot is populated
+            assert repo._compile_snapshot is not None
+
+            # EDIT commit should invalidate
+            repo.commit(
+                InstructionContent(text="Updated instruction"),
+                operation=CommitOperation.EDIT,
+                reply_to=c1.commit_hash,
+            )
+            assert repo._compile_snapshot is None
+
+            # Compile should reflect the edit
+            result = repo.compile()
+            assert "Updated instruction" in result.messages[0].content
+            assert "Original instruction" not in result.messages[0].content
+
+    def test_annotate_invalidates_cache(self):
+        """annotate() invalidates the compile snapshot."""
+        with Repo.open(":memory:", repo_id="annot-inv") as repo:
+            c1 = repo.commit(DialogueContent(role="user", text="Keep"))
+            c2 = repo.commit(DialogueContent(role="assistant", text="Skip me"))
+            c3 = repo.commit(DialogueContent(role="user", text="Also keep"))
+            repo.compile()  # Populate snapshot
+
+            assert repo._compile_snapshot is not None
+
+            # Annotate with SKIP should invalidate snapshot
+            repo.annotate(c2.commit_hash, Priority.SKIP)
+            assert repo._compile_snapshot is None
+
+            result = repo.compile()
+            contents = " ".join(m.content for m in result.messages)
+            assert "Skip me" not in contents
+            assert "Keep" in contents
+
+    def test_batch_invalidates_and_rebuilds(self):
+        """batch() invalidates snapshot on entry; compile after batch rebuilds."""
+        with Repo.open(":memory:", repo_id="batch-inv") as repo:
+            # Pre-populate with a commit and compile to get a snapshot
+            repo.commit(InstructionContent(text="Before batch"))
+            repo.compile()
+            assert repo._compile_snapshot is not None
+
+            with repo.batch():
+                # Inside batch, snapshot should have been cleared
+                # (commit() sets it to None for non-incremental cases during batch)
+                repo.commit(DialogueContent(role="user", text="Batch 1"))
+                repo.commit(DialogueContent(role="assistant", text="Batch 2"))
+                repo.commit(DialogueContent(role="user", text="Batch 3"))
+
+            # After batch, compile should work with full rebuild
+            result = repo.compile()
+            assert result.commit_count == 4  # 1 before + 3 in batch
+            assert len(result.messages) >= 3  # system + some aggregation
+
+    def test_time_travel_bypasses_cache(self):
+        """Time-travel params bypass cache without overwriting the snapshot."""
+        with Repo.open(":memory:", repo_id="tt-bypass") as repo:
+            c1 = repo.commit(InstructionContent(text="First"))
+            c2 = repo.commit(DialogueContent(role="user", text="Second"))
+            c3 = repo.commit(DialogueContent(role="assistant", text="Third"))
+
+            # Compile to populate snapshot for full HEAD
+            full_result = repo.compile()
+            assert repo._compile_snapshot is not None
+            snapshot_head = repo._compile_snapshot.head_hash
+
+            # Time-travel compile should NOT overwrite the snapshot
+            tt_result = repo.compile(up_to=c1.commit_hash)
+            assert len(tt_result.messages) == 1
+            assert "First" in tt_result.messages[0].content
+
+            # Snapshot should still be for the full HEAD
+            assert repo._compile_snapshot is not None
+            assert repo._compile_snapshot.head_hash == snapshot_head
+
+    def test_custom_compiler_bypasses_incremental(self):
+        """Custom compiler bypasses incremental cache entirely."""
+        call_count = 0
+
+        class CountingCompiler:
+            """Compiler that counts how many times compile() is called."""
+
+            def compile(
+                self,
+                repo_id: str,
+                head_hash: str,
+                *,
+                as_of=None,
+                up_to=None,
+                include_edit_annotations=False,
+            ) -> CompiledContext:
+                nonlocal call_count
+                call_count += 1
+                return CompiledContext(
+                    messages=[Message(role="system", content=f"call-{call_count}")],
+                    token_count=10,
+                    commit_count=1,
+                    token_source="custom",
+                )
+
+        with Repo.open(compiler=CountingCompiler()) as repo:
+            repo.commit(InstructionContent(text="First"))
+            r1 = repo.compile()
+            assert r1.messages[0].content == "call-1"
+
+            repo.commit(DialogueContent(role="user", text="Second"))
+            r2 = repo.compile()
+            assert r2.messages[0].content == "call-2"
+
+            # Both compiles invoked the custom compiler (no caching)
+            assert call_count == 2
