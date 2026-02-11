@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Foundations** - Data model, storage, commit/compile cycle, token accounting, and SDK entry point
 - [x] **Phase 1.1: Incremental Compile Cache & Token Tracking** - O(1) append-path compilation, API-reported token usage as source of truth (INSERTED)
 - [x] **Phase 1.2: Rename Repo to Tract** - Rename entry-point class Repo→Tract, repo_id→tract_id across source, tests, and planning docs (INSERTED)
-- [ ] **Phase 1.3: Hyperparameter Config Storage** - Store LLM generation config (temperature, top_p, top_k, etc.) with commits for full call provenance (INSERTED)
+- [x] **Phase 1.3: Hyperparameter Config Storage** - Store LLM generation config (temperature, top_p, top_k, etc.) with commits for full call provenance (INSERTED)
 - [ ] **Phase 2: Linear History & CLI** - Log, status, diff, reset, checkout, and CLI wrapper for inspection
 - [ ] **Phase 3: Branching & Merging** - Branch, switch, merge (fast-forward + semantic), rebase, cherry-pick, and LLM client
 - [ ] **Phase 4: Compression** - Token-budget-aware compression, pinned commit preservation, commit reordering, garbage collection
@@ -84,7 +84,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 01.3-01-PLAN.md -- Add generation_config field to data model, storage, engine, compiler, Tract facade, and integration tests
+- [x] 01.3-01-PLAN.md -- Add generation_config field to data model, storage, engine, compiler, Tract facade, and integration tests
 
 ### Phase 2: Linear History & CLI
 **Goal**: Users can inspect, navigate, and manipulate linear commit history through both the SDK and a CLI
@@ -163,7 +163,7 @@ Phases execute in numeric order: 1 -> 1.1 -> 1.2 -> 1.3 -> 2 -> 3 -> 4 -> 5
 | 1. Foundations | 3/3 | Complete | 2026-02-10 |
 | 1.1 Compile Cache & Token Tracking | 2/2 | Complete | 2026-02-11 |
 | 1.2 Rename Repo to Tract | 1/1 | Complete | 2026-02-11 |
-| 1.3 Hyperparameter Config Storage | 0/1 | Not started | - |
+| 1.3 Hyperparameter Config Storage | 1/1 | Complete | 2026-02-11 |
 | 2. Linear History & CLI | 0/2 | Not started | - |
 | 3. Branching & Merging | 0/4 | Not started | - |
 | 4. Compression | 0/2 | Not started | - |
