@@ -54,12 +54,12 @@ def commit_hash(
     content_type: str,
     operation: str,
     timestamp_iso: str,
-    reply_to: str | None = None,
+    response_to: str | None = None,
 ) -> str:
     """Compute SHA-256 hash of structured commit data.
 
     The commit hash is computed from a canonical JSON dict containing
-    all identity-relevant fields. reply_to is only included when not None.
+    all identity-relevant fields. response_to is only included when not None.
 
     Args:
         content_hash: SHA-256 hex digest of the content blob.
@@ -67,7 +67,7 @@ def commit_hash(
         content_type: Content type discriminator string.
         operation: Commit operation ("append" or "edit").
         timestamp_iso: ISO 8601 timestamp string.
-        reply_to: Hash of the commit being edited, or None.
+        response_to: Hash of the commit being edited, or None.
 
     Returns:
         Hex digest of SHA-256 hash.
@@ -79,7 +79,7 @@ def commit_hash(
         "operation": operation,
         "timestamp_iso": timestamp_iso,
     }
-    if reply_to is not None:
-        data["reply_to"] = reply_to
+    if response_to is not None:
+        data["response_to"] = response_to
 
     return hashlib.sha256(canonical_json(data)).hexdigest()

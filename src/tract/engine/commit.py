@@ -94,7 +94,7 @@ class CommitEngine:
         content: BaseModel,
         operation: CommitOperation = CommitOperation.APPEND,
         message: str | None = None,
-        reply_to: str | None = None,
+        response_to: str | None = None,
         metadata: dict | None = None,
     ) -> CommitInfo:
         """Create a new commit in the repository.
@@ -104,7 +104,7 @@ class CommitEngine:
                 or a custom registered type).
             operation: APPEND (new content) or EDIT (replace existing).
             message: Optional human-readable commit message.
-            reply_to: For EDIT operations, the hash of the commit being edited.
+            response_to: For EDIT operations, the hash of the commit being edited.
             metadata: Optional arbitrary metadata dict.
 
         Returns:
@@ -172,21 +172,21 @@ class CommitEngine:
             content_type=content_type,
             operation=operation_value,
             timestamp_iso=timestamp_iso,
-            reply_to=reply_to,
+            response_to=response_to,
         )
 
         # 9. Validate edit constraints
         if operation == CommitOperation.EDIT:
-            if reply_to is None:
-                raise EditTargetError("EDIT operation requires reply_to to be set")
-            target_commit = self._commit_repo.get(reply_to)
+            if response_to is None:
+                raise EditTargetError("EDIT operation requires response_to to be set")
+            target_commit = self._commit_repo.get(response_to)
             if target_commit is None:
                 raise EditTargetError(
-                    f"EDIT target commit not found: {reply_to}"
+                    f"EDIT target commit not found: {response_to}"
                 )
             if target_commit.operation == CommitOperation.EDIT:
                 raise EditTargetError(
-                    f"Cannot edit an EDIT commit: {reply_to}"
+                    f"Cannot edit an EDIT commit: {response_to}"
                 )
 
         # 10. Create CommitRow and save
@@ -197,7 +197,7 @@ class CommitEngine:
             content_hash=c_hash,
             content_type=content_type,
             operation=operation,
-            reply_to=reply_to,
+            response_to=response_to,
             message=message,
             token_count=token_count,
             metadata_json=metadata,
@@ -228,7 +228,7 @@ class CommitEngine:
             content_hash=c_hash,
             content_type=content_type,
             operation=operation,
-            reply_to=reply_to,
+            response_to=response_to,
             message=message,
             token_count=token_count,
             metadata=metadata,
@@ -300,7 +300,7 @@ class CommitEngine:
             content_hash=row.content_hash,
             content_type=row.content_type,
             operation=row.operation,
-            reply_to=row.reply_to,
+            response_to=row.response_to,
             message=row.message,
             token_count=row.token_count,
             metadata=row.metadata_json,

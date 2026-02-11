@@ -185,11 +185,11 @@ class TestSC2CommitsAndAnnotations:
         edit = tract.commit(
             InstructionContent(text="Updated system prompt"),
             operation=CommitOperation.EDIT,
-            reply_to=c1.commit_hash,
+            response_to=c1.commit_hash,
             message="edit system",
         )
         assert edit.operation == CommitOperation.EDIT
-        assert edit.reply_to == c1.commit_hash
+        assert edit.response_to == c1.commit_hash
 
         # Verify edit is reflected in compilation
         result = tract.compile()
@@ -367,7 +367,7 @@ class TestSC4Compilation:
         tract.commit(
             InstructionContent(text="Updated instructions"),
             operation=CommitOperation.EDIT,
-            reply_to=c1.commit_hash,
+            response_to=c1.commit_hash,
         )
         result = tract.compile()
         assert "Updated instructions" in result.messages[0].content
@@ -388,7 +388,7 @@ class TestSC4Compilation:
         time.sleep(0.05)
         c2 = tract.commit(DialogueContent(role="user", text="Second"))
 
-        result = tract.compile(as_of=cutoff)
+        result = tract.compile(at_time=cutoff)
         assert len(result.messages) == 1
         assert "First" in result.messages[0].content
 
@@ -397,7 +397,7 @@ class TestSC4Compilation:
         c2 = tract.commit(DialogueContent(role="user", text="Second"))
         c3 = tract.commit(DialogueContent(role="assistant", text="Third"))
 
-        result = tract.compile(up_to=c2.commit_hash)
+        result = tract.compile(at_commit=c2.commit_hash)
         assert len(result.messages) == 2
 
     def test_compile_aggregation(self, tract: Tract):
@@ -420,8 +420,8 @@ class TestSC4Compilation:
                 tract_id: str,
                 head_hash: str,
                 *,
-                as_of=None,
-                up_to=None,
+                at_time=None,
+                at_commit=None,
                 include_edit_annotations=False,
             ) -> CompiledContext:
                 return CompiledContext(
@@ -542,13 +542,13 @@ class TestHistory:
 class TestEdgeCases:
     """Edge cases and error paths."""
 
-    def test_edit_requires_reply_to(self, tract: Tract):
+    def test_edit_requires_response_to(self, tract: Tract):
         tract.commit(InstructionContent(text="original"))
         with pytest.raises(EditTargetError):
             tract.commit(
                 InstructionContent(text="edited"),
                 operation=CommitOperation.EDIT,
-                # reply_to intentionally omitted
+                # response_to intentionally omitted
             )
 
     def test_edit_cannot_target_edit(self, tract: Tract):
@@ -556,13 +556,13 @@ class TestEdgeCases:
         c2 = tract.commit(
             InstructionContent(text="first edit"),
             operation=CommitOperation.EDIT,
-            reply_to=c1.commit_hash,
+            response_to=c1.commit_hash,
         )
         with pytest.raises(EditTargetError):
             tract.commit(
                 InstructionContent(text="edit of edit"),
                 operation=CommitOperation.EDIT,
-                reply_to=c2.commit_hash,
+                response_to=c2.commit_hash,
             )
 
     def test_annotate_priority_changes(self, tract: Tract):
@@ -688,7 +688,7 @@ class TestIncrementalCompileCache:
             t.commit(
                 InstructionContent(text="Updated instruction"),
                 operation=CommitOperation.EDIT,
-                reply_to=c1.commit_hash,
+                response_to=c1.commit_hash,
             )
             assert t._compile_snapshot is None
 
@@ -749,7 +749,7 @@ class TestIncrementalCompileCache:
             snapshot_head = t._compile_snapshot.head_hash
 
             # Time-travel compile should NOT overwrite the snapshot
-            tt_result = t.compile(up_to=c1.commit_hash)
+            tt_result = t.compile(at_commit=c1.commit_hash)
             assert len(tt_result.messages) == 1
             assert "First" in tt_result.messages[0].content
 
@@ -769,8 +769,8 @@ class TestIncrementalCompileCache:
                 tract_id: str,
                 head_hash: str,
                 *,
-                as_of=None,
-                up_to=None,
+                at_time=None,
+                at_commit=None,
                 include_edit_annotations=False,
             ) -> CompiledContext:
                 nonlocal call_count

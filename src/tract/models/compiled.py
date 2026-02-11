@@ -21,10 +21,10 @@ class CompileOptions(BaseModel):
     overrides, and message aggregation behavior.
     """
 
-    as_of: Optional[datetime] = None
+    at_time: Optional[datetime] = None
     """Only include commits created at or before this datetime."""
 
-    up_to: Optional[str] = None
+    at_commit: Optional[str] = None
     """Only include commits up to and including this commit hash."""
 
     include_edit_annotations: bool = False

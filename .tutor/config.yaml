@@ -16,7 +16,7 @@ focus:
   examples: heavy
 
 triggers:
-  mode: both  # manual | pre | post | both
+  mode: post  # manual | pre | post | both
 
 output:
   directory: tutorials/

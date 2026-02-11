@@ -248,7 +248,7 @@ class Tract:
         *,
         operation: CommitOperation = CommitOperation.APPEND,
         message: str | None = None,
-        reply_to: str | None = None,
+        response_to: str | None = None,
         metadata: dict | None = None,
     ) -> CommitInfo:
         """Create a new commit.
@@ -257,7 +257,7 @@ class Tract:
             content: A Pydantic content model *or* a dict (auto-validated).
             operation: ``APPEND`` (default) or ``EDIT``.
             message: Optional human-readable message.
-            reply_to: For ``EDIT``, the hash of the commit being replaced.
+            response_to: For ``EDIT``, the hash of the commit being replaced.
             metadata: Optional arbitrary metadata.
 
         Returns:
@@ -271,7 +271,7 @@ class Tract:
             content=content,
             operation=operation,
             message=message,
-            reply_to=reply_to,
+            response_to=response_to,
             metadata=metadata,
         )
 
@@ -294,15 +294,15 @@ class Tract:
     def compile(
         self,
         *,
-        as_of: datetime | None = None,
-        up_to: str | None = None,
+        at_time: datetime | None = None,
+        at_commit: str | None = None,
         include_edit_annotations: bool = False,
     ) -> CompiledContext:
         """Compile the current context into LLM-ready messages.
 
         Args:
-            as_of: Only include commits at or before this datetime.
-            up_to: Only include commits up to this hash.
+            at_time: Only include commits at or before this datetime.
+            at_commit: Only include commits up to this hash.
             include_edit_annotations: Append ``[edited]`` markers.
 
         Returns:
@@ -313,12 +313,12 @@ class Tract:
             return CompiledContext(messages=[], token_count=0, commit_count=0, token_source="")
 
         # Time-travel and edit annotations: always full compile, don't touch snapshot
-        if as_of is not None or up_to is not None or include_edit_annotations:
+        if at_time is not None or at_commit is not None or include_edit_annotations:
             return self._compiler.compile(
                 self._tract_id,
                 current_head,
-                as_of=as_of,
-                up_to=up_to,
+                at_time=at_time,
+                at_commit=at_commit,
                 include_edit_annotations=include_edit_annotations,
             )
 

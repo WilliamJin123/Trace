@@ -96,7 +96,7 @@ class TestCommitRow:
             content_hash=blob.content_hash,
             content_type="instruction",
             operation=CommitOperation.APPEND,
-            reply_to=None,
+            response_to=None,
             message="Initial commit",
             token_count=4,
             metadata_json={"key": "value"},
@@ -143,7 +143,7 @@ class TestCommitRow:
             content_hash=edit_blob.content_hash,
             content_type="instruction",
             operation=CommitOperation.EDIT,
-            reply_to=original.commit_hash,
+            response_to=original.commit_hash,
             token_count=4,
             created_at=now,
         )
@@ -154,7 +154,7 @@ class TestCommitRow:
             select(CommitRow).where(CommitRow.commit_hash == edit.commit_hash)
         ).scalar_one()
         assert result.operation == CommitOperation.EDIT
-        assert result.reply_to == original.commit_hash
+        assert result.response_to == original.commit_hash
 
     def test_fk_invalid_content_hash_fails(self, session):
         """Commit referencing nonexistent blob should fail on flush."""
@@ -305,7 +305,7 @@ class TestIndexes:
         commit_index_names = {idx["name"] for idx in commit_indexes}
         assert "ix_commits_tract_time" in commit_index_names
         assert "ix_commits_tract_type" in commit_index_names
-        assert "ix_commits_reply_to" in commit_index_names
+        assert "ix_commits_response_to" in commit_index_names
 
         # Check annotations table indexes
         ann_indexes = inspector.get_indexes("annotations")

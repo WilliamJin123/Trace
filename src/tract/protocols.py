@@ -87,8 +87,8 @@ class ContextCompiler(Protocol):
         tract_id: str,
         head_hash: str,
         *,
-        as_of: datetime | None = None,
-        up_to: str | None = None,
+        at_time: datetime | None = None,
+        at_commit: str | None = None,
         include_edit_annotations: bool = False,
     ) -> CompiledContext:
         """Compile commits into structured messages for LLM consumption."""

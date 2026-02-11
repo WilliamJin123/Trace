@@ -127,17 +127,17 @@ class TestCommitHash:
         h2 = commit_hash("abc123", "parent_b", "dialogue", "append", "2024-01-01T00:00:00Z")
         assert h1 != h2
 
-    def test_reply_to_included_when_set(self) -> None:
-        """reply_to changes the hash when provided."""
+    def test_response_to_included_when_set(self) -> None:
+        """response_to changes the hash when provided."""
         h1 = commit_hash("abc123", None, "dialogue", "edit", "2024-01-01T00:00:00Z")
-        h2 = commit_hash("abc123", None, "dialogue", "edit", "2024-01-01T00:00:00Z", reply_to="target1")
+        h2 = commit_hash("abc123", None, "dialogue", "edit", "2024-01-01T00:00:00Z", response_to="target1")
         assert h1 != h2
 
-    def test_reply_to_none_excluded_from_data(self) -> None:
-        """When reply_to is None, it is excluded from the hash data."""
-        # This ensures that None reply_to doesn't add a "reply_to": null entry
+    def test_response_to_none_excluded_from_data(self) -> None:
+        """When response_to is None, it is excluded from the hash data."""
+        # This ensures that None response_to doesn't add a "response_to": null entry
         h1 = commit_hash("abc", None, "instruction", "append", "2024-01-01T00:00:00Z")
-        h2 = commit_hash("abc", None, "instruction", "append", "2024-01-01T00:00:00Z", reply_to=None)
+        h2 = commit_hash("abc", None, "instruction", "append", "2024-01-01T00:00:00Z", response_to=None)
         assert h1 == h2
 
     def test_hex_digest_format(self) -> None:

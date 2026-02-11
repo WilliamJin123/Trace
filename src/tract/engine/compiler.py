@@ -65,8 +65,8 @@ class DefaultContextCompiler:
         tract_id: str,
         head_hash: str,
         *,
-        as_of: datetime | None = None,
-        up_to: str | None = None,
+        at_time: datetime | None = None,
+        at_commit: str | None = None,
         include_edit_annotations: bool = False,
     ) -> CompiledContext:
         """Compile commits into structured messages for LLM consumption.
@@ -74,8 +74,8 @@ class DefaultContextCompiler:
         Args:
             tract_id: Tract identifier (used for annotation lookups).
             head_hash: Hash of the HEAD commit to start walking from.
-            as_of: Only include commits created at or before this datetime.
-            up_to: Only include commits up to and including this commit hash.
+            at_time: Only include commits created at or before this datetime.
+            at_commit: Only include commits up to and including this commit hash.
             include_edit_annotations: If True, append '[edited]' marker to
                 content that was replaced by an edit.
 
@@ -83,22 +83,22 @@ class DefaultContextCompiler:
             CompiledContext with messages, token count, and metadata.
 
         Raises:
-            ValueError: If both as_of and up_to are provided.
+            ValueError: If both at_time and at_commit are provided.
         """
-        if as_of is not None and up_to is not None:
-            raise ValueError("Cannot specify both as_of and up_to; use one or the other.")
+        if at_time is not None and at_commit is not None:
+            raise ValueError("Cannot specify both at_time and at_commit; use one or the other.")
 
         # Step 1: Walk commit chain (head -> root), then reverse to root -> head
-        commits = self._walk_chain(head_hash, as_of=as_of, up_to=up_to)
+        commits = self._walk_chain(head_hash, at_time=at_time, at_commit=at_commit)
 
         if not commits:
             return CompiledContext(messages=[], token_count=0, commit_count=0, token_source="")
 
         # Step 2: Build edit resolution map
-        edit_map = self._build_edit_map(commits, as_of=as_of)
+        edit_map = self._build_edit_map(commits, at_time=at_time)
 
         # Step 3: Build priority map
-        priority_map = self._build_priority_map(commits, as_of=as_of)
+        priority_map = self._build_priority_map(commits, at_time=at_time)
 
         # Step 4: Build effective commit list
         effective_commits = self._build_effective_commits(commits, edit_map, priority_map)
@@ -132,27 +132,27 @@ class DefaultContextCompiler:
         self,
         head_hash: str,
         *,
-        as_of: datetime | None = None,
-        up_to: str | None = None,
+        at_time: datetime | None = None,
+        at_commit: str | None = None,
     ) -> list[CommitRow]:
         """Walk parent chain from head to root, apply time filters, return root-to-head order."""
         ancestors = self._commit_repo.get_ancestors(head_hash)
         # ancestors is head-first (newest first), reverse to root-first
         commits = list(reversed(ancestors))
 
-        # Apply up_to filter: include only up to and including the specified hash
-        if up_to is not None:
+        # Apply at_commit filter: include only up to and including the specified hash
+        if at_commit is not None:
             filtered = []
             for c in commits:
                 filtered.append(c)
-                if c.commit_hash == up_to:
+                if c.commit_hash == at_commit:
                     break
             commits = filtered
 
-        # Apply as_of filter: include only commits at or before the datetime
-        if as_of is not None:
-            as_of_naive = _normalize_dt(as_of)
-            commits = [c for c in commits if _normalize_dt(c.created_at) <= as_of_naive]
+        # Apply at_time filter: include only commits at or before the datetime
+        if at_time is not None:
+            at_time_naive = _normalize_dt(at_time)
+            commits = [c for c in commits if _normalize_dt(c.created_at) <= at_time_naive]
 
         return commits
 
@@ -160,9 +160,9 @@ class DefaultContextCompiler:
         self,
         commits: list[CommitRow],
         *,
-        as_of: datetime | None = None,
+        at_time: datetime | None = None,
     ) -> dict[str, CommitRow]:
-        """Build map of reply_to -> latest edit commit.
+        """Build map of response_to -> latest edit commit.
 
         If multiple edits target the same commit, the latest one (by created_at) wins.
         """
@@ -170,20 +170,20 @@ class DefaultContextCompiler:
 
         edit_map: dict[str, CommitRow] = {}
         for c in commits:
-            if c.operation == CommitOperation.EDIT and c.reply_to is not None:
-                # Only include edits within the as_of boundary
-                if as_of is not None and _normalize_dt(c.created_at) > _normalize_dt(as_of):
+            if c.operation == CommitOperation.EDIT and c.response_to is not None:
+                # Only include edits within the at_time boundary
+                if at_time is not None and _normalize_dt(c.created_at) > _normalize_dt(at_time):
                     continue
-                existing = edit_map.get(c.reply_to)
+                existing = edit_map.get(c.response_to)
                 if existing is None or c.created_at > existing.created_at:
-                    edit_map[c.reply_to] = c
+                    edit_map[c.response_to] = c
         return edit_map
 
     def _build_priority_map(
         self,
         commits: list[CommitRow],
         *,
-        as_of: datetime | None = None,
+        at_time: datetime | None = None,
     ) -> dict[str, Priority]:
         """Build map of commit_hash -> effective priority.
 
@@ -197,8 +197,8 @@ class DefaultContextCompiler:
         for c in commits:
             annotation = annotations.get(c.commit_hash)
             if annotation is not None:
-                # If as_of is set, only consider annotations within that boundary
-                if as_of is not None and _normalize_dt(annotation.created_at) > _normalize_dt(as_of):
+                # If at_time is set, only consider annotations within that boundary
+                if at_time is not None and _normalize_dt(annotation.created_at) > _normalize_dt(at_time):
                     annotation = None
 
             if annotation is not None:

@@ -201,7 +201,7 @@ class TestEditResolution:
         commit_engine.create_commit(
             DialogueContent(role="user", text="Hello, world!"),
             operation=CommitOperation.EDIT,
-            reply_to=original.commit_hash,
+            response_to=original.commit_hash,
             message="edit",
         )
         # Compile from current HEAD (which is the edit commit)
@@ -221,13 +221,13 @@ class TestEditResolution:
         commit_engine.create_commit(
             DialogueContent(role="user", text="Version 2"),
             operation=CommitOperation.EDIT,
-            reply_to=original.commit_hash,
+            response_to=original.commit_hash,
         )
         # Second edit (latest)
         commit_engine.create_commit(
             DialogueContent(role="user", text="Version 3"),
             operation=CommitOperation.EDIT,
-            reply_to=original.commit_hash,
+            response_to=original.commit_hash,
         )
 
         head = commit_engine._ref_repo.get_head(TRACT_ID)
@@ -242,7 +242,7 @@ class TestEditResolution:
         commit_engine.create_commit(
             DialogueContent(role="user", text="edited"),
             operation=CommitOperation.EDIT,
-            reply_to=c1.commit_hash,
+            response_to=c1.commit_hash,
         )
 
         head = commit_engine._ref_repo.get_head(TRACT_ID)
@@ -259,7 +259,7 @@ class TestEditResolution:
         commit_engine.create_commit(
             DialogueContent(role="user", text="new content"),
             operation=CommitOperation.EDIT,
-            reply_to=original.commit_hash,
+            response_to=original.commit_hash,
         )
 
         head = commit_engine._ref_repo.get_head(TRACT_ID)
@@ -320,10 +320,10 @@ class TestPriorityFiltering:
 
 
 class TestTimeTravel:
-    """Tests for as_of and up_to time-travel parameters."""
+    """Tests for at_time and at_commit time-travel parameters."""
 
-    def test_as_of_filters_by_datetime(self, commit_engine, compiler) -> None:
-        """as_of only includes commits created at or before the given time."""
+    def test_at_time_filters_by_datetime(self, commit_engine, compiler) -> None:
+        """at_time only includes commits created at or before the given time."""
         c1 = commit_engine.create_commit(DialogueContent(role="user", text="first"))
         cutoff = datetime.now(timezone.utc)
         # Small sleep to ensure c2 has a later timestamp
@@ -331,26 +331,26 @@ class TestTimeTravel:
         c2 = commit_engine.create_commit(DialogueContent(role="assistant", text="second"))
 
         head = commit_engine._ref_repo.get_head(TRACT_ID)
-        result = compiler.compile(TRACT_ID, head, as_of=cutoff)
+        result = compiler.compile(TRACT_ID, head, at_time=cutoff)
 
         assert len(result.messages) == 1
         assert result.messages[0].content == "first"
 
-    def test_up_to_filters_by_commit_hash(self, commit_engine, compiler) -> None:
-        """up_to only includes commits up to and including the given hash."""
+    def test_at_commit_filters_by_commit_hash(self, commit_engine, compiler) -> None:
+        """at_commit only includes commits up to and including the given hash."""
         c1 = commit_engine.create_commit(DialogueContent(role="user", text="first"))
         c2 = commit_engine.create_commit(DialogueContent(role="assistant", text="second"))
         c3 = commit_engine.create_commit(DialogueContent(role="user", text="third"))
 
         head = commit_engine._ref_repo.get_head(TRACT_ID)
-        result = compiler.compile(TRACT_ID, head, up_to=c2.commit_hash)
+        result = compiler.compile(TRACT_ID, head, at_commit=c2.commit_hash)
 
         assert len(result.messages) == 2
         assert result.messages[0].content == "first"
         assert result.messages[1].content == "second"
 
-    def test_both_as_of_and_up_to_raises(self, commit_engine, compiler) -> None:
-        """Providing both as_of and up_to raises ValueError."""
+    def test_both_at_time_and_at_commit_raises(self, commit_engine, compiler) -> None:
+        """Providing both at_time and at_commit raises ValueError."""
         c = commit_engine.create_commit(DialogueContent(role="user", text="test"))
         head = commit_engine._ref_repo.get_head(TRACT_ID)
 
@@ -358,8 +358,8 @@ class TestTimeTravel:
             compiler.compile(
                 TRACT_ID,
                 head,
-                as_of=datetime.now(timezone.utc),
-                up_to=c.commit_hash,
+                at_time=datetime.now(timezone.utc),
+                at_commit=c.commit_hash,
             )
 
 
