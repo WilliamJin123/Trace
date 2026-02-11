@@ -12,7 +12,7 @@ Trace delivers git-like version control for LLM context windows across five phas
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Foundations** - Data model, storage, commit/compile cycle, token accounting, and SDK entry point
+- [x] **Phase 1: Foundations** - Data model, storage, commit/compile cycle, token accounting, and SDK entry point
 - [ ] **Phase 2: Linear History & CLI** - Log, status, diff, reset, checkout, and CLI wrapper for inspection
 - [ ] **Phase 3: Branching & Merging** - Branch, switch, merge (fast-forward + semantic), rebase, cherry-pick, and LLM client
 - [ ] **Phase 4: Compression** - Token-budget-aware compression, pinned commit preservation, commit reordering, garbage collection
@@ -34,8 +34,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 Plans:
 - [x] 01-01-PLAN.md -- Project scaffolding, domain models (7 content types), SQLAlchemy schema, repository pattern (ABCs + SQLite)
-- [ ] 01-02-PLAN.md -- Deterministic hashing, token counting, commit engine, and default context compiler
-- [ ] 01-03-PLAN.md -- Repo class (public SDK entry point) and end-to-end integration tests
+- [x] 01-02-PLAN.md -- Deterministic hashing, token counting, commit engine, and default context compiler
+- [x] 01-03-PLAN.md -- Repo class (public SDK entry point) and end-to-end integration tests
 
 ### Phase 2: Linear History & CLI
 **Goal**: Users can inspect, navigate, and manipulate linear commit history through both the SDK and a CLI
@@ -111,7 +111,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundations | 1/3 | In progress | - |
+| 1. Foundations | 3/3 | Complete | 2026-02-10 |
 | 2. Linear History & CLI | 0/2 | Not started | - |
 | 3. Branching & Merging | 0/4 | Not started | - |
 | 4. Compression | 0/2 | Not started | - |

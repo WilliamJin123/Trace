@@ -105,15 +105,15 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CORE-01 | Phase 1 | Pending |
-| CORE-02 | Phase 1 | Pending |
+| CORE-01 | Phase 1 | Complete |
+| CORE-02 | Phase 1 | Complete |
 | CORE-03 | Phase 2 | Pending |
 | CORE-04 | Phase 2 | Pending |
 | CORE-05 | Phase 2 | Pending |
 | CORE-06 | Phase 2 | Pending |
 | CORE-07 | Phase 2 | Pending |
-| CORE-08 | Phase 1 | Pending |
-| CORE-09 | Phase 1 | Pending |
+| CORE-08 | Phase 1 | Complete |
+| CORE-09 | Phase 1 | Complete |
 | BRNC-01 | Phase 3 | Pending |
 | BRNC-02 | Phase 3 | Pending |
 | BRNC-03 | Phase 3 | Pending |
@@ -131,13 +131,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MAGT-05 | Phase 5 | Pending |
 | MAGT-06 | Phase 5 | Pending |
 | MAGT-07 | Phase 5 | Pending |
-| INFR-01 | Phase 1 | Pending |
-| INFR-02 | Phase 1 | Pending |
-| INFR-03 | Phase 1 | Pending |
-| INFR-04 | Phase 1 | Pending |
-| INFR-05 | Phase 1 | Pending |
-| INFR-06 | Phase 1 | Pending |
-| INTF-01 | Phase 1 | Pending |
+| INFR-01 | Phase 1 | Complete |
+| INFR-02 | Phase 1 | Complete |
+| INFR-03 | Phase 1 | Complete |
+| INFR-04 | Phase 1 | Complete |
+| INFR-05 | Phase 1 | Complete |
+| INFR-06 | Phase 1 | Complete |
+| INTF-01 | Phase 1 | Complete |
 | INTF-02 | Phase 2 | Pending |
 | INTF-03 | Phase 3 | Pending |
 | INTF-04 | Phase 3 | Pending |
