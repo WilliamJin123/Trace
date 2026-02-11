@@ -250,6 +250,7 @@ class Tract:
         message: str | None = None,
         response_to: str | None = None,
         metadata: dict | None = None,
+        generation_config: dict | None = None,
     ) -> CommitInfo:
         """Create a new commit.
 
@@ -259,6 +260,8 @@ class Tract:
             message: Optional human-readable message.
             response_to: For ``EDIT``, the hash of the commit being replaced.
             metadata: Optional arbitrary metadata.
+            generation_config: Optional LLM generation config (temperature,
+                model, top_p, etc.).  Immutable once committed.
 
         Returns:
             :class:`CommitInfo` for the new commit.
@@ -273,6 +276,7 @@ class Tract:
             message=message,
             response_to=response_to,
             metadata=metadata,
+            generation_config=generation_config,
         )
 
         # Persist to database
@@ -397,6 +401,32 @@ class Tract:
         ancestors = self._commit_repo.get_ancestors(current_head, limit=limit)
         return [self._commit_engine._row_to_info(row) for row in ancestors]
 
+    def query_by_config(
+        self,
+        field: str,
+        operator: str,
+        value: object,
+    ) -> list[CommitInfo]:
+        """Query commits by generation config values.
+
+        Uses SQL-side json_extract() for efficient filtering.
+
+        Args:
+            field: JSON field name in the generation config
+                (e.g., ``"temperature"``, ``"model"``).
+            operator: Comparison operator
+                (``"="``, ``"!="``, ``">"``, ``"<"``, ``">="``, ``"<="``).
+            value: Value to compare against.
+
+        Returns:
+            List of :class:`CommitInfo` matching the condition,
+            ordered by created_at.
+        """
+        rows = self._commit_repo.get_by_config(
+            self._tract_id, field, operator, value
+        )
+        return [self._commit_engine._row_to_info(row) for row in rows]
+
     def record_usage(
         self,
         usage: TokenUsage | dict,
@@ -456,6 +486,7 @@ class Tract:
                 commit_count=self._compile_snapshot.commit_count,
                 token_count=usage.prompt_tokens,
                 token_source=token_source,
+                generation_configs=self._compile_snapshot.generation_configs,
             )
             return self._snapshot_to_compiled(self._compile_snapshot)
 
@@ -533,12 +564,17 @@ class Tract:
     # ------------------------------------------------------------------
 
     def _snapshot_to_compiled(self, snapshot: CompileSnapshot) -> CompiledContext:
-        """Convert a CompileSnapshot to a CompiledContext for return."""
+        """Convert a CompileSnapshot to a CompiledContext for return.
+
+        Uses copy-on-output for generation_configs to prevent user mutations
+        of the returned CompiledContext from corrupting the cached snapshot.
+        """
         return CompiledContext(
             messages=list(snapshot.aggregated_messages),
             token_count=snapshot.token_count,
             commit_count=snapshot.commit_count,
             token_source=snapshot.token_source,
+            generation_configs=[dict(c) for c in snapshot.generation_configs],
         )
 
     def _build_snapshot_from_compiled(
@@ -559,6 +595,7 @@ class Tract:
             commit_count=result.commit_count,
             token_count=result.token_count,
             token_source=result.token_source,
+            generation_configs=tuple(result.generation_configs),
         )
 
     def _tiktoken_source(self) -> str:
@@ -585,6 +622,7 @@ class Tract:
 
         assert isinstance(self._compiler, DefaultContextCompiler)
         new_message = self._compiler.build_message_for_commit(commit_row)
+        new_config = commit_row.generation_config_json or {}
 
         new_raw = snapshot.raw_messages + (new_message,)
 
@@ -620,6 +658,7 @@ class Tract:
             commit_count=snapshot.commit_count + 1,
             token_count=new_token_count,
             token_source=self._tiktoken_source(),
+            generation_configs=snapshot.generation_configs + (new_config,),
         )
 
     def register_content_type(self, name: str, model: type[BaseModel]) -> None:
