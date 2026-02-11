@@ -941,3 +941,109 @@ class TestRecordUsage:
             repo.commit(DialogueContent(role="user", text="New message"))
             ctx3 = repo.compile()
             assert ctx3.token_source.startswith("tiktoken:")
+
+
+# ===========================================================================
+# Two-tier token tracking integration tests (Plan 02)
+# ===========================================================================
+
+
+class TestTwoTierTokenTracking:
+    """End-to-end tests for the two-tier token tracking workflow.
+
+    Tier 1: tiktoken estimates (pre-call budget checks)
+    Tier 2: API-reported actuals (post-call truth via record_usage)
+    """
+
+    def test_full_workflow_tiktoken_then_api(self):
+        """Simulates a real agent loop: compile -> API call -> record_usage."""
+        with Repo.open() as repo:
+            repo.commit(InstructionContent(text="System prompt"))
+            repo.commit(DialogueContent(role="user", text="Hello"))
+
+            # Pre-call: tiktoken estimate
+            ctx = repo.compile()
+            assert ctx.token_source.startswith("tiktoken:")
+            assert ctx.token_count > 0
+            tiktoken_count = ctx.token_count
+
+            # Simulate API call and record usage
+            api_usage = {
+                "prompt_tokens": tiktoken_count + 5,
+                "completion_tokens": 42,
+                "total_tokens": tiktoken_count + 47,
+            }
+            updated = repo.record_usage(api_usage)
+            assert updated.token_source == f"api:{tiktoken_count + 5}+42"
+            assert updated.token_count == tiktoken_count + 5
+
+            # Cached compile returns API counts
+            cached = repo.compile()
+            assert cached.token_source == updated.token_source
+            assert cached.token_count == updated.token_count
+
+            # New commit resets to tiktoken
+            repo.commit(DialogueContent(role="assistant", text="Hi there!"))
+            fresh = repo.compile()
+            assert fresh.token_source.startswith("tiktoken:")
+
+    def test_record_usage_survives_append_incremental(self):
+        """After record_usage, a new APPEND commit recounts with tiktoken."""
+        with Repo.open() as repo:
+            repo.commit(InstructionContent(text="System"))
+            ctx = repo.compile()
+            repo.record_usage({
+                "prompt_tokens": 999,
+                "completion_tokens": 1,
+                "total_tokens": 1000,
+            })
+
+            repo.commit(DialogueContent(role="user", text="New message"))
+            ctx2 = repo.compile()
+            # The incremental extension recounted tokens with tiktoken
+            assert ctx2.token_source.startswith("tiktoken:")
+            assert ctx2.token_count != 999  # Not carrying forward the old API count
+
+    def test_multiple_provider_formats_in_sequence(self):
+        """Record OpenAI usage, then Anthropic usage in sequence."""
+        with Repo.open() as repo:
+            repo.commit(InstructionContent(text="System"))
+            repo.compile()
+
+            # OpenAI format
+            r1 = repo.record_usage({
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "total_tokens": 150,
+            })
+            assert r1.token_source == "api:100+50"
+            assert r1.token_count == 100
+
+            # Anthropic format (overwrites previous)
+            r2 = repo.record_usage({
+                "input_tokens": 200,
+                "output_tokens": 80,
+            })
+            assert r2.token_source == "api:200+80"
+            assert r2.token_count == 200
+
+    def test_token_source_string_format(self):
+        """Verify exact string format for both token sources."""
+        with Repo.open() as repo:
+            repo.commit(InstructionContent(text="System"))
+            ctx = repo.compile()
+
+            # tiktoken format: "tiktoken:{encoding_name}"
+            assert ctx.token_source.startswith("tiktoken:")
+            # Extract encoding name (should be a valid tiktoken encoding)
+            encoding = ctx.token_source.split(":")[1]
+            assert len(encoding) > 0
+
+            # api format: "api:{prompt}+{completion}"
+            repo.record_usage({
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+            })
+            ctx2 = repo.compile()
+            assert ctx2.token_source == "api:0+0"
