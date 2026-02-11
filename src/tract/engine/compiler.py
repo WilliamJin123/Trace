@@ -232,6 +232,31 @@ class DefaultContextCompiler:
 
         return effective
 
+    def build_message_for_commit(self, commit_row: CommitRow) -> Message:
+        """Build a single Message from a commit's blob content.
+
+        Loads the blob, parses JSON, maps content_type to role,
+        extracts text. This is the single-commit equivalent of the
+        loop body in _build_messages().
+
+        Args:
+            commit_row: The source commit row (after edit resolution).
+
+        Returns:
+            Message with role, content, and optional name.
+        """
+        blob = self._blob_repo.get(commit_row.content_hash)
+        if blob is None:
+            logger.warning("Blob not found for commit %s", commit_row.commit_hash)
+            return Message(role="system", content="[missing content]")
+
+        content_data = json.loads(blob.payload_json)
+        content_type = content_data.get("content_type", "unknown")
+        role = self._map_role(content_type, content_data)
+        text = self._extract_message_text(content_type, content_data)
+        name = content_data.get("name") if content_type == "dialogue" else None
+        return Message(role=role, content=text, name=name)
+
     def _build_messages(
         self,
         effective_commits: list[CommitRow],
@@ -245,30 +270,13 @@ class DefaultContextCompiler:
             # Determine which commit's content to use
             source_commit = edit_map.get(c.commit_hash, c)
 
-            # Load blob content
-            blob = self._blob_repo.get(source_commit.content_hash)
-            if blob is None:
-                logger.warning("Blob not found for commit %s", source_commit.commit_hash)
-                continue
-
-            # Parse content
-            content_data = json.loads(blob.payload_json)
-            content_type = content_data.get("content_type", "unknown")
-
-            # Map content type to role
-            role = self._map_role(content_type, content_data)
-
-            # Extract text
-            text = self._extract_message_text(content_type, content_data)
+            msg = self.build_message_for_commit(source_commit)
 
             # Add edit annotation if requested
             if include_edit_annotations and c.commit_hash in edit_map:
-                text += " [edited]"
+                msg = Message(role=msg.role, content=msg.content + " [edited]", name=msg.name)
 
-            # Extract name if present
-            name = content_data.get("name") if content_type == "dialogue" else None
-
-            messages.append(Message(role=role, content=text, name=name))
+            messages.append(msg)
 
         return messages
 

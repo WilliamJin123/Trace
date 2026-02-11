@@ -37,6 +37,7 @@ from tract.protocols import (
     ContextCompiler,
     Message,
     CompiledContext,
+    CompileSnapshot,
     TokenUsage,
 )
 
@@ -80,6 +81,7 @@ __all__ = [
     "ContextCompiler",
     "Message",
     "CompiledContext",
+    "CompileSnapshot",
     "TokenUsage",
     # Exceptions
     "TraceError",

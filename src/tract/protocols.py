@@ -37,6 +37,23 @@ class CompiledContext:
 
 
 @dataclass(frozen=True)
+class CompileSnapshot:
+    """Cached intermediate compilation state for incremental extension.
+
+    Stores both pre-aggregation and post-aggregation messages so that
+    tail aggregation can be computed correctly when extending.
+    """
+
+    head_hash: str
+    raw_messages: tuple[Message, ...]
+    aggregated_messages: tuple[Message, ...]
+    effective_hashes: frozenset[str]
+    commit_count: int
+    token_count: int
+    token_source: str
+
+
+@dataclass(frozen=True)
 class TokenUsage:
     """Token usage reported by an LLM API response."""
 
