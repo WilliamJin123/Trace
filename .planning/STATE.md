@@ -45,7 +45,7 @@ Recent decisions affecting current work:
 - [Roadmap]: 5-phase structure derived from dependency analysis (Foundations -> Linear History -> Branching -> Compression -> Multi-Agent)
 - [Roadmap]: LLM client (INTF-03/04) placed in Phase 3 with branching since semantic merge is the first consumer
 - [Roadmap]: INTF-05 (packaging) placed in Phase 5 as final delivery step after all features complete
-- [01-01]: Import package renamed from `trace` to `trace_context` (stdlib shadow fix on Python 3.14). All imports must use `trace_context`.
+- [01-01]: Import package renamed from `trace` to `tract` (stdlib shadow fix on Python 3.14). All imports must use `tract`.
 - [01-01]: CommitOperation and Priority enums shared between domain models and ORM (not redefined)
 - [01-01]: content_type stored as String in DB (not Enum) to support custom types without migration
 - [01-01]: Clean layer separation enforced: no SQLAlchemy imports in models/ or protocols.py
@@ -64,8 +64,8 @@ None.
 ### Blockers/Concerns
 
 - ~~Phase 1: Edit commit semantics (override vs in-place)~~ RESOLVED: Full commit replacement (new commit supersedes original via reply_to). No in-place mutation.
-- ~~Phase 1: stdlib `trace` module shadowing~~ RESOLVED: Package renamed to `trace_context`.
-- WATCH: External linter keeps renaming `trace_context` back to `trace` in working tree. The git commits have correct `trace_context` imports. If this affects future plan execution, may need to configure ruff to ignore this rename.
+- ~~Phase 1: stdlib `trace` module shadowing~~ RESOLVED: Package renamed to `tract`.
+- WATCH: External linter keeps renaming `tract` back to `trace` in working tree. The git commits have correct `tract` imports. If this affects future plan execution, may need to configure ruff to ignore this rename.
 - Phase 3: Semantic merge quality is unproven for natural language context -- research flag for plan-phase
 - Phase 4: Compression is inherently lossy (3-55% degradation in research) -- need validation strategy
 - Phase 5: SQLite concurrent write behavior under multi-agent load is untested -- research flag for plan-phase

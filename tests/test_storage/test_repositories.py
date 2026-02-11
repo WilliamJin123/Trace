@@ -11,9 +11,9 @@ from datetime import datetime, timezone, timedelta
 
 import pytest
 
-from trace_context.models.annotations import Priority
-from trace_context.models.commit import CommitOperation
-from trace_context.storage.schema import (
+from tract.models.annotations import Priority
+from tract.models.commit import CommitOperation
+from tract.storage.schema import (
     AnnotationRow,
     BlobRow,
     CommitRow,
@@ -88,7 +88,7 @@ class TestSqliteBlobRepository:
 
         # Count rows with this hash
         from sqlalchemy import select, func
-        from trace_context.storage.schema import BlobRow as BR
+        from tract.storage.schema import BlobRow as BR
         count = session.execute(
             select(func.count()).where(BR.content_hash == hash_val)
         ).scalar()

@@ -12,7 +12,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from trace_context.engine.hashing import canonical_json, commit_hash, content_hash
+from tract.engine.hashing import canonical_json, commit_hash, content_hash
 
 
 class TestCanonicalJson:

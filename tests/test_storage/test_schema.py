@@ -16,9 +16,9 @@ import pytest
 from sqlalchemy import inspect, select
 from sqlalchemy.exc import IntegrityError
 
-from trace_context.models.annotations import Priority
-from trace_context.models.commit import CommitOperation
-from trace_context.storage.schema import (
+from tract.models.annotations import Priority
+from tract.models.commit import CommitOperation
+from tract.storage.schema import (
     AnnotationRow,
     Base,
     BlobRow,

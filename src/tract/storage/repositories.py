@@ -12,7 +12,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Sequence
 
 if TYPE_CHECKING:
-    from trace_context.storage.schema import AnnotationRow, BlobRow, CommitRow
+    from tract.storage.schema import AnnotationRow, BlobRow, CommitRow
 
 
 class CommitRepository(ABC):

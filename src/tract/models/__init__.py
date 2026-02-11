@@ -3,10 +3,10 @@
 Re-exports key models for convenient access.
 """
 
-from trace_context.models.annotations import DEFAULT_TYPE_PRIORITIES, Priority, PriorityAnnotation
-from trace_context.models.commit import CommitInfo, CommitOperation
-from trace_context.models.config import BudgetAction, RepoConfig, TokenBudgetConfig
-from trace_context.models.content import (
+from tract.models.annotations import DEFAULT_TYPE_PRIORITIES, Priority, PriorityAnnotation
+from tract.models.commit import CommitInfo, CommitOperation
+from tract.models.config import BudgetAction, RepoConfig, TokenBudgetConfig
+from tract.models.content import (
     BUILTIN_TYPE_HINTS,
     ArtifactContent,
     ContentPayload,

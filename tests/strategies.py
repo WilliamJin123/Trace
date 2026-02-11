@@ -6,7 +6,7 @@ content types, plus a combined `any_content` strategy.
 
 from hypothesis import strategies as st
 
-from trace_context.models.content import (
+from tract.models.content import (
     ArtifactContent,
     DialogueContent,
     FreeformContent,

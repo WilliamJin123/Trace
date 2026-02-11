@@ -10,7 +10,7 @@ provides:
   - Repo class -- single public entry point for Trace SDK
   - Repo.open() for in-memory and file-backed SQLite repositories
   - Repo.from_components() for dependency injection / testing
-  - Complete public API exported from trace_context package root
+  - Complete public API exported from tract package root
   - Compile cache with invalidation on commit/annotate
   - Batch context manager for atomic multi-commit transactions
   - Per-repo custom content type registry
@@ -31,10 +31,10 @@ tech-stack:
     - Batch commit via session.commit monkey-patching
 key-files:
   created:
-    - src/trace_context/repo.py
+    - src/tract/repo.py
     - tests/test_repo.py
   modified:
-    - src/trace_context/__init__.py
+    - src/tract/__init__.py
 decisions:
   - "Compile cache keyed by head_hash, cleared on commit/annotate (simple and correct)"
   - "Batch implemented by temporarily replacing session.commit with noop, committing on exit"
@@ -55,7 +55,7 @@ metrics:
 
 ### Task 1: Repo Class (Public SDK Entry Point)
 
-**File: `src/trace_context/repo.py`** (300+ lines)
+**File: `src/tract/repo.py`** (300+ lines)
 
 The `Repo` class is a thin facade that ties together the storage, commit engine, and context compiler layers from Plans 01 and 02 into a clean user-facing API.
 
@@ -75,7 +75,7 @@ The `Repo` class is a thin facade that ties together the storage, commit engine,
 - `repo.register_content_type(name, model)` -- per-repo custom types
 - Properties: `repo_id`, `head`, `config`
 
-**File: `src/trace_context/__init__.py`** (92 lines)
+**File: `src/tract/__init__.py`** (92 lines)
 
 Exports 30+ symbols from the package root including Repo, all content types, commit/annotation types, config, protocols, and exceptions.
 
@@ -104,7 +104,7 @@ Tests organized by success criterion:
 - **Found during:** Task 2 (test_open_as_context_manager)
 - **Issue:** `__repr__` called `self.head` which hit the database after `close()` disposed the engine
 - **Fix:** Added `self._closed` check in `__repr__` to return safe string without DB access
-- **Files modified:** `src/trace_context/repo.py`
+- **Files modified:** `src/tract/repo.py`
 - **Commit:** Included in Task 2 commit
 
 ## Verification Results

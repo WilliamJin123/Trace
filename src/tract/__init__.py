@@ -4,13 +4,13 @@ Agents produce better outputs when their context is clean, coherent, and relevan
 Trace makes context a managed, version-controlled resource.
 """
 
-from trace_context._version import __version__
+from tract._version import __version__
 
 # Core entry point
-from trace_context.repo import Repo
+from tract.repo import Repo
 
 # Content types
-from trace_context.models.content import (
+from tract.models.content import (
     BUILTIN_TYPE_HINTS,
     ContentPayload,
     ContentTypeHints,
@@ -25,14 +25,14 @@ from trace_context.models.content import (
 )
 
 # Commit and annotation types
-from trace_context.models.commit import CommitInfo, CommitOperation
-from trace_context.models.annotations import Priority, PriorityAnnotation
+from tract.models.commit import CommitInfo, CommitOperation
+from tract.models.annotations import Priority, PriorityAnnotation
 
 # Configuration
-from trace_context.models.config import RepoConfig, TokenBudgetConfig, BudgetAction
+from tract.models.config import RepoConfig, TokenBudgetConfig, BudgetAction
 
 # Protocols and output types
-from trace_context.protocols import (
+from tract.protocols import (
     TokenCounter,
     ContextCompiler,
     Message,
@@ -41,7 +41,7 @@ from trace_context.protocols import (
 )
 
 # Exceptions
-from trace_context.exceptions import (
+from tract.exceptions import (
     TraceError,
     CommitNotFoundError,
     BlobNotFoundError,

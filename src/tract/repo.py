@@ -16,16 +16,16 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-from trace_context.engine.commit import CommitEngine
-from trace_context.engine.compiler import DefaultContextCompiler
-from trace_context.engine.tokens import TiktokenCounter
-from trace_context.models.annotations import Priority, PriorityAnnotation
-from trace_context.models.commit import CommitInfo, CommitOperation
-from trace_context.models.config import RepoConfig
-from trace_context.models.content import validate_content
-from trace_context.protocols import CompiledContext, ContextCompiler, TokenCounter
-from trace_context.storage.engine import create_session_factory, create_trace_engine, init_db
-from trace_context.storage.sqlite import (
+from tract.engine.commit import CommitEngine
+from tract.engine.compiler import DefaultContextCompiler
+from tract.engine.tokens import TiktokenCounter
+from tract.models.annotations import Priority, PriorityAnnotation
+from tract.models.commit import CommitInfo, CommitOperation
+from tract.models.config import RepoConfig
+from tract.models.content import validate_content
+from tract.protocols import CompiledContext, ContextCompiler, TokenCounter
+from tract.storage.engine import create_session_factory, create_trace_engine, init_db
+from tract.storage.sqlite import (
     SqliteAnnotationRepository,
     SqliteBlobRepository,
     SqliteCommitRepository,

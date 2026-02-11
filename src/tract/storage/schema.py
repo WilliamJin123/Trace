@@ -22,8 +22,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from trace_context.models.annotations import Priority
-from trace_context.models.commit import CommitOperation
+from tract.models.annotations import Priority
+from tract.models.commit import CommitOperation
 
 
 class Base(DeclarativeBase):

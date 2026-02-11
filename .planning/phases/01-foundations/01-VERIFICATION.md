@@ -32,17 +32,17 @@ gaps: []
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| src/trace_context/models/content.py | 7 content type models + discriminated union + custom type registry | VERIFIED | 203 lines; exports ContentPayload, all 7 types, validate_content, BUILTIN_TYPE_HINTS |
-| src/trace_context/storage/schema.py | ORM models: BlobRow, CommitRow, RefRow, AnnotationRow | VERIFIED | 172 lines; all 4 tables with correct FKs and indexes; _trace_meta table for versioning |
-| src/trace_context/storage/repositories.py | Abstract repository interfaces | VERIFIED | 194 lines; CommitRepository, BlobRepository, RefRepository, AnnotationRepository ABCs |
-| src/trace_context/storage/sqlite.py | SQLite implementations of all repositories | VERIFIED | 290 lines; all 4 Sqlite*Repository classes implement ABCs |
-| src/trace_context/protocols.py | TokenCounter, ContextCompiler protocols | VERIFIED | 72 lines; both protocols defined with runtime_checkable; Message, CompiledContext dataclasses |
-| src/trace_context/engine/hashing.py | Deterministic hashing | VERIFIED | 76 lines; canonical_json, content_hash, commit_hash; property-tested for determinism |
-| src/trace_context/engine/tokens.py | TiktokenCounter implementation | VERIFIED | 91 lines; implements TokenCounter protocol with o200k_base encoding |
-| src/trace_context/engine/commit.py | CommitEngine with validation, budget checking | VERIFIED | 291 lines; create_commit, get_commit, annotate methods; budget enforcement (warn/reject/callback) |
-| src/trace_context/engine/compiler.py | DefaultContextCompiler (renamed from Materializer) | VERIFIED | 324 lines; edit resolution, priority filtering, time-travel, aggregation |
-| src/trace_context/repo.py | Repo class — primary SDK entry point | VERIFIED | 311 lines; Repo.open(), commit(), compile(), annotate(), batch() context manager |
-| src/trace_context/__init__.py | Public API exports | VERIFIED | 92 lines; exports 30+ symbols including Repo, all content types, protocols |
+| src/tract/models/content.py | 7 content type models + discriminated union + custom type registry | VERIFIED | 203 lines; exports ContentPayload, all 7 types, validate_content, BUILTIN_TYPE_HINTS |
+| src/tract/storage/schema.py | ORM models: BlobRow, CommitRow, RefRow, AnnotationRow | VERIFIED | 172 lines; all 4 tables with correct FKs and indexes; _trace_meta table for versioning |
+| src/tract/storage/repositories.py | Abstract repository interfaces | VERIFIED | 194 lines; CommitRepository, BlobRepository, RefRepository, AnnotationRepository ABCs |
+| src/tract/storage/sqlite.py | SQLite implementations of all repositories | VERIFIED | 290 lines; all 4 Sqlite*Repository classes implement ABCs |
+| src/tract/protocols.py | TokenCounter, ContextCompiler protocols | VERIFIED | 72 lines; both protocols defined with runtime_checkable; Message, CompiledContext dataclasses |
+| src/tract/engine/hashing.py | Deterministic hashing | VERIFIED | 76 lines; canonical_json, content_hash, commit_hash; property-tested for determinism |
+| src/tract/engine/tokens.py | TiktokenCounter implementation | VERIFIED | 91 lines; implements TokenCounter protocol with o200k_base encoding |
+| src/tract/engine/commit.py | CommitEngine with validation, budget checking | VERIFIED | 291 lines; create_commit, get_commit, annotate methods; budget enforcement (warn/reject/callback) |
+| src/tract/engine/compiler.py | DefaultContextCompiler (renamed from Materializer) | VERIFIED | 324 lines; edit resolution, priority filtering, time-travel, aggregation |
+| src/tract/repo.py | Repo class — primary SDK entry point | VERIFIED | 311 lines; Repo.open(), commit(), compile(), annotate(), batch() context manager |
+| src/tract/__init__.py | Public API exports | VERIFIED | 92 lines; exports 30+ symbols including Repo, all content types, protocols |
 
 
 ### Key Link Verification
@@ -60,7 +60,7 @@ gaps: []
 | Repo | CommitEngine | Delegates commit operations | WIRED | self._commit_engine.create_commit() in repo.commit() |
 | Repo | DefaultContextCompiler | Delegates compilation | WIRED | self._compiler.compile() in repo.compile() |
 | Repo | Storage engine | Creates SQLAlchemy engine | WIRED | Repo.open() calls create_trace_engine() |
-| Package root | Repo | Public API export | WIRED | from trace_context.repo import Repo in __init__.py |
+| Package root | Repo | Public API export | WIRED | from tract.repo import Repo in __init__.py |
 
 ### Requirements Coverage
 
@@ -75,7 +75,7 @@ None blocking. Codebase is clean with comprehensive docstrings, type hints throu
 Intentional deviations found:
 
 - **Terminology**: "Materializer" renamed to "ContextCompiler" for clarity
-- **Package name**: trace_context (not trace) to avoid shadowing stdlib
+- **Package name**: tract (not trace) to avoid shadowing stdlib
 - **DELETE operation**: Removed; deletion done via Priority.SKIP annotation
 - **cumulative_tokens**: Not implemented (minor gap, not critical for Phase 1)
 

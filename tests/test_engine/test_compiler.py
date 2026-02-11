@@ -12,12 +12,12 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from trace_context.engine.commit import CommitEngine
-from trace_context.engine.compiler import DefaultContextCompiler
-from trace_context.engine.tokens import NullTokenCounter, TiktokenCounter
-from trace_context.models.annotations import Priority
-from trace_context.models.commit import CommitOperation
-from trace_context.models.content import (
+from tract.engine.commit import CommitEngine
+from tract.engine.compiler import DefaultContextCompiler
+from tract.engine.tokens import NullTokenCounter, TiktokenCounter
+from tract.models.annotations import Priority
+from tract.models.commit import CommitOperation
+from tract.models.content import (
     ArtifactContent,
     DialogueContent,
     FreeformContent,
@@ -26,8 +26,8 @@ from trace_context.models.content import (
     ReasoningContent,
     ToolIOContent,
 )
-from trace_context.protocols import CompiledContext
-from trace_context.storage.sqlite import (
+from tract.protocols import CompiledContext
+from tract.storage.sqlite import (
     SqliteAnnotationRepository,
     SqliteBlobRepository,
     SqliteCommitRepository,

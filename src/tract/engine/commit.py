@@ -13,21 +13,21 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-from trace_context.engine.hashing import commit_hash as compute_commit_hash
-from trace_context.engine.hashing import content_hash as compute_content_hash
-from trace_context.exceptions import (
+from tract.engine.hashing import commit_hash as compute_commit_hash
+from tract.engine.hashing import content_hash as compute_content_hash
+from tract.exceptions import (
     BudgetExceededError,
     CommitNotFoundError,
     EditTargetError,
 )
-from trace_context.models.annotations import DEFAULT_TYPE_PRIORITIES, Priority, PriorityAnnotation
-from trace_context.models.commit import CommitInfo, CommitOperation
-from trace_context.models.config import BudgetAction, TokenBudgetConfig
-from trace_context.storage.schema import AnnotationRow, BlobRow, CommitRow
+from tract.models.annotations import DEFAULT_TYPE_PRIORITIES, Priority, PriorityAnnotation
+from tract.models.commit import CommitInfo, CommitOperation
+from tract.models.config import BudgetAction, TokenBudgetConfig
+from tract.storage.schema import AnnotationRow, BlobRow, CommitRow
 
 if TYPE_CHECKING:
-    from trace_context.protocols import TokenCounter
-    from trace_context.storage.repositories import (
+    from tract.protocols import TokenCounter
+    from tract.storage.repositories import (
         AnnotationRepository,
         BlobRepository,
         CommitRepository,

@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import pytest
 
-from trace_context.engine.tokens import NullTokenCounter, TiktokenCounter
-from trace_context.protocols import TokenCounter
+from tract.engine.tokens import NullTokenCounter, TiktokenCounter
+from tract.protocols import TokenCounter
 
 
 class TestTiktokenCounter:

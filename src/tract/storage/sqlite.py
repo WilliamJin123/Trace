@@ -11,13 +11,13 @@ from typing import Sequence
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from trace_context.storage.repositories import (
+from tract.storage.repositories import (
     AnnotationRepository,
     BlobRepository,
     CommitRepository,
     RefRepository,
 )
-from trace_context.storage.schema import (
+from tract.storage.schema import (
     AnnotationRow,
     BlobRow,
     CommitRow,

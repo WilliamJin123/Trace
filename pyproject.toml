@@ -26,7 +26,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/trace_context"]
+packages = ["src/tract"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

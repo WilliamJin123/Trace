@@ -12,18 +12,18 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from trace_context.models.annotations import DEFAULT_TYPE_PRIORITIES, Priority
-from trace_context.models.content import BUILTIN_TYPE_HINTS
-from trace_context.protocols import CompiledContext, Message
+from tract.models.annotations import DEFAULT_TYPE_PRIORITIES, Priority
+from tract.models.content import BUILTIN_TYPE_HINTS
+from tract.protocols import CompiledContext, Message
 
 if TYPE_CHECKING:
-    from trace_context.protocols import TokenCounter
-    from trace_context.storage.repositories import (
+    from tract.protocols import TokenCounter
+    from tract.storage.repositories import (
         AnnotationRepository,
         BlobRepository,
         CommitRepository,
     )
-    from trace_context.storage.schema import CommitRow
+    from tract.storage.schema import CommitRow
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +166,7 @@ class DefaultContextCompiler:
 
         If multiple edits target the same commit, the latest one (by created_at) wins.
         """
-        from trace_context.models.commit import CommitOperation
+        from tract.models.commit import CommitOperation
 
         edit_map: dict[str, CommitRow] = {}
         for c in commits:
@@ -217,7 +217,7 @@ class DefaultContextCompiler:
         priority_map: dict[str, Priority],
     ) -> list[CommitRow]:
         """Build the effective commit list after edit resolution and priority filtering."""
-        from trace_context.models.commit import CommitOperation
+        from tract.models.commit import CommitOperation
 
         effective: list[CommitRow] = []
         for c in commits:

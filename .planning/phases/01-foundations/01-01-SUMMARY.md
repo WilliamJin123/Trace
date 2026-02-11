@@ -21,21 +21,21 @@ tech-stack:
 key-files:
   created:
     - pyproject.toml
-    - src/trace_context/__init__.py
-    - src/trace_context/_version.py
-    - src/trace_context/exceptions.py
-    - src/trace_context/protocols.py
-    - src/trace_context/models/__init__.py
-    - src/trace_context/models/content.py
-    - src/trace_context/models/commit.py
-    - src/trace_context/models/annotations.py
-    - src/trace_context/models/config.py
-    - src/trace_context/storage/__init__.py
-    - src/trace_context/storage/schema.py
-    - src/trace_context/storage/types.py
-    - src/trace_context/storage/engine.py
-    - src/trace_context/storage/repositories.py
-    - src/trace_context/storage/sqlite.py
+    - src/tract/__init__.py
+    - src/tract/_version.py
+    - src/tract/exceptions.py
+    - src/tract/protocols.py
+    - src/tract/models/__init__.py
+    - src/tract/models/content.py
+    - src/tract/models/commit.py
+    - src/tract/models/annotations.py
+    - src/tract/models/config.py
+    - src/tract/storage/__init__.py
+    - src/tract/storage/schema.py
+    - src/tract/storage/types.py
+    - src/tract/storage/engine.py
+    - src/tract/storage/repositories.py
+    - src/tract/storage/sqlite.py
     - tests/__init__.py
     - tests/conftest.py
     - tests/strategies.py
@@ -46,7 +46,7 @@ key-files:
     - tests/test_storage/test_repositories.py
   modified: []
 key-decisions:
-  - Import package renamed from `trace` to `trace_context` to avoid stdlib shadow
+  - Import package renamed from `trace` to `tract` to avoid stdlib shadow
   - CommitOperation and Priority enums shared between domain models and ORM (not redefined)
   - content_type stored as String in DB (not Enum) to support custom types without migration
   - metadata_json as plain JSON column (no MutableDict, metadata is immutable after commit)
@@ -105,7 +105,7 @@ SQLAlchemy ORM schema with 5 tables, Pydantic discriminated union for 7 content 
 
 ## Decisions Made
 
-1. **Import package renamed to `trace_context`**: The Python stdlib has a `trace` module that shadows our package on Python 3.14. Renamed import from `trace` to `trace_context` while keeping PyPI distribution name as `trace-context`. This is a blocking fix (Rule 3) -- without it, no imports work.
+1. **Import package renamed to `tract`**: The Python stdlib has a `trace` module that shadows our package on Python 3.14. Renamed import from `trace` to `tract` while keeping PyPI distribution name as `trace-context`. This is a blocking fix (Rule 3) -- without it, no imports work.
 
 2. **Shared enums between domain and ORM**: CommitOperation and Priority enums are defined once in models/ and imported by storage/schema.py. Not redefined in the ORM layer.
 
@@ -119,12 +119,12 @@ SQLAlchemy ORM schema with 5 tables, Pydantic discriminated union for 7 content 
 
 ### Auto-fixed Issues
 
-**1. [Rule 3 - Blocking] Import package renamed from `trace` to `trace_context`**
+**1. [Rule 3 - Blocking] Import package renamed from `trace` to `tract`**
 - **Found during:** Task 1 (test execution)
 - **Issue:** Python stdlib `trace` module (C:\...\Lib\trace.py) shadows our package. On Python 3.14, stdlib paths come before site-packages in sys.path, making `from trace.models import ...` impossible.
-- **Fix:** Renamed package directory from `src/trace/` to `src/trace_context/`. Updated all imports across source and test files. Updated hatchling package config.
+- **Fix:** Renamed package directory from `src/trace/` to `src/tract/`. Updated all imports across source and test files. Updated hatchling package config.
 - **Files modified:** All source and test files (import paths), pyproject.toml (package discovery)
-- **Impact:** All subsequent plans must use `from trace_context.` instead of `from trace.`. MEMORY.md should be updated with this decision.
+- **Impact:** All subsequent plans must use `from tract.` instead of `from trace.`. MEMORY.md should be updated with this decision.
 
 ## Issues Encountered
 
@@ -133,10 +133,10 @@ SQLAlchemy ORM schema with 5 tables, Pydantic discriminated union for 7 content 
 ## Next Phase Readiness
 
 Plan 01-02 can proceed immediately. All models, storage, and protocols are in place. The commit engine (01-02) will import from:
-- `trace_context.models.content` for content types and validation
-- `trace_context.models.commit` for CommitOperation
-- `trace_context.storage` for repositories and engine
-- `trace_context.protocols` for TokenCounter
-- `trace_context.exceptions` for error types
+- `tract.models.content` for content types and validation
+- `tract.models.commit` for CommitOperation
+- `tract.storage` for repositories and engine
+- `tract.protocols` for TokenCounter
+- `tract.exceptions` for error types
 
-**Note for subsequent plans**: All imports must use `trace_context` (not `trace`) as the package name.
+**Note for subsequent plans**: All imports must use `tract` (not `trace`) as the package name.

@@ -27,12 +27,12 @@ tech-stack:
     - Timezone normalization for SQLite datetime comparisons
 key-files:
   created:
-    - src/trace_context/engine/__init__.py
-    - src/trace_context/engine/hashing.py
-    - src/trace_context/engine/tokens.py
-    - src/trace_context/engine/commit.py
-    - src/trace_context/engine/compiler.py
-    - src/trace_context/models/compiled.py
+    - src/tract/engine/__init__.py
+    - src/tract/engine/hashing.py
+    - src/tract/engine/tokens.py
+    - src/tract/engine/commit.py
+    - src/tract/engine/compiler.py
+    - src/tract/models/compiled.py
     - tests/test_engine/__init__.py
     - tests/test_engine/test_hashing.py
     - tests/test_engine/test_tokens.py
@@ -108,18 +108,18 @@ metrics:
 
 ### Auto-fixed Issues
 
-**1. [Rule 3 - Blocking] Linter renamed package directory from trace_context to trace**
+**1. [Rule 3 - Blocking] Linter renamed package directory from tract to trace**
 - **Found during:** Task 2 setup (tests failed to import)
-- **Issue:** An external linter renamed `src/trace_context/` to `src/trace/` and changed all imports from `trace_context` to `trace`, which shadows the stdlib `trace` module on Python 3.14
-- **Fix:** Renamed directory back to `src/trace_context/`, restored all imports to `trace_context`, verified pyproject.toml already had correct config in git HEAD
+- **Issue:** An external linter renamed `src/tract/` to `src/trace/` and changed all imports from `tract` to `trace`, which shadows the stdlib `trace` module on Python 3.14
+- **Fix:** Renamed directory back to `src/tract/`, restored all imports to `tract`, verified pyproject.toml already had correct config in git HEAD
 - **Files affected:** All src/ and tests/ files (import paths only, no logic changes)
-- **Note:** The git HEAD already had correct `trace_context` naming; the linter only affected the working tree
+- **Note:** The git HEAD already had correct `tract` naming; the linter only affected the working tree
 
 **2. [Rule 1 - Bug] Timezone-aware vs naive datetime comparison in compiler**
 - **Found during:** Task 2 test execution
 - **Issue:** `as_of` parameter is timezone-aware (datetime.now(timezone.utc)) but SQLite stores naive datetimes, causing TypeError on comparison
 - **Fix:** Added `_normalize_dt()` helper that strips tzinfo for comparison, applied to all datetime comparisons in compiler (walk chain, edit map, priority map)
-- **Files modified:** src/trace_context/engine/compiler.py
+- **Files modified:** src/tract/engine/compiler.py
 - **Commit:** 7d6e612
 
 **3. [Rule 1 - Bug] Recursive fixture dependency in test_compiler.py**

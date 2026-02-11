@@ -15,7 +15,7 @@ from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
-from trace_context.exceptions import ContentValidationError
+from tract.exceptions import ContentValidationError
 
 
 # ---------------------------------------------------------------------------

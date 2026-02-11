@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 import pytest
 from pydantic import BaseModel
 
-from trace_context import (
+from tract import (
     ArtifactContent,
     BudgetAction,
     BudgetExceededError,
@@ -115,10 +115,10 @@ class TestSC1Initialization:
 
     def test_from_components_uses_injected_deps(self):
         """Repo.from_components() creates a working Repo with injected components."""
-        from trace_context.engine.compiler import DefaultContextCompiler
-        from trace_context.engine.tokens import TiktokenCounter
-        from trace_context.storage.engine import create_session_factory, create_trace_engine, init_db
-        from trace_context.storage.sqlite import (
+        from tract.engine.compiler import DefaultContextCompiler
+        from tract.engine.tokens import TiktokenCounter
+        from tract.storage.engine import create_session_factory, create_trace_engine, init_db
+        from tract.storage.sqlite import (
             SqliteAnnotationRepository,
             SqliteBlobRepository,
             SqliteCommitRepository,

@@ -6,8 +6,8 @@ Provides in-memory SQLite engine, session, and repository fixtures.
 import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
-from trace_context.storage.engine import create_trace_engine, init_db
-from trace_context.storage.sqlite import (
+from tract.storage.engine import create_trace_engine, init_db
+from tract.storage.sqlite import (
     SqliteAnnotationRepository,
     SqliteBlobRepository,
     SqliteCommitRepository,

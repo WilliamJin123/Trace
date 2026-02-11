@@ -13,8 +13,8 @@ import pytest
 from hypothesis import given
 from pydantic import BaseModel, TypeAdapter
 
-from trace_context.exceptions import ContentValidationError
-from trace_context.models.content import (
+from tract.exceptions import ContentValidationError
+from tract.models.content import (
     BUILTIN_CONTENT_TYPES,
     BUILTIN_TYPE_HINTS,
     ArtifactContent,

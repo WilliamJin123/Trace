@@ -4,8 +4,8 @@ Provides SQLAlchemy ORM schema, engine/session factory, and repository
 implementations for SQLite.
 """
 
-from trace_context.storage.engine import create_session_factory, create_trace_engine, init_db
-from trace_context.storage.sqlite import (
+from tract.storage.engine import create_session_factory, create_trace_engine, init_db
+from tract.storage.sqlite import (
     SqliteAnnotationRepository,
     SqliteBlobRepository,
     SqliteCommitRepository,

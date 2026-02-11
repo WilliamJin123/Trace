@@ -9,7 +9,7 @@ from __future__ import annotations
 from sqlalchemy import Engine, create_engine, event, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from trace_context.storage.schema import Base, TraceMetaRow
+from tract.storage.schema import Base, TraceMetaRow
 
 
 def create_trace_engine(db_path: str = ":memory:") -> Engine:

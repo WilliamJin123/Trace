@@ -11,7 +11,7 @@ from typing import Optional
 
 from pydantic import BaseModel
 
-from trace_context.protocols import CompiledContext, Message
+from tract.protocols import CompiledContext, Message
 
 
 class CompileOptions(BaseModel):

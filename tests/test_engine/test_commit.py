@@ -11,13 +11,13 @@ import logging
 
 import pytest
 
-from trace_context.engine.commit import CommitEngine, extract_text_from_content
-from trace_context.engine.tokens import NullTokenCounter, TiktokenCounter
-from trace_context.exceptions import BudgetExceededError, CommitNotFoundError, EditTargetError
-from trace_context.models.annotations import Priority
-from trace_context.models.commit import CommitOperation
-from trace_context.models.config import BudgetAction, TokenBudgetConfig
-from trace_context.models.content import (
+from tract.engine.commit import CommitEngine, extract_text_from_content
+from tract.engine.tokens import NullTokenCounter, TiktokenCounter
+from tract.exceptions import BudgetExceededError, CommitNotFoundError, EditTargetError
+from tract.models.annotations import Priority
+from tract.models.commit import CommitOperation
+from tract.models.config import BudgetAction, TokenBudgetConfig
+from tract.models.content import (
     ArtifactContent,
     DialogueContent,
     FreeformContent,
@@ -26,8 +26,8 @@ from trace_context.models.content import (
     ReasoningContent,
     ToolIOContent,
 )
-from trace_context.storage.schema import BlobRow
-from trace_context.storage.sqlite import (
+from tract.storage.schema import BlobRow
+from tract.storage.sqlite import (
     SqliteAnnotationRepository,
     SqliteBlobRepository,
     SqliteCommitRepository,
@@ -217,7 +217,7 @@ class TestTokenBudget:
             token_budget=budget,
         )
 
-        with caplog.at_level(logging.WARNING, logger="trace_context.engine.commit"):
+        with caplog.at_level(logging.WARNING, logger="tract.engine.commit"):
             info = engine.create_commit(InstructionContent(text="This text definitely has more than 1 token"))
 
         assert info.commit_hash is not None
