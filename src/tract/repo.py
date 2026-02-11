@@ -23,7 +23,8 @@ from tract.models.annotations import Priority, PriorityAnnotation
 from tract.models.commit import CommitInfo, CommitOperation
 from tract.models.config import RepoConfig
 from tract.models.content import validate_content
-from tract.protocols import CompiledContext, CompileSnapshot, ContextCompiler, Message, TokenCounter
+from tract.exceptions import ContentValidationError, TraceError
+from tract.protocols import CompiledContext, CompileSnapshot, ContextCompiler, Message, TokenCounter, TokenUsage
 from tract.storage.engine import create_session_factory, create_trace_engine, init_db
 from tract.storage.sqlite import (
     SqliteAnnotationRepository,
@@ -396,6 +397,104 @@ class Repo:
         ancestors = self._commit_repo.get_ancestors(current_head, limit=limit)
         return [self._commit_engine._row_to_info(row) for row in ancestors]
 
+    def record_usage(
+        self,
+        usage: TokenUsage | dict,
+        *,
+        head_hash: str | None = None,
+    ) -> CompiledContext:
+        """Record API-reported token usage, updating cached compilation.
+
+        Accepts either a :class:`TokenUsage` dataclass or a provider-specific
+        dict.  Supported dict formats:
+
+        - **OpenAI:** ``{prompt_tokens, completion_tokens, total_tokens}``
+        - **Anthropic:** ``{input_tokens, output_tokens}``
+
+        Args:
+            usage: :class:`TokenUsage` or dict with token counts.
+            head_hash: Associate with a specific HEAD.  Defaults to current HEAD.
+
+        Returns:
+            Updated :class:`CompiledContext` with API-reported token count.
+
+        Raises:
+            TraceError: If no commits exist or *head_hash* doesn't match.
+            ContentValidationError: If dict format is unrecognised.
+        """
+        # Normalize input
+        if isinstance(usage, dict):
+            usage = self._normalize_usage_dict(usage)
+        elif not isinstance(usage, TokenUsage):
+            raise ContentValidationError(
+                f"Expected TokenUsage or dict, got {type(usage).__name__}"
+            )
+
+        target_hash = head_hash or self.head
+        if target_hash is None:
+            raise TraceError("Cannot record usage: no commits exist")
+
+        # Validate explicit head_hash matches current HEAD
+        if head_hash is not None and head_hash != self.head:
+            raise TraceError(
+                f"Cannot record usage: head_hash {head_hash} "
+                f"does not match current HEAD {self.head}"
+            )
+
+        # If no snapshot yet, trigger a compile to populate one
+        if self._compile_snapshot is None or self._compile_snapshot.head_hash != target_hash:
+            self.compile()
+
+        # Update snapshot with API-reported counts
+        if self._compile_snapshot is not None and self._compile_snapshot.head_hash == target_hash:
+            token_source = f"api:{usage.prompt_tokens}+{usage.completion_tokens}"
+            self._compile_snapshot = CompileSnapshot(
+                head_hash=self._compile_snapshot.head_hash,
+                raw_messages=self._compile_snapshot.raw_messages,
+                aggregated_messages=self._compile_snapshot.aggregated_messages,
+                effective_hashes=self._compile_snapshot.effective_hashes,
+                commit_count=self._compile_snapshot.commit_count,
+                token_count=usage.prompt_tokens,
+                token_source=token_source,
+            )
+            return self._snapshot_to_compiled(self._compile_snapshot)
+
+        # Fallback (custom compiler, no snapshot): return minimal result
+        token_source = f"api:{usage.prompt_tokens}+{usage.completion_tokens}"
+        return CompiledContext(
+            messages=[],
+            token_count=usage.prompt_tokens,
+            commit_count=0,
+            token_source=token_source,
+        )
+
+    def _normalize_usage_dict(self, usage_dict: dict) -> TokenUsage:
+        """Normalise provider-specific usage dicts to :class:`TokenUsage`.
+
+        Supports OpenAI (``prompt_tokens``) and Anthropic (``input_tokens``)
+        formats.
+        """
+        if "prompt_tokens" in usage_dict:
+            return TokenUsage(
+                prompt_tokens=usage_dict.get("prompt_tokens", 0),
+                completion_tokens=usage_dict.get("completion_tokens", 0),
+                total_tokens=usage_dict.get("total_tokens", 0),
+            )
+        elif "input_tokens" in usage_dict:
+            input_t = usage_dict.get("input_tokens", 0)
+            output_t = usage_dict.get("output_tokens", 0)
+            return TokenUsage(
+                prompt_tokens=input_t,
+                completion_tokens=output_t,
+                total_tokens=input_t + output_t,
+            )
+        else:
+            raise ContentValidationError(
+                f"Unrecognized usage dict format. "
+                f"Expected 'prompt_tokens' (OpenAI) or 'input_tokens' (Anthropic). "
+                f"Got keys: {list(usage_dict.keys())}"
+            )
+
     @contextmanager
     def batch(self) -> Iterator[None]:
         """Context manager for atomic multi-commit batches.
@@ -462,6 +561,12 @@ class Repo:
             token_source=result.token_source,
         )
 
+    def _tiktoken_source(self) -> str:
+        """Return the token_source string for tiktoken-based counts."""
+        if isinstance(self._token_counter, TiktokenCounter):
+            return f"tiktoken:{self._token_counter._encoding_name}"
+        return ""
+
     def _extend_snapshot_for_append(self, commit_info: CommitInfo) -> None:
         """Incrementally extend the cached snapshot for an APPEND commit.
 
@@ -514,7 +619,7 @@ class Repo:
             effective_hashes=snapshot.effective_hashes | {commit_info.commit_hash},
             commit_count=snapshot.commit_count + 1,
             token_count=new_token_count,
-            token_source=snapshot.token_source,
+            token_source=self._tiktoken_source(),
         )
 
     def register_content_type(self, name: str, model: type[BaseModel]) -> None:
