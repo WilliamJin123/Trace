@@ -79,7 +79,7 @@ Plans:
   1. User can attach a generation config dict to any commit via `tract.commit(..., generation_config={...})` and retrieve it from the stored commit
   2. Generation config is stored as a flexible schema (JSON blob or similar) that supports any provider's parameters without migration
   3. Generation config is preserved through compile -- `CompiledContext` exposes the configs associated with its commits
-  4. `record_usage()` can optionally accept generation config, linking post-call actuals with the params that produced them
+  4. Generation config is NOT included in commit hash -- same content with different configs produces the same content_hash, preserving content-addressable dedup
   5. Generation config is queryable: user can filter/retrieve commits by config values (e.g., "all commits with temperature > 0.8")
 **Plans**: 1 plan
 
