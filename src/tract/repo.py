@@ -23,7 +23,7 @@ from tract.models.annotations import Priority, PriorityAnnotation
 from tract.models.commit import CommitInfo, CommitOperation
 from tract.models.config import RepoConfig
 from tract.models.content import validate_content
-from tract.protocols import CompiledContext, ContextCompiler, TokenCounter
+from tract.protocols import CompiledContext, CompileSnapshot, ContextCompiler, Message, TokenCounter
 from tract.storage.engine import create_session_factory, create_trace_engine, init_db
 from tract.storage.sqlite import (
     SqliteAnnotationRepository,
@@ -85,7 +85,7 @@ class Repo:
         self._annotation_repo = annotation_repo
         self._token_counter = token_counter
         self._custom_type_registry: dict[str, type[BaseModel]] = {}
-        self._compile_cache: dict[str, CompiledContext] = {}
+        self._compile_snapshot: CompileSnapshot | None = None
         self._closed = False
 
     @classmethod
@@ -277,8 +277,16 @@ class Repo:
         # Persist to database
         self._session.commit()
 
-        # Invalidate compile cache (head changed)
-        self._compile_cache.clear()
+        # Update compile snapshot: incremental extend for APPEND with
+        # DefaultContextCompiler, otherwise invalidate
+        if (
+            operation == CommitOperation.APPEND
+            and self._compile_snapshot is not None
+            and isinstance(self._compiler, DefaultContextCompiler)
+        ):
+            self._extend_snapshot_for_append(info)
+        else:
+            self._compile_snapshot = None
 
         return info
 
@@ -303,22 +311,23 @@ class Repo:
         if current_head is None:
             return CompiledContext(messages=[], token_count=0, commit_count=0, token_source="")
 
-        # Cache hit (only for unfiltered queries)
-        if as_of is None and up_to is None and current_head in self._compile_cache:
-            return self._compile_cache[current_head]
+        # Time-travel and edit annotations: always full compile, don't touch snapshot
+        if as_of is not None or up_to is not None or include_edit_annotations:
+            return self._compiler.compile(
+                self._repo_id,
+                current_head,
+                as_of=as_of,
+                up_to=up_to,
+                include_edit_annotations=include_edit_annotations,
+            )
 
-        result = self._compiler.compile(
-            self._repo_id,
-            current_head,
-            as_of=as_of,
-            up_to=up_to,
-            include_edit_annotations=include_edit_annotations,
-        )
+        # Cache hit: snapshot exists for current head
+        if self._compile_snapshot is not None and self._compile_snapshot.head_hash == current_head:
+            return self._snapshot_to_compiled(self._compile_snapshot)
 
-        # Cache unfiltered results
-        if as_of is None and up_to is None:
-            self._compile_cache[current_head] = result
-
+        # Cache miss: full compile and build snapshot
+        result = self._compiler.compile(self._repo_id, current_head)
+        self._compile_snapshot = self._build_snapshot_from_compiled(current_head, result)
         return result
 
     def get_commit(self, commit_hash: str) -> CommitInfo | None:
@@ -348,7 +357,7 @@ class Repo:
         """
         annotation = self._commit_engine.annotate(target_hash, priority, reason)
         self._session.commit()
-        self._compile_cache.clear()
+        self._compile_snapshot = None
         return annotation
 
     def get_annotations(self, target_hash: str) -> list[PriorityAnnotation]:
@@ -400,6 +409,9 @@ class Repo:
                 repo.commit(InstructionContent(text="System prompt"))
                 repo.commit(DialogueContent(role="user", text="Hi"))
         """
+        # Invalidate compile snapshot on batch entry
+        self._compile_snapshot = None
+
         # Stash the real session.commit and replace with a no-op
         _real_commit = self._session.commit
 
@@ -416,6 +428,94 @@ class Repo:
             raise
         finally:
             self._session.commit = _real_commit  # type: ignore[assignment]
+
+    # ------------------------------------------------------------------
+    # Incremental compile helpers
+    # ------------------------------------------------------------------
+
+    def _snapshot_to_compiled(self, snapshot: CompileSnapshot) -> CompiledContext:
+        """Convert a CompileSnapshot to a CompiledContext for return."""
+        return CompiledContext(
+            messages=list(snapshot.aggregated_messages),
+            token_count=snapshot.token_count,
+            commit_count=snapshot.commit_count,
+            token_source=snapshot.token_source,
+        )
+
+    def _build_snapshot_from_compiled(
+        self, head_hash: str, result: CompiledContext
+    ) -> CompileSnapshot | None:
+        """Build a CompileSnapshot from a full compile result.
+
+        Returns None if the compiler is not a DefaultContextCompiler
+        (custom compilers bypass incremental cache).
+        """
+        if not isinstance(self._compiler, DefaultContextCompiler):
+            return None
+        return CompileSnapshot(
+            head_hash=head_hash,
+            raw_messages=tuple(result.messages),
+            aggregated_messages=tuple(result.messages),
+            effective_hashes=frozenset(),
+            commit_count=result.commit_count,
+            token_count=result.token_count,
+            token_source=result.token_source,
+        )
+
+    def _extend_snapshot_for_append(self, commit_info: CommitInfo) -> None:
+        """Incrementally extend the cached snapshot for an APPEND commit.
+
+        Builds the message for the new commit, applies tail aggregation
+        if the new message has the same role as the last aggregated message,
+        and recounts tokens.
+        """
+        snapshot = self._compile_snapshot
+        if snapshot is None:
+            return
+
+        commit_row = self._commit_repo.get(commit_info.commit_hash)
+        if commit_row is None:
+            self._compile_snapshot = None
+            return
+
+        assert isinstance(self._compiler, DefaultContextCompiler)
+        new_message = self._compiler.build_message_for_commit(commit_row)
+
+        new_raw = snapshot.raw_messages + (new_message,)
+
+        # Tail aggregation: merge if same role as last aggregated message
+        if (
+            snapshot.aggregated_messages
+            and new_message.role == snapshot.aggregated_messages[-1].role
+        ):
+            last = snapshot.aggregated_messages[-1]
+            merged = Message(
+                role=last.role,
+                content=last.content + "\n\n" + new_message.content,
+                name=last.name,
+            )
+            new_aggregated = snapshot.aggregated_messages[:-1] + (merged,)
+        else:
+            new_aggregated = snapshot.aggregated_messages + (new_message,)
+
+        # Recount tokens on the aggregated messages
+        messages_dicts = [
+            {"role": m.role, "content": m.content}
+            if m.name is None
+            else {"role": m.role, "content": m.content, "name": m.name}
+            for m in new_aggregated
+        ]
+        new_token_count = self._token_counter.count_messages(messages_dicts)
+
+        self._compile_snapshot = CompileSnapshot(
+            head_hash=commit_info.commit_hash,
+            raw_messages=new_raw,
+            aggregated_messages=new_aggregated,
+            effective_hashes=snapshot.effective_hashes | {commit_info.commit_hash},
+            commit_count=snapshot.commit_count + 1,
+            token_count=new_token_count,
+            token_source=snapshot.token_source,
+        )
 
     def register_content_type(self, name: str, model: type[BaseModel]) -> None:
         """Register a custom content type for this repo instance.
