@@ -14,6 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundations** - Data model, storage, commit/compile cycle, token accounting, and SDK entry point
 - [x] **Phase 1.1: Incremental Compile Cache & Token Tracking** - O(1) append-path compilation, API-reported token usage as source of truth (INSERTED)
+- [x] **Phase 1.2: Rename Repo to Tract** - Rename entry-point class Repo→Tract, repo_id→tract_id across source, tests, and planning docs (INSERTED)
 - [ ] **Phase 2: Linear History & CLI** - Log, status, diff, reset, checkout, and CLI wrapper for inspection
 - [ ] **Phase 3: Branching & Merging** - Branch, switch, merge (fast-forward + semantic), rebase, cherry-pick, and LLM client
 - [ ] **Phase 4: Compression** - Token-budget-aware compression, pinned commit preservation, commit reordering, garbage collection
@@ -26,7 +27,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Depends on**: Nothing (first phase)
 **Requirements**: INFR-01, INFR-02, INFR-03, INFR-04, INFR-05, INFR-06, CORE-01, CORE-02, CORE-08, CORE-09, INTF-01
 **Success Criteria** (what must be TRUE):
-  1. User can initialize a new trace via `Repo.open()` and it persists to SQLite storage
+  1. User can initialize a new trace via `Tract.open()` and it persists to SQLite storage
   2. User can commit context with message, timestamp, and operation (append/edit) and retrieve it by hash; priority annotations (pin/skip/normal) control compilation inclusion
   3. User can commit structured content (plain text, conversation messages with roles, tool call results) and the structure is preserved through materialization
   4. User can compile the current context and get a coherent output suitable for LLM consumption, using either the default context compiler or a custom one
@@ -45,7 +46,7 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. Compiling after an APPEND commit reuses cached intermediate state (O(1) incremental extend, not O(n) full chain walk)
   2. EDIT and annotate operations trigger full cache invalidation (correctness over speed)
-  3. User can feed API-reported token usage back into Trace via `repo.record_usage()`, and this is preferred over tiktoken counts when available
+  3. User can feed API-reported token usage back into Trace via `tract.record_usage()`, and this is preferred over tiktoken counts when available
   4. tiktoken remains the pre-call estimator for budget enforcement; API actuals are the post-call source of truth
   5. `CompiledContext.token_source` accurately reflects whether counts came from tiktoken estimate or API response
 **Plans**: 2 plans
@@ -53,6 +54,21 @@ Plans:
 Plans:
 - [x] 01.1-01-PLAN.md -- CompileSnapshot dataclass, build_message_for_commit() extraction, incremental APPEND fast path, EDIT/annotate/batch invalidation
 - [x] 01.1-02-PLAN.md -- record_usage() API, OpenAI/Anthropic dict normalization, two-tier token tracking integration tests
+
+### Phase 1.2: Rename Repo to Tract (INSERTED)
+**Goal**: Rename the public SDK entry point from `Repo` to `Tract` and `repo_id` to `tract_id` across all source, tests, and planning docs — clean vocabulary before building more on top
+**Depends on**: Phase 1.1
+**Requirements**: None (internal refactor)
+**Success Criteria** (what must be TRUE):
+  1. `Tract.open()` is the entry point; `Repo` class no longer exists
+  2. `tract_id` replaces `repo_id` in all models, storage, engine, and protocols
+  3. `repo.py` renamed to `tract.py`; `test_repo.py` renamed to `test_tract.py`
+  4. All 220 existing tests pass with the new names
+  5. Planning docs and MEMORY.md updated to reflect new terminology
+**Plans**: 1 plan
+
+Plans:
+- [x] 01.2-01-PLAN.md -- Mechanical rename: Repo→Tract, repo_id→tract_id, file renames, test updates, doc updates
 
 ### Phase 2: Linear History & CLI
 **Goal**: Users can inspect, navigate, and manipulate linear commit history through both the SDK and a CLI
@@ -124,12 +140,13 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 -> 1.1 -> 2 -> 3 -> 4 -> 5
+Phases execute in numeric order: 1 -> 1.1 -> 1.2 -> 2 -> 3 -> 4 -> 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundations | 3/3 | Complete | 2026-02-10 |
 | 1.1 Compile Cache & Token Tracking | 2/2 | Complete | 2026-02-11 |
+| 1.2 Rename Repo to Tract | 1/1 | Complete | 2026-02-11 |
 | 2. Linear History & CLI | 0/2 | Not started | - |
 | 3. Branching & Merging | 0/4 | Not started | - |
 | 4. Compression | 0/2 | Not started | - |

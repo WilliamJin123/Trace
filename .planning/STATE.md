@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-10)
 
 **Core value:** Agents produce better outputs when their context is clean, coherent, and relevant. Trace makes context a managed, version-controlled resource.
-**Current focus:** Phase 1.1 COMPLETE. Ready for Phase 2 (Linear History).
+**Current focus:** Phase 1.2 COMPLETE. Ready for Phase 2 (Linear History & CLI).
 
 ## Current Position
 
-Phase: 1.1 of 5 (Compile Cache & Token Tracking)
-Plan: 2 of 2 in current phase
+Phase: 1.2 of 5 (Rename Repo to Tract)
+Plan: 1 of 1 in current phase
 Status: Phase complete
-Last activity: 2026-02-11 - Completed 01.1-02-PLAN.md
+Last activity: 2026-02-11 - Completed 01.2-01-PLAN.md
 
-Progress: [#####.........] 31% (5/16 plans)
+Progress: [######........] 35% (6/17 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5
-- Average duration: 7m
-- Total execution time: 0.6 hours
+- Total plans completed: 6
+- Average duration: 6m
+- Total execution time: 0.7 hours
 
 **By Phase:**
 
@@ -29,9 +29,10 @@ Progress: [#####.........] 31% (5/16 plans)
 |-------|-------|-------|----------|
 | 1 | 3/3 | 27m | 9m |
 | 1.1 | 2/2 | 6m | 3m |
+| 1.2 | 1/1 | 3m | 3m |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (8m), 01-02 (15m), 01-03 (4m), 01.1-01 (3m), 01.1-02 (3m)
+- Last 5 plans: 01-02 (15m), 01-03 (4m), 01.1-01 (3m), 01.1-02 (3m), 01.2-01 (3m)
 - Trend: incremental plans on solid foundation execute very fast
 
 *Updated after each plan completion*
@@ -56,14 +57,15 @@ Recent decisions affecting current work:
 - [01-02]: Same-role aggregation: consecutive same-role messages concatenated with double newline
 - [01-03]: Compile cache keyed by head_hash, cleared on commit/annotate
 - [01-03]: Batch implemented by temporarily replacing session.commit with noop, committing on exit
-- [01-03]: Repo.open() does not create branch ref upfront; first commit sets HEAD via CommitEngine
+- [01-03]: Tract.open() does not create branch ref upfront; first commit sets HEAD via CommitEngine
 - [01.1-01]: Compile cache replaced with CompileSnapshot-based incremental cache (APPEND = O(1) extend, EDIT/annotate/batch = full invalidation)
-- [01.1-01]: build_message_for_commit() extracted as public method on DefaultContextCompiler for reuse by Repo incremental path
+- [01.1-01]: build_message_for_commit() extracted as public method on DefaultContextCompiler for reuse by Tract incremental path
 - [01.1-01]: CompileSnapshot stores both raw and aggregated messages for correct tail aggregation
 - [01.1-01]: Time-travel and custom compilers bypass incremental cache entirely
 - [01.1-02]: record_usage() validates head_hash match before attempting compile (fail-fast)
 - [01.1-02]: record_usage() auto-compiles if no snapshot exists (user doesn't need to call compile() first)
 - [01.1-02]: Token source format: "tiktoken:{encoding}" for pre-call, "api:{prompt}+{completion}" for post-call
+- [01.2-01]: Repo -> Tract, repo_id -> tract_id, RepoConfig -> TractConfig across all source and tests
 
 ### Pending Todos
 
@@ -72,6 +74,7 @@ None.
 ### Roadmap Evolution
 
 - Phase 1.1 inserted after Phase 1: Incremental Compile Cache & Token Tracking (INSERTED) -- addresses two design issues: (1) full chain walk on every compile adds latency, incremental cache makes APPEND O(1); (2) tiktoken used as sole token source, but API-reported usage should be source of truth post-call
+- Phase 1.2 inserted after Phase 1.1: Rename Repo to Tract (INSERTED) -- `Repo` implies a shared container, but each agent's context is self-contained. `Tract` better reflects the domain. Also renames `repo_id` -> `tract_id`. Clean vocabulary before building Phases 2-5 on top.
 
 ### Blockers/Concerns
 
@@ -88,7 +91,7 @@ None.
 |------|------|-------|----------|
 | 01-01 | Domain Models + Storage | 87 | 8m |
 | 01-02 | Engine Layer | 66 | 15m |
-| 01-03 | Repo Class + Public API | 47 | 4m |
+| 01-03 | Tract Class + Public API | 47 | 4m |
 | **Total** | | **200** | **27m** |
 
 All 5 Phase 1 success criteria verified end-to-end.
@@ -103,8 +106,17 @@ All 5 Phase 1 success criteria verified end-to-end.
 
 Total test suite: 220 tests passing.
 
+## Phase 1.2 Final Stats
+
+| Plan | Name | Tests | Duration |
+|------|------|-------|----------|
+| 01.2-01 | Repo -> Tract rename | 220 (all pass) | 3m |
+| **Total** | | **0 new** | **3m** |
+
+Total test suite: 220 tests passing.
+
 ## Session Continuity
 
 Last session: 2026-02-11
-Stopped at: Completed 01.1-02-PLAN.md (record_usage API). Phase 1.1 complete (2/2 plans).
+Stopped at: Completed 01.2-01-PLAN.md (Repo->Tract rename). Phase 1.2 complete (1/1 plans).
 Resume file: None
