@@ -5,33 +5,34 @@
 See: .planning/PROJECT.md (updated 2026-02-10)
 
 **Core value:** Agents produce better outputs when their context is clean, coherent, and relevant. Trace makes context a managed, version-controlled resource.
-**Current focus:** Phase 1 - Foundations (COMPLETE)
+**Current focus:** Phase 1.1 - Incremental Compile Cache & Token Tracking (IN PROGRESS)
 
 ## Current Position
 
-Phase: 1 of 5 (Foundations) -- COMPLETE
-Plan: 3 of 3 in current phase
-Status: Phase complete
-Last activity: 2026-02-10 - Completed 01-03-PLAN.md
+Phase: 1.1 of 5 (Compile Cache & Token Tracking)
+Plan: 1 of 2 in current phase
+Status: In progress
+Last activity: 2026-02-11 - Completed 01.1-01-PLAN.md
 
-Progress: [###...........] 21% (3/14 plans)
+Progress: [####..........] 25% (4/16 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3
-- Average duration: 9m
-- Total execution time: 0.45 hours
+- Total plans completed: 4
+- Average duration: 8m
+- Total execution time: 0.5 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1 | 3/3 | 27m | 9m |
+| 1.1 | 1/2 | 3m | 3m |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (8m), 01-02 (15m), 01-03 (4m)
-- Trend: facade/test plan was fastest (builds on solid infrastructure)
+- Last 5 plans: 01-01 (8m), 01-02 (15m), 01-03 (4m), 01.1-01 (3m)
+- Trend: incremental plans on solid foundation execute very fast
 
 *Updated after each plan completion*
 
@@ -56,10 +57,18 @@ Recent decisions affecting current work:
 - [01-03]: Compile cache keyed by head_hash, cleared on commit/annotate
 - [01-03]: Batch implemented by temporarily replacing session.commit with noop, committing on exit
 - [01-03]: Repo.open() does not create branch ref upfront; first commit sets HEAD via CommitEngine
+- [01.1-01]: Compile cache replaced with CompileSnapshot-based incremental cache (APPEND = O(1) extend, EDIT/annotate/batch = full invalidation)
+- [01.1-01]: build_message_for_commit() extracted as public method on DefaultContextCompiler for reuse by Repo incremental path
+- [01.1-01]: CompileSnapshot stores both raw and aggregated messages for correct tail aggregation
+- [01.1-01]: Time-travel and custom compilers bypass incremental cache entirely
 
 ### Pending Todos
 
 None.
+
+### Roadmap Evolution
+
+- Phase 1.1 inserted after Phase 1: Incremental Compile Cache & Token Tracking (INSERTED) — addresses two design issues: (1) full chain walk on every compile adds latency, incremental cache makes APPEND O(1); (2) tiktoken used as sole token source, but API-reported usage should be source of truth post-call
 
 ### Blockers/Concerns
 
@@ -83,6 +92,6 @@ All 5 Phase 1 success criteria verified end-to-end.
 
 ## Session Continuity
 
-Last session: 2026-02-10T23:57:33Z
-Stopped at: Completed 01-03-PLAN.md (Repo class, public API, integration tests). Phase 1 COMPLETE.
+Last session: 2026-02-11T03:30:02Z
+Stopped at: Completed 01.1-01-PLAN.md (Incremental compile cache with CompileSnapshot). Phase 1.1 plan 1/2 complete.
 Resume file: None
