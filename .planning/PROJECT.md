@@ -71,7 +71,7 @@ Agents produce better outputs when their context is clean, coherent, and relevan
 | Built-in LLM client + user-provided callables | Convenience for common case, flexibility for advanced use | — Pending |
 | Edit commit semantics | TBD — in-place replacement vs override commit. Resolve in Phase 0 | — Pending |
 | Storage model (structured rows vs blobs) | TBD — resolve during Phase 0 research/design | — Pending |
-| Three commit types: Append, Edit, Pin | Maps to distinct context operations with different compression behavior | — Pending |
+| Two operations (Append, Edit) + priority annotations (Skip/Normal/Pinned) | Operations are commit-level; annotations are lightweight metadata with provenance history | Decided |
 
 ---
 *Last updated: 2026-02-10 after initialization*

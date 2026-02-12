@@ -123,7 +123,7 @@ class TiktokenCounter:
 | Technology | Version | Purpose | Why | Confidence |
 |------------|---------|---------|-----|------------|
 | Click | >=8.1 | CLI framework | Battle-tested, huge ecosystem, used by major tools (Flask, pip, AWS CLI). More control than Typer for complex CLI patterns. Decorator-based is fine for a debugging/inspection tool. | HIGH |
-| rich | >=14.0 | Terminal output formatting | Beautiful tables, syntax highlighting, tree views, progress bars. Essential for `trace log`, `trace diff`, `trace status` output. Works perfectly with Click via rich-click. | HIGH |
+| rich | >=14.0 | Terminal output formatting | Beautiful tables, syntax highlighting, tree views, progress bars. Essential for `tract log`, `tract diff`, `tract status` output. Works perfectly with Click via rich-click. | HIGH |
 | rich-click | >=1.8 | Rich-formatted Click help | Drop-in replacement for Click's help formatter. Zero effort, beautiful help output. | MEDIUM |
 
 **Why Click over Typer:**
@@ -135,7 +135,7 @@ class TiktokenCounter:
 
 **Why NOT argparse:**
 - Verbose, manual help formatting, no built-in support for command groups, poor DX for subcommand-heavy CLIs.
-- Trace needs subcommands (`trace log`, `trace commit`, `trace branch list`) -- Click handles this naturally.
+- Trace needs subcommands (`tract log`, `tract commit`, `tract branch list`) -- Click handles this naturally.
 
 ### Async & HTTP
 

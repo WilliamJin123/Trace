@@ -10,8 +10,8 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Core Operations
 
 - [ ] **CORE-01**: User can initialize a new trace (empty context with metadata)
-- [ ] **CORE-02**: User can commit a context snapshot with message, timestamp, parent pointer, and commit type (append/edit/pin)
-- [ ] **CORE-03**: User can view commit history (log) with token counts per commit and cumulative
+- [x] **CORE-02**: User can commit a context snapshot with message, timestamp, parent pointer, and operation (append/edit); priority annotations (skip/normal/pinned) are separate metadata
+- [ ] **CORE-03**: User can view commit history (log) with token counts per commit
 - [ ] **CORE-04**: User can view current state (status): HEAD, current branch, token budget usage
 - [ ] **CORE-05**: User can compare two commits (diff) with textual difference output
 - [ ] **CORE-06**: User can reset HEAD to a previous commit (soft: keep content accessible, hard: discard forward)
@@ -57,7 +57,7 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Interfaces
 
 - [ ] **INTF-01**: Python SDK as primary interface (Repo.open(), commit(), branch(), merge(), etc.)
-- [ ] **INTF-02**: CLI wrapper for inspection/debugging (trace log, status, diff, etc.) via Click + Rich
+- [ ] **INTF-02**: CLI wrapper for inspection/debugging (tract log, status, diff, etc.) via Click + Rich
 - [ ] **INTF-03**: Built-in LLM client (httpx-based) for compression and semantic merge
 - [ ] **INTF-04**: User-provided callable support for custom LLM operations
 - [ ] **INTF-05**: pip-installable package with documentation and examples
@@ -106,7 +106,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | CORE-01 | Phase 1 | Complete |
-| CORE-02 | Phase 1 | Complete |
+| CORE-02 | Phase 1 | Complete (updated: pin is annotation, not operation) |
 | CORE-03 | Phase 2 | Pending |
 | CORE-04 | Phase 2 | Pending |
 | CORE-05 | Phase 2 | Pending |

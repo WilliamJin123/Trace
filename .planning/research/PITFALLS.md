@@ -198,7 +198,7 @@ Mistakes that cause delays or technical debt but are recoverable without full re
 - **Use incremental blob I/O** (sqlite3.Blob) for large content rather than loading entire rows into memory.
 - **Consider compression** at the storage layer (zlib/lz4 on text content). Text compresses well (typically 3-5x) and the CPU cost is negligible compared to LLM API latency.
 
-**Detection:** Slow `trace log` or `trace status` commands. Database file growing faster than expected. Memory spikes when scanning traces.
+**Detection:** Slow `tract log` or `tract status` commands. Database file growing faster than expected. Memory spikes when scanning traces.
 
 **Phase relevance:** Phase 0 (schema design). This is a schema-level decision that is painful to change after data exists.
 
