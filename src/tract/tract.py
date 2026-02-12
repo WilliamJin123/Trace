@@ -41,6 +41,8 @@ if TYPE_CHECKING:
     from sqlalchemy import Engine
     from sqlalchemy.orm import Session
 
+    from tract.storage.schema import CommitRow
+
 
 class Tract:
     """Primary entry point for Trace -- git-like version control for LLM context.
@@ -296,7 +298,7 @@ class Tract:
         self._session.commit()
 
         # Update compile cache: incremental extend for APPEND,
-        # EDIT patching handled by Task 3, otherwise next compile() rebuilds
+        # in-memory patching for EDIT, otherwise next compile() rebuilds
         if (
             operation == CommitOperation.APPEND
             and isinstance(self._compiler, DefaultContextCompiler)
@@ -305,9 +307,20 @@ class Tract:
             if parent_snapshot is not None:
                 self._extend_snapshot_for_append(info, parent_snapshot)
             # If no parent snapshot, next compile() builds from scratch
-        else:
-            # EDIT path: handled by Task 3 (for now, do nothing -- next compile() rebuilds)
-            pass
+        elif (
+            operation == CommitOperation.EDIT
+            and isinstance(self._compiler, DefaultContextCompiler)
+        ):
+            parent_snapshot = self._cache_get(prev_head) if prev_head else None
+            if parent_snapshot is not None:
+                edit_row = self._commit_repo.get(info.commit_hash)
+                if edit_row is not None:
+                    patched = self._patch_snapshot_for_edit(
+                        parent_snapshot, info.commit_hash, edit_row
+                    )
+                    if patched is not None:
+                        self._cache_put(info.commit_hash, patched)
+            # Do NOT clear cache -- other entries at different HEADs remain valid
 
         return info
 
@@ -392,7 +405,24 @@ class Tract:
         """
         annotation = self._commit_engine.annotate(target_hash, priority, reason)
         self._session.commit()
-        self._cache_clear()
+
+        # Annotations affect ALL cached snapshots that include the target commit.
+        # Strategy: clear everything, then optionally re-add a patched current HEAD.
+        if isinstance(self._compiler, DefaultContextCompiler):
+            current_head = self.head
+            patched = None
+            if current_head:
+                snapshot = self._cache_get(current_head)
+                if snapshot is not None:
+                    patched = self._patch_snapshot_for_annotate(
+                        snapshot, target_hash, priority
+                    )
+            self._cache_clear()  # Clear ALL entries (other HEADs may contain the annotated commit)
+            if patched is not None:
+                self._cache_put(current_head, patched)  # Re-add patched current HEAD
+        else:
+            self._cache_clear()
+
         return annotation
 
     def get_annotations(self, target_hash: str) -> list[PriorityAnnotation]:
@@ -692,6 +722,125 @@ class Tract:
                 commit_hashes=new_commit_hashes,
             ),
         )
+
+    def _patch_snapshot_for_edit(
+        self,
+        parent_snapshot: CompileSnapshot,
+        new_head_hash: str,
+        edit_row: CommitRow,
+    ) -> CompileSnapshot | None:
+        """Patch a cached snapshot for an EDIT commit in-memory.
+
+        Finds the message corresponding to the edited target (via response_to),
+        replaces it with the new message, and recounts tokens.
+
+        Returns None if patching is not possible (missing commit_hashes, target
+        not found), signaling caller to fall back to full recompile on next
+        compile().
+        """
+        if not parent_snapshot.commit_hashes:
+            return None
+
+        target_hash = edit_row.response_to
+        if target_hash is None:
+            return None
+
+        # Find position of the target commit in the snapshot
+        try:
+            target_idx = list(parent_snapshot.commit_hashes).index(target_hash)
+        except ValueError:
+            return None  # Target not in snapshot
+
+        assert isinstance(self._compiler, DefaultContextCompiler)
+        new_message = self._compiler.build_message_for_commit(edit_row)
+
+        # Replace message at target position
+        new_messages = list(parent_snapshot.messages)
+        new_messages[target_idx] = new_message
+
+        # Handle generation_config: edit-inherits-original rule
+        new_configs = list(parent_snapshot.generation_configs)
+        if edit_row.generation_config_json is not None:
+            new_configs[target_idx] = dict(edit_row.generation_config_json)  # copy-on-input
+        # else: keep original config at target_idx (edit-inherits-original)
+
+        # Recount tokens
+        messages_dicts = [
+            {"role": m.role, "content": m.content}
+            if m.name is None
+            else {"role": m.role, "content": m.content, "name": m.name}
+            for m in new_messages
+        ]
+        new_token_count = self._token_counter.count_messages(messages_dicts)
+
+        return CompileSnapshot(
+            head_hash=new_head_hash,
+            messages=tuple(new_messages),
+            commit_count=parent_snapshot.commit_count,  # Same count (EDIT replaces, doesn't add)
+            token_count=new_token_count,
+            token_source=self._tiktoken_source(),
+            generation_configs=tuple(new_configs),
+            commit_hashes=parent_snapshot.commit_hashes,  # Same positions
+        )
+
+    def _patch_snapshot_for_annotate(
+        self,
+        snapshot: CompileSnapshot,
+        target_hash: str,
+        new_priority: Priority,
+    ) -> CompileSnapshot | None:
+        """Patch a cached snapshot for an annotation change.
+
+        SKIP: remove the target's message from the snapshot.
+        NORMAL/PINNED on already-included commit: no change needed.
+        NORMAL/PINNED on previously-SKIP commit: return None (full recompile).
+        """
+        if not snapshot.commit_hashes:
+            return None
+
+        # Find target position
+        target_idx = None
+        for i, ch in enumerate(snapshot.commit_hashes):
+            if ch == target_hash:
+                target_idx = i
+                break
+
+        if new_priority == Priority.SKIP:
+            if target_idx is None:
+                return snapshot  # Already not in snapshot
+
+            # Remove message, config, and hash at target position
+            new_messages = list(snapshot.messages)
+            new_configs = list(snapshot.generation_configs)
+            new_hashes = list(snapshot.commit_hashes)
+            del new_messages[target_idx]
+            del new_configs[target_idx]
+            del new_hashes[target_idx]
+
+            # Recount tokens
+            messages_dicts = [
+                {"role": m.role, "content": m.content}
+                if m.name is None
+                else {"role": m.role, "content": m.content, "name": m.name}
+                for m in new_messages
+            ]
+            new_token_count = self._token_counter.count_messages(messages_dicts)
+
+            return CompileSnapshot(
+                head_hash=snapshot.head_hash,
+                messages=tuple(new_messages),
+                commit_count=snapshot.commit_count - 1,
+                token_count=new_token_count,
+                token_source=self._tiktoken_source(),
+                generation_configs=tuple(new_configs),
+                commit_hashes=tuple(new_hashes),
+            )
+        else:
+            # NORMAL or PINNED
+            if target_idx is not None:
+                return snapshot  # Already included, no change
+            else:
+                return None  # Was skipped, need full recompile (don't have message content)
 
     def register_content_type(self, name: str, model: type[BaseModel]) -> None:
         """Register a custom content type for this tract instance.

@@ -1247,3 +1247,229 @@ class TestGenerationConfig:
         # Compile again -- should return clean copy from cache
         result2 = tract.compile()
         assert result2.generation_configs[0] == config
+
+
+# ===========================================================================
+# LRU Compile Cache and Snapshot Patching (Phase 1.4)
+# ===========================================================================
+
+
+class TestLRUCompileCacheAndPatching:
+    """Tests for LRU compile cache, EDIT patching, annotate patching, and oracle verification."""
+
+    def test_lru_cache_hit_at_same_head(self):
+        """Two compile() calls at same HEAD: second is cache hit."""
+        with Tract.open() as t:
+            t.commit(InstructionContent(text="hello"))
+            r1 = t.compile()
+            r2 = t.compile()
+            assert r1.messages == r2.messages
+            assert r1.token_count == r2.token_count
+
+    def test_lru_multiple_heads_cached(self):
+        """After compiling at different HEADs, both snapshots are in cache."""
+        with Tract.open() as t:
+            t.commit(InstructionContent(text="first"))
+            head_1 = t.head
+            t.compile()
+            t.commit(DialogueContent(role="user", text="second"))
+            head_2 = t.head
+            t.compile()
+            assert t._cache_get(head_1) is not None
+            assert t._cache_get(head_2) is not None
+
+    def test_lru_eviction_at_maxsize(self):
+        """Cache evicts LRU entry when maxsize is exceeded."""
+        config = TractConfig(compile_cache_maxsize=2)
+        with Tract.open(config=config) as t:
+            t.commit(InstructionContent(text="a"))
+            h1 = t.head
+            t.compile()
+            t.commit(DialogueContent(role="user", text="b"))
+            h2 = t.head
+            t.compile()
+            t.commit(DialogueContent(role="assistant", text="c"))
+            h3 = t.head
+            t.compile()
+            assert t._cache_get(h1) is None
+            assert t._cache_get(h2) is not None
+            assert t._cache_get(h3) is not None
+
+    def test_append_incremental_extends_snapshot(self):
+        """APPEND commits extend the cached snapshot incrementally."""
+        with Tract.open() as t:
+            t.commit(InstructionContent(text="system"))
+            t.compile()
+            t.commit(DialogueContent(role="user", text="hello"))
+            r = t.compile()
+            assert r.commit_count == 2
+            assert len(r.messages) == 2
+
+    def test_edit_patching_matches_full_recompile(self):
+        """EDIT patching produces identical result to full recompile (oracle test)."""
+        with Tract.open(verify_cache=True) as t:
+            c1 = t.commit(InstructionContent(text="System prompt"))
+            c2 = t.commit(DialogueContent(role="user", text="Original question"))
+            c3 = t.commit(DialogueContent(role="assistant", text="Original answer"))
+            t.compile()  # Populate cache with commit_hashes
+
+            t.commit(
+                DialogueContent(role="user", text="Edited question"),
+                operation=CommitOperation.EDIT,
+                response_to=c2.commit_hash,
+            )
+            # verify_cache=True asserts patched == fresh
+            result = t.compile()
+            assert any("Edited question" in m.content for m in result.messages)
+            assert not any("Original question" in m.content for m in result.messages)
+
+    def test_edit_patching_preserves_generation_config(self):
+        """EDIT without generation_config preserves original's config."""
+        with Tract.open(verify_cache=True) as t:
+            c1 = t.commit(
+                InstructionContent(text="System"),
+                generation_config={"temperature": 0.7},
+            )
+            t.compile()
+
+            t.commit(
+                InstructionContent(text="Edited system"),
+                operation=CommitOperation.EDIT,
+                response_to=c1.commit_hash,
+            )
+            result = t.compile()
+            assert result.generation_configs[0] == {"temperature": 0.7}
+
+    def test_edit_patching_with_new_config(self):
+        """EDIT with its own generation_config replaces the original's config."""
+        with Tract.open(verify_cache=True) as t:
+            c1 = t.commit(
+                InstructionContent(text="System"),
+                generation_config={"temperature": 0.7},
+            )
+            t.compile()
+
+            t.commit(
+                InstructionContent(text="Edited system"),
+                operation=CommitOperation.EDIT,
+                response_to=c1.commit_hash,
+                generation_config={"temperature": 0.9},
+            )
+            result = t.compile()
+            assert result.generation_configs[0] == {"temperature": 0.9}
+
+    def test_annotate_skip_removes_message(self):
+        """Annotating with SKIP patches snapshot by removing message."""
+        with Tract.open(verify_cache=True) as t:
+            c1 = t.commit(InstructionContent(text="System"))
+            c2 = t.commit(DialogueContent(role="user", text="Hello"))
+            c3 = t.commit(DialogueContent(role="assistant", text="Hi"))
+            t.compile()
+
+            t.annotate(c2.commit_hash, Priority.SKIP)
+            result = t.compile()
+            assert result.commit_count == 2  # c1 and c3 only
+            assert not any("Hello" in m.content for m in result.messages)
+
+    def test_annotate_unskip_falls_back_to_recompile(self):
+        """Un-skipping a commit triggers full recompile."""
+        with Tract.open(verify_cache=True) as t:
+            c1 = t.commit(InstructionContent(text="System"))
+            c2 = t.commit(DialogueContent(role="user", text="Hello"))
+            t.annotate(c2.commit_hash, Priority.SKIP)
+            t.compile()
+
+            t.annotate(c2.commit_hash, Priority.NORMAL)
+            result = t.compile()
+            assert result.commit_count == 2
+            assert any("Hello" in m.content for m in result.messages)
+
+    def test_annotate_clears_stale_cache_entries(self):
+        """Annotation clears other cached snapshots (they may contain the annotated commit)."""
+        with Tract.open() as t:
+            t.commit(InstructionContent(text="System"))
+            h1 = t.head
+            t.compile()  # Cache entry for h1
+            t.commit(DialogueContent(role="user", text="Hello"))
+            h2 = t.head
+            t.compile()  # Cache entry for h2
+            assert t._cache_get(h1) is not None
+            assert t._cache_get(h2) is not None
+
+            # Annotate a commit -- should clear h1 (stale), keep patched h2
+            t.annotate(h1, Priority.SKIP)
+            assert t._cache_get(h1) is None  # Cleared
+            assert t._cache_get(h2) is not None  # Patched and re-added
+
+    def test_batch_clears_entire_cache(self):
+        """batch() clears the entire LRU cache."""
+        with Tract.open() as t:
+            t.commit(InstructionContent(text="first"))
+            t.compile()
+            assert len(t._snapshot_cache) == 1
+            with t.batch():
+                t.commit(DialogueContent(role="user", text="batched"))
+            assert len(t._snapshot_cache) == 0
+
+    def test_record_usage_updates_correct_cache_entry(self):
+        """record_usage() updates token count in the LRU cache entry."""
+        with Tract.open() as t:
+            t.commit(InstructionContent(text="hello"))
+            t.compile()
+
+            updated = t.record_usage({"prompt_tokens": 42, "completion_tokens": 10, "total_tokens": 52})
+            assert updated.token_count == 42
+            assert "api:" in updated.token_source
+
+            cached = t._cache_get(t.head)
+            assert cached is not None
+            assert cached.token_count == 42
+
+    def test_commit_hashes_parallel_to_messages(self):
+        """commit_hashes and messages have same length after all operations."""
+        with Tract.open() as t:
+            c1 = t.commit(InstructionContent(text="a"))
+            c2 = t.commit(DialogueContent(role="user", text="b"))
+            result = t.compile()
+            assert len(result.commit_hashes) == len(result.messages) == 2
+            assert result.commit_hashes[0] == c1.commit_hash
+            assert result.commit_hashes[1] == c2.commit_hash
+
+    def test_commit_hashes_extend_on_append(self):
+        """Incremental APPEND extends commit_hashes."""
+        with Tract.open() as t:
+            c1 = t.commit(InstructionContent(text="a"))
+            t.compile()
+            c2 = t.commit(DialogueContent(role="user", text="b"))
+            snapshot = t._cache_get(t.head)
+            assert snapshot is not None
+            assert len(snapshot.commit_hashes) == 2
+            assert snapshot.commit_hashes[1] == c2.commit_hash
+
+    def test_verify_cache_flag_default_false(self):
+        """verify_cache defaults to False."""
+        with Tract.open() as t:
+            assert t._verify_cache is False
+            t.commit(InstructionContent(text="test"))
+            t.compile()  # Should work without oracle check
+
+    def test_consecutive_same_role_with_edit_patching(self):
+        """EDIT patching works correctly with consecutive same-role messages (no aggregation)."""
+        with Tract.open(verify_cache=True) as t:
+            c1 = t.commit(DialogueContent(role="user", text="Q1"))
+            c2 = t.commit(DialogueContent(role="user", text="Q2"))
+            c3 = t.commit(DialogueContent(role="assistant", text="A1"))
+            t.compile()
+
+            # Edit c1's content
+            t.commit(
+                DialogueContent(role="user", text="Edited Q1"),
+                operation=CommitOperation.EDIT,
+                response_to=c1.commit_hash,
+            )
+            result = t.compile()
+            # 3 messages: "Edited Q1", "Q2", "A1" (no aggregation)
+            assert len(result.messages) == 3
+            assert result.messages[0].content == "Edited Q1"
+            assert result.messages[1].content == "Q2"
+            assert result.messages[2].content == "A1"
