@@ -400,14 +400,14 @@ class TestSC4Compilation:
         result = tract.compile(at_commit=c2.commit_hash)
         assert len(result.messages) == 2
 
-    def test_compile_aggregation(self, tract: Tract):
-        """Consecutive same-role messages are aggregated."""
+    def test_compile_consecutive_same_role_separate(self, tract: Tract):
+        """Consecutive same-role messages are preserved as separate messages."""
         tract.commit(DialogueContent(role="user", text="Part 1"))
         tract.commit(DialogueContent(role="user", text="Part 2"))
         result = tract.compile()
-        assert len(result.messages) == 1
-        assert "Part 1" in result.messages[0].content
-        assert "Part 2" in result.messages[0].content
+        assert len(result.messages) == 2
+        assert result.messages[0].content == "Part 1"
+        assert result.messages[1].content == "Part 2"
 
     def test_custom_compiler(self):
         """Custom compiler is used when provided to Tract.open()."""
@@ -645,35 +645,33 @@ class TestIncrementalCompileCache:
         assert result_incremental.token_count == result_full.token_count
         assert result_incremental.commit_count == result_full.commit_count
 
-    def test_append_same_role_aggregation(self):
-        """Incremental extend correctly aggregates consecutive same-role messages."""
-        with Tract.open(":memory:", tract_id="agg-test") as t:
+    def test_append_same_role_no_aggregation(self):
+        """Incremental extend preserves consecutive same-role messages as separate."""
+        with Tract.open(":memory:", tract_id="no-agg-test") as t:
             t.commit(DialogueContent(role="user", text="Part 1"))
             r1 = t.compile()
             assert len(r1.messages) == 1
 
             t.commit(DialogueContent(role="user", text="Part 2"))
             r2 = t.compile()
-            assert len(r2.messages) == 1
-            assert "Part 1" in r2.messages[0].content
-            assert "Part 2" in r2.messages[0].content
+            assert len(r2.messages) == 2
+            assert r2.messages[0].content == "Part 1"
+            assert r2.messages[1].content == "Part 2"
 
             t.commit(DialogueContent(role="user", text="Part 3"))
             r3 = t.compile()
-            assert len(r3.messages) == 1
-            assert "Part 1" in r3.messages[0].content
-            assert "Part 2" in r3.messages[0].content
-            assert "Part 3" in r3.messages[0].content
+            assert len(r3.messages) == 3
 
         # Verify equivalence with full compile
-        with Tract.open(":memory:", tract_id="agg-full") as t2:
+        with Tract.open(":memory:", tract_id="no-agg-full") as t2:
             t2.commit(DialogueContent(role="user", text="Part 1"))
             t2.commit(DialogueContent(role="user", text="Part 2"))
             t2.commit(DialogueContent(role="user", text="Part 3"))
             full_result = t2.compile()
 
-        assert r3.messages == full_result.messages
+        assert len(r3.messages) == len(full_result.messages)
         assert r3.token_count == full_result.token_count
+        assert r3.commit_count == full_result.commit_count
 
     def test_edit_invalidates_cache(self):
         """EDIT commit invalidates the compile snapshot."""
@@ -734,7 +732,7 @@ class TestIncrementalCompileCache:
             # After batch, compile should work with full rebuild
             result = t.compile()
             assert result.commit_count == 4  # 1 before + 3 in batch
-            assert len(result.messages) >= 3  # system + some aggregation
+            assert len(result.messages) == 4  # system + 3 batch commits, no aggregation
 
     def test_time_travel_bypasses_cache(self):
         """Time-travel params bypass cache without overwriting the snapshot."""

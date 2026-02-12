@@ -35,24 +35,24 @@ class CompiledContext:
     commit_count: int = 0
     token_source: str = ""
     generation_configs: list[dict] = field(default_factory=list)
+    commit_hashes: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
 class CompileSnapshot:
     """Cached intermediate compilation state for incremental extension.
 
-    Stores both pre-aggregation and post-aggregation messages so that
-    tail aggregation can be computed correctly when extending.
+    Each position in ``messages`` corresponds to one effective commit.
+    ``commit_hashes[i]`` is the commit that produced ``messages[i]``.
     """
 
     head_hash: str
-    raw_messages: tuple[Message, ...]
-    aggregated_messages: tuple[Message, ...]
-    effective_hashes: frozenset[str]
+    messages: tuple[Message, ...]
     commit_count: int
     token_count: int
     token_source: str
     generation_configs: tuple[dict, ...] = ()
+    commit_hashes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

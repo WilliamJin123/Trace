@@ -480,13 +480,12 @@ class Tract:
             token_source = f"api:{usage.prompt_tokens}+{usage.completion_tokens}"
             self._compile_snapshot = CompileSnapshot(
                 head_hash=self._compile_snapshot.head_hash,
-                raw_messages=self._compile_snapshot.raw_messages,
-                aggregated_messages=self._compile_snapshot.aggregated_messages,
-                effective_hashes=self._compile_snapshot.effective_hashes,
+                messages=self._compile_snapshot.messages,
                 commit_count=self._compile_snapshot.commit_count,
                 token_count=usage.prompt_tokens,
                 token_source=token_source,
                 generation_configs=self._compile_snapshot.generation_configs,
+                commit_hashes=self._compile_snapshot.commit_hashes,
             )
             return self._snapshot_to_compiled(self._compile_snapshot)
 
@@ -570,11 +569,12 @@ class Tract:
         of the returned CompiledContext from corrupting the cached snapshot.
         """
         return CompiledContext(
-            messages=list(snapshot.aggregated_messages),
+            messages=list(snapshot.messages),
             token_count=snapshot.token_count,
             commit_count=snapshot.commit_count,
             token_source=snapshot.token_source,
             generation_configs=[dict(c) for c in snapshot.generation_configs],
+            commit_hashes=list(snapshot.commit_hashes),
         )
 
     def _build_snapshot_from_compiled(
@@ -589,13 +589,12 @@ class Tract:
             return None
         return CompileSnapshot(
             head_hash=head_hash,
-            raw_messages=tuple(result.messages),
-            aggregated_messages=tuple(result.messages),
-            effective_hashes=frozenset(),
+            messages=tuple(result.messages),
             commit_count=result.commit_count,
             token_count=result.token_count,
             token_source=result.token_source,
             generation_configs=tuple(dict(c) for c in result.generation_configs),
+            commit_hashes=tuple(result.commit_hashes),
         )
 
     def _tiktoken_source(self) -> str:
@@ -607,8 +606,7 @@ class Tract:
     def _extend_snapshot_for_append(self, commit_info: CommitInfo) -> None:
         """Incrementally extend the cached snapshot for an APPEND commit.
 
-        Builds the message for the new commit, applies tail aggregation
-        if the new message has the same role as the last aggregated message,
+        Builds the message for the new commit, appends it (no aggregation),
         and recounts tokens.
         """
         snapshot = self._compile_snapshot
@@ -622,43 +620,28 @@ class Tract:
 
         assert isinstance(self._compiler, DefaultContextCompiler)
         new_message = self._compiler.build_message_for_commit(commit_row)
-        new_config = commit_row.generation_config_json or {}
+        new_config = dict(commit_row.generation_config_json or {})
 
-        new_raw = snapshot.raw_messages + (new_message,)
+        new_messages = snapshot.messages + (new_message,)
+        new_commit_hashes = snapshot.commit_hashes + (commit_info.commit_hash,)
 
-        # Tail aggregation: merge if same role as last aggregated message
-        if (
-            snapshot.aggregated_messages
-            and new_message.role == snapshot.aggregated_messages[-1].role
-        ):
-            last = snapshot.aggregated_messages[-1]
-            merged = Message(
-                role=last.role,
-                content=last.content + "\n\n" + new_message.content,
-                name=last.name,
-            )
-            new_aggregated = snapshot.aggregated_messages[:-1] + (merged,)
-        else:
-            new_aggregated = snapshot.aggregated_messages + (new_message,)
-
-        # Recount tokens on the aggregated messages
+        # Recount tokens on all messages
         messages_dicts = [
             {"role": m.role, "content": m.content}
             if m.name is None
             else {"role": m.role, "content": m.content, "name": m.name}
-            for m in new_aggregated
+            for m in new_messages
         ]
         new_token_count = self._token_counter.count_messages(messages_dicts)
 
         self._compile_snapshot = CompileSnapshot(
             head_hash=commit_info.commit_hash,
-            raw_messages=new_raw,
-            aggregated_messages=new_aggregated,
-            effective_hashes=snapshot.effective_hashes | {commit_info.commit_hash},
+            messages=new_messages,
             commit_count=snapshot.commit_count + 1,
             token_count=new_token_count,
             token_source=self._tiktoken_source(),
             generation_configs=snapshot.generation_configs + (new_config,),
+            commit_hashes=new_commit_hashes,
         )
 
     def register_content_type(self, name: str, model: type[BaseModel]) -> None:

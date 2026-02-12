@@ -33,8 +33,6 @@ class CompileOptions(BaseModel):
     type_to_role_map: Optional[dict[str, str]] = None
     """Custom overrides for content_type -> role mapping."""
 
-    aggregate_same_role: bool = True
-    """If True, concatenate consecutive same-role messages."""
 
 
 __all__ = ["CompileOptions", "CompiledContext", "Message"]

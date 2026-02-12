@@ -2,7 +2,7 @@
 
 Converts a commit chain into LLM-ready structured messages.
 Handles edit resolution, priority filtering, time-travel compilation,
-type-to-role mapping, and same-role message aggregation.
+and type-to-role mapping.
 """
 
 from __future__ import annotations
@@ -103,7 +103,10 @@ class DefaultContextCompiler:
         # Step 4: Build effective commit list
         effective_commits = self._build_effective_commits(commits, edit_map, priority_map)
 
-        # Step 4b: Collect generation configs for effective commits
+        # Step 4b: Extract commit hashes for effective commits (parallel to messages)
+        effective_commit_hashes = [c.commit_hash for c in effective_commits]
+
+        # Step 4c: Collect generation configs for effective commits
         generation_configs: list[dict] = []
         for c in effective_commits:
             # If this commit was edited, prefer the edit's config;
@@ -118,10 +121,7 @@ class DefaultContextCompiler:
         # Step 5-6: Map to messages
         messages = self._build_messages(effective_commits, edit_map, include_edit_annotations)
 
-        # Step 7: Aggregate same-role consecutive messages
-        messages = self._aggregate_messages(messages)
-
-        # Step 8: Count tokens on compiled output
+        # Step 7: Count tokens on compiled output
         messages_dicts = [
             {"role": m.role, "content": m.content}
             if m.name is None
@@ -139,6 +139,7 @@ class DefaultContextCompiler:
             commit_count=len(effective_commits),
             token_source=token_source,
             generation_configs=generation_configs,
+            commit_hashes=effective_commit_hashes,
         )
 
     def _walk_chain(
@@ -347,26 +348,3 @@ class DefaultContextCompiler:
 
         return json.dumps(content_data)
 
-    def _aggregate_messages(self, messages: list[Message]) -> list[Message]:
-        """Aggregate consecutive same-role messages by concatenating content.
-
-        Does NOT aggregate across role boundaries.
-        """
-        if not messages:
-            return messages
-
-        aggregated: list[Message] = []
-        current = messages[0]
-
-        for msg in messages[1:]:
-            if msg.role == current.role:
-                # Concatenate with double newline
-                new_content = current.content + "\n\n" + msg.content
-                # Use name from first message in the group
-                current = Message(role=current.role, content=new_content, name=current.name)
-            else:
-                aggregated.append(current)
-                current = msg
-
-        aggregated.append(current)
-        return aggregated

@@ -368,22 +368,23 @@ class TestTimeTravel:
 # =========================================================================
 
 
-class TestAggregation:
-    """Tests for same-role consecutive message aggregation."""
+class TestNoAggregation:
+    """Consecutive same-role messages remain separate (no aggregation)."""
 
-    def test_consecutive_same_role_aggregated(self, commit_engine, compiler) -> None:
-        """Two consecutive user messages are concatenated."""
+    def test_consecutive_same_role_separate(self, commit_engine, compiler) -> None:
+        """Two consecutive user messages remain as two separate messages."""
         commit_engine.create_commit(DialogueContent(role="user", text="Part 1"))
         c2 = commit_engine.create_commit(DialogueContent(role="user", text="Part 2"))
 
         result = compiler.compile(TRACT_ID, c2.commit_hash)
 
-        assert len(result.messages) == 1
-        assert "Part 1" in result.messages[0].content
-        assert "Part 2" in result.messages[0].content
+        assert len(result.messages) == 2
+        assert result.messages[0].content == "Part 1"
+        assert result.messages[1].content == "Part 2"
         assert result.messages[0].role == "user"
+        assert result.messages[1].role == "user"
 
-    def test_different_roles_not_aggregated(self, commit_engine, compiler) -> None:
+    def test_different_roles_separate(self, commit_engine, compiler) -> None:
         """Messages with different roles remain separate."""
         commit_engine.create_commit(DialogueContent(role="user", text="Hello"))
         c2 = commit_engine.create_commit(DialogueContent(role="assistant", text="Hi"))
@@ -394,8 +395,8 @@ class TestAggregation:
         assert result.messages[0].role == "user"
         assert result.messages[1].role == "assistant"
 
-    def test_aggregation_preserves_boundaries(self, commit_engine, compiler) -> None:
-        """user-user-assistant-user becomes 3 messages (agg, single, single)."""
+    def test_mixed_roles_all_preserved(self, commit_engine, compiler) -> None:
+        """user-user-assistant-user produces 4 messages, not 3."""
         commit_engine.create_commit(DialogueContent(role="user", text="A"))
         commit_engine.create_commit(DialogueContent(role="user", text="B"))
         commit_engine.create_commit(DialogueContent(role="assistant", text="C"))
@@ -403,14 +404,24 @@ class TestAggregation:
 
         result = compiler.compile(TRACT_ID, c4.commit_hash)
 
-        assert len(result.messages) == 3
-        assert result.messages[0].role == "user"
-        assert "A" in result.messages[0].content
-        assert "B" in result.messages[0].content
-        assert result.messages[1].role == "assistant"
-        assert result.messages[1].content == "C"
-        assert result.messages[2].role == "user"
-        assert result.messages[2].content == "D"
+        assert len(result.messages) == 4
+        assert result.messages[0].content == "A"
+        assert result.messages[1].content == "B"
+        assert result.messages[2].content == "C"
+        assert result.messages[3].content == "D"
+
+    def test_commit_hashes_parallel_to_messages(self, commit_engine, compiler) -> None:
+        """CompiledContext.commit_hashes is parallel to messages."""
+        c1 = commit_engine.create_commit(DialogueContent(role="user", text="A"))
+        c2 = commit_engine.create_commit(DialogueContent(role="user", text="B"))
+        c3 = commit_engine.create_commit(DialogueContent(role="assistant", text="C"))
+
+        result = compiler.compile(TRACT_ID, c3.commit_hash)
+
+        assert len(result.commit_hashes) == len(result.messages)
+        assert result.commit_hashes[0] == c1.commit_hash
+        assert result.commit_hashes[1] == c2.commit_hash
+        assert result.commit_hashes[2] == c3.commit_hash
 
 
 # =========================================================================
