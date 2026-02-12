@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-10)
 
 **Core value:** Agents produce better outputs when their context is clean, coherent, and relevant. Trace makes context a managed, version-controlled resource.
-**Current focus:** Phase 2 in progress -- Navigation + read operations complete, CLI wrapper next.
+**Current focus:** Phase 2 complete -- Navigation, read operations, and CLI all done. Ready for Phase 3 (branching).
 
 ## Current Position
 
 Phase: 2 of 5 (Linear History & CLI)
-Plan: 2 of 3 in current phase
-Status: In progress
-Last activity: 2026-02-12 - Completed 02-02-PLAN.md
+Plan: 3 of 3 in current phase
+Status: Phase complete
+Last activity: 2026-02-12 - Completed 02-03-PLAN.md
 
-Progress: [##########....] 50% (10/20 plans)
+Progress: [###########...] 55% (11/20 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 10
+- Total plans completed: 11
 - Average duration: 5m
-- Total execution time: 0.90 hours
+- Total execution time: 0.98 hours
 
 **By Phase:**
 
@@ -32,10 +32,10 @@ Progress: [##########....] 50% (10/20 plans)
 | 1.2 | 1/1 | 3m | 3m |
 | 1.3 | 1/1 | 3m | 3m |
 | 1.4 | 1/1 | 4m | 4m |
-| 2 | 2/3 | 9m | 4.5m |
+| 2 | 3/3 | 14m | 4.7m |
 
 **Recent Trend:**
-- Last 5 plans: 01.2-01 (3m), 01.3-01 (3m), 01.4-01 (4m), 02-01 (5m), 02-02 (4m)
+- Last 5 plans: 01.3-01 (3m), 01.4-01 (4m), 02-01 (5m), 02-02 (4m), 02-03 (5m)
 - Trend: stable execution times around 4-5m per plan
 
 *Updated after each plan completion*
@@ -94,6 +94,11 @@ Recent decisions affecting current work:
 - [02-02]: op_filter walks through all ancestors but only collects matching ones (limit applies to matches)
 - [02-02]: EDIT auto-resolve in diff: when commit_b is EDIT, commit_a defaults to response_to target
 - [02-02]: Generation config changes computed from last non-empty config in each chain
+- [02-03]: CLI module never imported from tract/__init__.py; only loaded via entry point
+- [02-03]: Auto-discovery queries refs table for single tract_id when --tract-id omitted
+- [02-03]: Token budget not persisted to DB; CLI opens with default config
+- [02-03]: --force guard on hard reset as safety mechanism
+- [02-03]: CLI tests use file-backed databases (not :memory:) since CLI opens own connection
 
 ### Pending Todos
 
@@ -163,17 +168,19 @@ Total test suite: 250 tests passing.
 
 Total test suite: 267 tests passing.
 
-## Phase 2 Stats (in progress)
+## Phase 2 Final Stats
 
 | Plan | Name | Tests | Duration |
 |------|------|-------|----------|
 | 02-01 | Navigation Infrastructure | 35 | 5m |
 | 02-02 | Read Operations (log/status/diff) | 27 | 4m |
+| 02-03 | CLI Layer | 30 | 5m |
+| **Total** | | **92** | **14m** |
 
-Total test suite: 329 tests passing.
+Total test suite: 359 tests passing.
 
 ## Session Continuity
 
 Last session: 2026-02-12
-Stopped at: Completed 02-02-PLAN.md (Read Operations). Phase 2 plan 2 of 3 complete.
+Stopped at: Completed 02-03-PLAN.md (CLI Layer). Phase 2 complete (3/3 plans).
 Resume file: None
