@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-10)
 
 **Core value:** Agents produce better outputs when their context is clean, coherent, and relevant. Trace makes context a managed, version-controlled resource.
-**Current focus:** Phase 1.4 COMPLETE. Ready for Phase 2 (Linear History & CLI).
+**Current focus:** Phase 2 in progress -- Navigation infrastructure complete, log/status/diff next.
 
 ## Current Position
 
 Phase: 2 of 5 (Linear History & CLI)
-Plan: 0 of ? in current phase
-Status: Phase 1.4 complete -- ready for Phase 2
-Last activity: 2026-02-11 - Completed 01.4-01-PLAN.md
+Plan: 1 of 3 in current phase
+Status: In progress
+Last activity: 2026-02-12 - Completed 02-01-PLAN.md
 
-Progress: [########......] 40% (8/20 plans)
+Progress: [#########.....] 45% (9/20 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 8
+- Total plans completed: 9
 - Average duration: 5m
-- Total execution time: 0.75 hours
+- Total execution time: 0.83 hours
 
 **By Phase:**
 
@@ -32,10 +32,11 @@ Progress: [########......] 40% (8/20 plans)
 | 1.2 | 1/1 | 3m | 3m |
 | 1.3 | 1/1 | 3m | 3m |
 | 1.4 | 1/1 | 4m | 4m |
+| 2 | 1/3 | 5m | 5m |
 
 **Recent Trend:**
-- Last 5 plans: 01.1-01 (3m), 01.1-02 (3m), 01.2-01 (3m), 01.3-01 (3m), 01.4-01 (4m)
-- Trend: incremental plans on solid foundation execute very fast
+- Last 5 plans: 01.1-02 (3m), 01.2-01 (3m), 01.3-01 (3m), 01.4-01 (4m), 02-01 (5m)
+- Trend: stable execution times, Phase 2 plan 1 slightly larger scope
 
 *Updated after each plan completion*
 
@@ -82,6 +83,12 @@ Recent decisions affecting current work:
 - [01.4-01]: Annotate SKIP patches snapshot by removing target; un-skip falls back to full recompile; entire cache cleared on annotation, then patched current HEAD re-added
 - [01.4-01]: verify_cache=True on Tract.open() cross-checks cache hit/patch against full recompile (oracle testing)
 - [01.4-01]: batch() clears entire LRU cache; crash loses cache; DB is always source of truth
+- [02-01]: Symbolic HEAD: first commit creates HEAD -> refs/heads/main symbolic ref (git-style)
+- [02-01]: update_head backward compat: detects attached/detached/new state and updates correctly
+- [02-01]: checkout('-') reads PREV_HEAD before overwriting to avoid self-reference bug
+- [02-01]: reset soft == hard in Trace (no working directory); distinction for API compatibility
+- [02-01]: Prefix matching minimum 4 characters (same as git)
+- [02-01]: operations/ package established for higher-level composites over storage primitives
 
 ### Pending Todos
 
@@ -151,8 +158,16 @@ Total test suite: 250 tests passing.
 
 Total test suite: 267 tests passing.
 
+## Phase 2 Stats (in progress)
+
+| Plan | Name | Tests | Duration |
+|------|------|-------|----------|
+| 02-01 | Navigation Infrastructure | 35 | 5m |
+
+Total test suite: 302 tests passing.
+
 ## Session Continuity
 
-Last session: 2026-02-11
-Stopped at: Completed 01.4-01-PLAN.md (LRU Compile Cache & Snapshot Patching). Phase 1.4 complete (1/1 plans).
+Last session: 2026-02-12
+Stopped at: Completed 02-01-PLAN.md (Navigation Infrastructure). Phase 2 plan 1 of 3 complete.
 Resume file: None
