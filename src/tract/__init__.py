@@ -49,6 +49,8 @@ from tract.exceptions import (
     ContentValidationError,
     BudgetExceededError,
     EditTargetError,
+    DetachedHeadError,
+    AmbiguousPrefixError,
 )
 
 __all__ = [
@@ -90,4 +92,6 @@ __all__ = [
     "ContentValidationError",
     "BudgetExceededError",
     "EditTargetError",
+    "DetachedHeadError",
+    "AmbiguousPrefixError",
 ]

@@ -25,7 +25,7 @@ from tract.models.annotations import Priority, PriorityAnnotation
 from tract.models.commit import CommitInfo, CommitOperation
 from tract.models.config import TractConfig
 from tract.models.content import validate_content
-from tract.exceptions import ContentValidationError, TraceError
+from tract.exceptions import ContentValidationError, DetachedHeadError, TraceError
 from tract.protocols import CompiledContext, CompileSnapshot, ContextCompiler, Message, TokenCounter, TokenUsage
 from tract.storage.engine import create_session_factory, create_trace_engine, init_db
 from tract.storage.sqlite import (
@@ -251,6 +251,16 @@ class Tract:
         """The tract configuration."""
         return self._config
 
+    @property
+    def is_detached(self) -> bool:
+        """Whether HEAD is in detached state (pointing directly at a commit)."""
+        return self._ref_repo.is_detached(self._tract_id)
+
+    @property
+    def current_branch(self) -> str | None:
+        """The current branch name, or *None* if HEAD is detached."""
+        return self._ref_repo.get_current_branch(self._tract_id)
+
     # ------------------------------------------------------------------
     # Public methods
     # ------------------------------------------------------------------
@@ -279,6 +289,10 @@ class Tract:
         Returns:
             :class:`CommitInfo` for the new commit.
         """
+        # Guard: detached HEAD blocks commits
+        if self._ref_repo.is_detached(self._tract_id):
+            raise DetachedHeadError()
+
         # Auto-validate dicts through the content type system
         if isinstance(content, dict):
             content = validate_content(content, custom_registry=self._custom_type_registry)
@@ -486,6 +500,85 @@ class Tract:
             self._tract_id, field, operator, value
         )
         return [self._commit_engine._row_to_info(row) for row in rows]
+
+    def resolve_commit(self, ref_or_prefix: str) -> str:
+        """Resolve a commit reference to a full commit hash.
+
+        Resolution order:
+        1. Full commit hash (exact match)
+        2. Branch name
+        3. Hash prefix (min 4 chars)
+
+        Args:
+            ref_or_prefix: A commit hash, branch name, or hash prefix.
+
+        Returns:
+            The full commit hash.
+
+        Raises:
+            CommitNotFoundError: If no commit can be resolved.
+            AmbiguousPrefixError: If a prefix matches multiple commits.
+        """
+        from tract.operations.navigation import resolve_commit as _resolve
+
+        return _resolve(
+            ref_or_prefix, self._tract_id, self._commit_repo, self._ref_repo
+        )
+
+    def reset(
+        self,
+        target: str,
+        *,
+        mode: str = "soft",
+    ) -> str:
+        """Reset HEAD to a target commit.
+
+        Stores the current HEAD as ORIG_HEAD before moving.
+
+        Args:
+            target: A commit hash, branch name, or hash prefix.
+            mode: ``"soft"`` (default) or ``"hard"``.  In Trace both behave
+                identically (no working directory to clean).
+
+        Returns:
+            The resolved target commit hash (new HEAD).
+
+        Raises:
+            CommitNotFoundError: If target cannot be resolved.
+        """
+        from tract.operations.navigation import reset as _reset
+
+        resolved = self.resolve_commit(target)
+        result = _reset(resolved, mode, self._tract_id, self._ref_repo)  # type: ignore[arg-type]
+        self._session.commit()
+        return result
+
+    def checkout(self, target: str) -> str:
+        """Checkout a commit or branch.
+
+        - Branch name: attach HEAD to that branch (enables commits).
+        - Commit hash/prefix: detach HEAD (read-only inspection).
+        - ``"-"``: return to previous position via PREV_HEAD.
+
+        Stores the current HEAD as PREV_HEAD before switching.
+
+        Args:
+            target: A branch name, commit hash, hash prefix, or ``"-"``.
+
+        Returns:
+            The resolved commit hash at the new HEAD position.
+
+        Raises:
+            CommitNotFoundError: If the target cannot be resolved.
+            TraceError: If ``"-"`` is used but no PREV_HEAD exists.
+        """
+        from tract.operations.navigation import checkout as _checkout
+
+        commit_hash, _is_detached = _checkout(
+            target, self._tract_id, self._commit_repo, self._ref_repo
+        )
+        self._session.commit()
+        return commit_hash
 
     def record_usage(
         self,
