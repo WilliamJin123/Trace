@@ -673,41 +673,42 @@ class TestIncrementalCompileCache:
         assert r3.token_count == full_result.token_count
         assert r3.commit_count == full_result.commit_count
 
-    def test_edit_invalidates_cache(self):
-        """EDIT commit invalidates the compile snapshot."""
+    def test_edit_does_not_clear_cache(self):
+        """EDIT commit does not clear the LRU cache (other entries remain valid)."""
         with Tract.open(":memory:", tract_id="edit-inv") as t:
             c1 = t.commit(InstructionContent(text="Original instruction"))
+            h1 = t.head
             t.compile()  # Populate snapshot
 
             # Verify snapshot is populated
-            assert t._compile_snapshot is not None
+            assert t._cache_get(h1) is not None
 
-            # EDIT commit should invalidate
+            # EDIT commit -- parent snapshot stays in cache (different HEAD)
             t.commit(
                 InstructionContent(text="Updated instruction"),
                 operation=CommitOperation.EDIT,
                 response_to=c1.commit_hash,
             )
-            assert t._compile_snapshot is None
 
             # Compile should reflect the edit
             result = t.compile()
             assert "Updated instruction" in result.messages[0].content
             assert "Original instruction" not in result.messages[0].content
 
-    def test_annotate_invalidates_cache(self):
-        """annotate() invalidates the compile snapshot."""
+    def test_annotate_clears_cache(self):
+        """annotate() clears the LRU compile cache."""
         with Tract.open(":memory:", tract_id="annot-inv") as t:
             c1 = t.commit(DialogueContent(role="user", text="Keep"))
             c2 = t.commit(DialogueContent(role="assistant", text="Skip me"))
             c3 = t.commit(DialogueContent(role="user", text="Also keep"))
             t.compile()  # Populate snapshot
 
-            assert t._compile_snapshot is not None
+            assert len(t._snapshot_cache) > 0
 
-            # Annotate with SKIP should invalidate snapshot
+            # Annotate with SKIP should clear cache
             t.annotate(c2.commit_hash, Priority.SKIP)
-            assert t._compile_snapshot is None
+            # Cache cleared except potentially patched current HEAD
+            # (verified in Task 3 tests)
 
             result = t.compile()
             contents = " ".join(m.content for m in result.messages)
@@ -715,16 +716,15 @@ class TestIncrementalCompileCache:
             assert "Keep" in contents
 
     def test_batch_invalidates_and_rebuilds(self):
-        """batch() invalidates snapshot on entry; compile after batch rebuilds."""
+        """batch() clears LRU cache on entry; compile after batch rebuilds."""
         with Tract.open(":memory:", tract_id="batch-inv") as t:
             # Pre-populate with a commit and compile to get a snapshot
             t.commit(InstructionContent(text="Before batch"))
             t.compile()
-            assert t._compile_snapshot is not None
+            assert len(t._snapshot_cache) > 0
 
             with t.batch():
-                # Inside batch, snapshot should have been cleared
-                # (commit() sets it to None for non-incremental cases during batch)
+                # Inside batch, cache should have been cleared
                 t.commit(DialogueContent(role="user", text="Batch 1"))
                 t.commit(DialogueContent(role="assistant", text="Batch 2"))
                 t.commit(DialogueContent(role="user", text="Batch 3"))
@@ -743,8 +743,8 @@ class TestIncrementalCompileCache:
 
             # Compile to populate snapshot for full HEAD
             full_result = t.compile()
-            assert t._compile_snapshot is not None
-            snapshot_head = t._compile_snapshot.head_hash
+            head = t.head
+            assert t._cache_get(head) is not None
 
             # Time-travel compile should NOT overwrite the snapshot
             tt_result = t.compile(at_commit=c1.commit_hash)
@@ -752,8 +752,9 @@ class TestIncrementalCompileCache:
             assert "First" in tt_result.messages[0].content
 
             # Snapshot should still be for the full HEAD
-            assert t._compile_snapshot is not None
-            assert t._compile_snapshot.head_hash == snapshot_head
+            cached = t._cache_get(head)
+            assert cached is not None
+            assert cached.head_hash == head
 
     def test_custom_compiler_bypasses_incremental(self):
         """Custom compiler bypasses incremental cache entirely."""

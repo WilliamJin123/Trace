@@ -10,7 +10,9 @@ Not thread-safe in v1.  Each thread should open its own ``Tract``.
 from __future__ import annotations
 
 import uuid
+from collections import OrderedDict
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -73,6 +75,7 @@ class Tract:
         ref_repo: SqliteRefRepository,
         annotation_repo: SqliteAnnotationRepository,
         token_counter: TokenCounter,
+        verify_cache: bool = False,
     ) -> None:
         self._engine = engine
         self._session = session
@@ -86,7 +89,9 @@ class Tract:
         self._annotation_repo = annotation_repo
         self._token_counter = token_counter
         self._custom_type_registry: dict[str, type[BaseModel]] = {}
-        self._compile_snapshot: CompileSnapshot | None = None
+        self._snapshot_cache: OrderedDict[str, CompileSnapshot] = OrderedDict()
+        self._snapshot_cache_maxsize: int = config.compile_cache_maxsize
+        self._verify_cache: bool = verify_cache
         self._closed = False
 
     @classmethod
@@ -98,6 +103,7 @@ class Tract:
         config: TractConfig | None = None,
         tokenizer: TokenCounter | None = None,
         compiler: ContextCompiler | None = None,
+        verify_cache: bool = False,
     ) -> Tract:
         """Open (or create) a Trace repository.
 
@@ -107,6 +113,8 @@ class Tract:
             config: Tract configuration.  Defaults created if *None*.
             tokenizer: Pluggable token counter.  TiktokenCounter by default.
             compiler: Pluggable context compiler.  DefaultContextCompiler by default.
+            verify_cache: If True, cross-check every cache hit against a
+                full recompile (oracle testing).  Default False.
 
         Returns:
             A ready-to-use ``Tract`` instance.
@@ -171,6 +179,7 @@ class Tract:
             ref_repo=ref_repo,
             annotation_repo=annotation_repo,
             token_counter=token_counter,
+            verify_cache=verify_cache,
         )
 
     @classmethod
@@ -187,6 +196,7 @@ class Tract:
         compiler: ContextCompiler,
         tract_id: str,
         config: TractConfig | None = None,
+        verify_cache: bool = False,
     ) -> Tract:
         """Create a ``Tract`` from pre-built components.
 
@@ -217,6 +227,7 @@ class Tract:
             ref_repo=ref_repo,
             annotation_repo=annotation_repo,
             token_counter=token_counter,
+            verify_cache=verify_cache,
         )
 
     # ------------------------------------------------------------------
@@ -270,6 +281,8 @@ class Tract:
         if isinstance(content, dict):
             content = validate_content(content, custom_registry=self._custom_type_registry)
 
+        prev_head = self.head
+
         info = self._commit_engine.create_commit(
             content=content,
             operation=operation,
@@ -282,16 +295,19 @@ class Tract:
         # Persist to database
         self._session.commit()
 
-        # Update compile snapshot: incremental extend for APPEND with
-        # DefaultContextCompiler, otherwise invalidate
+        # Update compile cache: incremental extend for APPEND,
+        # EDIT patching handled by Task 3, otherwise next compile() rebuilds
         if (
             operation == CommitOperation.APPEND
-            and self._compile_snapshot is not None
             and isinstance(self._compiler, DefaultContextCompiler)
         ):
-            self._extend_snapshot_for_append(info)
+            parent_snapshot = self._cache_get(prev_head) if prev_head else None
+            if parent_snapshot is not None:
+                self._extend_snapshot_for_append(info, parent_snapshot)
+            # If no parent snapshot, next compile() builds from scratch
         else:
-            self._compile_snapshot = None
+            # EDIT path: handled by Task 3 (for now, do nothing -- next compile() rebuilds)
+            pass
 
         return info
 
@@ -326,13 +342,27 @@ class Tract:
                 include_edit_annotations=include_edit_annotations,
             )
 
-        # Cache hit: snapshot exists for current head
-        if self._compile_snapshot is not None and self._compile_snapshot.head_hash == current_head:
-            return self._snapshot_to_compiled(self._compile_snapshot)
+        # Cache hit: snapshot exists for current head in LRU cache
+        cached = self._cache_get(current_head)
+        if cached is not None:
+            result = self._snapshot_to_compiled(cached)
+            if self._verify_cache:
+                fresh = self._compiler.compile(self._tract_id, current_head)
+                assert result.messages == fresh.messages, (
+                    f"Cache message mismatch: cached {len(result.messages)} msgs, "
+                    f"fresh {len(fresh.messages)} msgs"
+                )
+                assert result.token_count == fresh.token_count, (
+                    f"Cache token mismatch: cached {result.token_count}, "
+                    f"fresh {fresh.token_count}"
+                )
+            return result
 
         # Cache miss: full compile and build snapshot
         result = self._compiler.compile(self._tract_id, current_head)
-        self._compile_snapshot = self._build_snapshot_from_compiled(current_head, result)
+        snapshot = self._build_snapshot_from_compiled(current_head, result)
+        if snapshot is not None:
+            self._cache_put(current_head, snapshot)
         return result
 
     def get_commit(self, commit_hash: str) -> CommitInfo | None:
@@ -362,7 +392,7 @@ class Tract:
         """
         annotation = self._commit_engine.annotate(target_hash, priority, reason)
         self._session.commit()
-        self._compile_snapshot = None
+        self._cache_clear()
         return annotation
 
     def get_annotations(self, target_hash: str) -> list[PriorityAnnotation]:
@@ -472,22 +502,17 @@ class Tract:
             )
 
         # If no snapshot yet, trigger a compile to populate one
-        if self._compile_snapshot is None or self._compile_snapshot.head_hash != target_hash:
+        snapshot = self._cache_get(target_hash)
+        if snapshot is None:
             self.compile()
+            snapshot = self._cache_get(target_hash)
 
         # Update snapshot with API-reported counts
-        if self._compile_snapshot is not None and self._compile_snapshot.head_hash == target_hash:
+        if snapshot is not None:
             token_source = f"api:{usage.prompt_tokens}+{usage.completion_tokens}"
-            self._compile_snapshot = CompileSnapshot(
-                head_hash=self._compile_snapshot.head_hash,
-                messages=self._compile_snapshot.messages,
-                commit_count=self._compile_snapshot.commit_count,
-                token_count=usage.prompt_tokens,
-                token_source=token_source,
-                generation_configs=self._compile_snapshot.generation_configs,
-                commit_hashes=self._compile_snapshot.commit_hashes,
-            )
-            return self._snapshot_to_compiled(self._compile_snapshot)
+            updated = replace(snapshot, token_count=usage.prompt_tokens, token_source=token_source)
+            self._cache_put(target_hash, updated)
+            return self._snapshot_to_compiled(updated)
 
         # Fallback (custom compiler, no snapshot): return minimal result
         token_source = f"api:{usage.prompt_tokens}+{usage.completion_tokens}"
@@ -538,8 +563,8 @@ class Tract:
                 t.commit(InstructionContent(text="System prompt"))
                 t.commit(DialogueContent(role="user", text="Hi"))
         """
-        # Invalidate compile snapshot on batch entry
-        self._compile_snapshot = None
+        # Invalidate compile cache on batch entry
+        self._cache_clear()
 
         # Stash the real session.commit and replace with a no-op
         _real_commit = self._session.commit
@@ -557,6 +582,29 @@ class Tract:
             raise
         finally:
             self._session.commit = _real_commit  # type: ignore[assignment]
+
+    # ------------------------------------------------------------------
+    # LRU cache helpers
+    # ------------------------------------------------------------------
+
+    def _cache_get(self, head_hash: str) -> CompileSnapshot | None:
+        """Get snapshot from LRU cache.  Returns None on miss."""
+        if head_hash not in self._snapshot_cache:
+            return None
+        self._snapshot_cache.move_to_end(head_hash)
+        return self._snapshot_cache[head_hash]
+
+    def _cache_put(self, head_hash: str, snapshot: CompileSnapshot) -> None:
+        """Store snapshot in LRU cache, evicting LRU entry if at capacity."""
+        if head_hash in self._snapshot_cache:
+            self._snapshot_cache.move_to_end(head_hash)
+        self._snapshot_cache[head_hash] = snapshot
+        while len(self._snapshot_cache) > self._snapshot_cache_maxsize:
+            self._snapshot_cache.popitem(last=False)
+
+    def _cache_clear(self) -> None:
+        """Clear all cached snapshots."""
+        self._snapshot_cache.clear()
 
     # ------------------------------------------------------------------
     # Incremental compile helpers
@@ -603,27 +651,25 @@ class Tract:
             return f"tiktoken:{self._token_counter._encoding_name}"
         return ""
 
-    def _extend_snapshot_for_append(self, commit_info: CommitInfo) -> None:
-        """Incrementally extend the cached snapshot for an APPEND commit.
+    def _extend_snapshot_for_append(
+        self, commit_info: CommitInfo, parent_snapshot: CompileSnapshot
+    ) -> None:
+        """Incrementally extend a cached snapshot for an APPEND commit.
 
         Builds the message for the new commit, appends it (no aggregation),
-        and recounts tokens.
+        and recounts tokens.  The parent snapshot stays in the LRU cache
+        under its own HEAD (useful for future checkout back).
         """
-        snapshot = self._compile_snapshot
-        if snapshot is None:
-            return
-
         commit_row = self._commit_repo.get(commit_info.commit_hash)
         if commit_row is None:
-            self._compile_snapshot = None
             return
 
         assert isinstance(self._compiler, DefaultContextCompiler)
         new_message = self._compiler.build_message_for_commit(commit_row)
         new_config = dict(commit_row.generation_config_json or {})
 
-        new_messages = snapshot.messages + (new_message,)
-        new_commit_hashes = snapshot.commit_hashes + (commit_info.commit_hash,)
+        new_messages = parent_snapshot.messages + (new_message,)
+        new_commit_hashes = parent_snapshot.commit_hashes + (commit_info.commit_hash,)
 
         # Recount tokens on all messages
         messages_dicts = [
@@ -634,14 +680,17 @@ class Tract:
         ]
         new_token_count = self._token_counter.count_messages(messages_dicts)
 
-        self._compile_snapshot = CompileSnapshot(
-            head_hash=commit_info.commit_hash,
-            messages=new_messages,
-            commit_count=snapshot.commit_count + 1,
-            token_count=new_token_count,
-            token_source=self._tiktoken_source(),
-            generation_configs=snapshot.generation_configs + (new_config,),
-            commit_hashes=new_commit_hashes,
+        self._cache_put(
+            commit_info.commit_hash,
+            CompileSnapshot(
+                head_hash=commit_info.commit_hash,
+                messages=new_messages,
+                commit_count=parent_snapshot.commit_count + 1,
+                token_count=new_token_count,
+                token_source=self._tiktoken_source(),
+                generation_configs=parent_snapshot.generation_configs + (new_config,),
+                commit_hashes=new_commit_hashes,
+            ),
         )
 
     def register_content_type(self, name: str, model: type[BaseModel]) -> None:

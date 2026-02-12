@@ -39,3 +39,4 @@ class TractConfig(BaseModel):
     tokenizer_encoding: str = "o200k_base"
     token_budget: Optional[TokenBudgetConfig] = None
     default_branch: str = "main"
+    compile_cache_maxsize: int = 8
