@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1.2: Rename Repo to Tract** - Rename entry-point class Repo→Tract, repo_id→tract_id across source, tests, and planning docs (INSERTED)
 - [x] **Phase 1.3: Hyperparameter Config Storage** - Store LLM generation config (temperature, top_p, top_k, etc.) with commits for full call provenance (INSERTED)
 - [x] **Phase 1.4: LRU Compile Cache & Snapshot Patching** - Replace single-snapshot cache with LRU keyed by head_hash, EDIT/annotate snapshot patching instead of invalidation (INSERTED)
-- [ ] **Phase 2: Linear History & CLI** - Log, status, diff, reset, checkout, and CLI wrapper for inspection
+- [x] **Phase 2: Linear History & CLI** - Log, status, diff, reset, checkout, and CLI wrapper for inspection
 - [ ] **Phase 3: Branching & Merging** - Branch, switch, merge (fast-forward + semantic), rebase, cherry-pick, and LLM client
 - [ ] **Phase 4: Compression** - Token-budget-aware compression, pinned commit preservation, commit reordering, garbage collection
 - [ ] **Phase 5: Multi-Agent & Release** - Spawn/collapse for subagents, session persistence, crash recovery, cross-repo queries, packaging
@@ -120,9 +120,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 02-01-PLAN.md -- Storage infrastructure (symbolic refs, prefix matching) and navigation operations (reset, checkout)
-- [ ] 02-02-PLAN.md -- SDK operations (enhanced log with op_filter, status, diff with structured DiffResult)
-- [ ] 02-03-PLAN.md -- CLI layer with Click + Rich (5 commands, formatting helpers, optional deps)
+- [x] 02-01-PLAN.md -- Storage infrastructure (symbolic refs, prefix matching) and navigation operations (reset, checkout)
+- [x] 02-02-PLAN.md -- SDK operations (enhanced log with op_filter, status, diff with structured DiffResult)
+- [x] 02-03-PLAN.md -- CLI layer with Click + Rich (5 commands, formatting helpers, optional deps)
 
 ### Phase 3: Branching & Merging
 **Goal**: Users can create divergent context branches and merge them back together, including LLM-mediated semantic merge for conflicting content
@@ -187,7 +187,7 @@ Phases execute in numeric order: 1 -> 1.1 -> 1.2 -> 1.3 -> 1.4 -> 2 -> 3 -> 4 ->
 | 1.2 Rename Repo to Tract | 1/1 | Complete | 2026-02-11 |
 | 1.3 Hyperparameter Config Storage | 1/1 | Complete | 2026-02-11 |
 | 1.4 LRU Cache & Snapshot Patching | 1/1 | Complete | 2026-02-11 |
-| 2. Linear History & CLI | 0/3 | Not started | - |
+| 2. Linear History & CLI | 3/3 | Complete | 2026-02-12 |
 | 3. Branching & Merging | 0/4 | Not started | - |
 | 4. Compression | 0/2 | Not started | - |
 | 5. Multi-Agent & Release | 0/3 | Not started | - |

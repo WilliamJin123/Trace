@@ -11,11 +11,11 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [ ] **CORE-01**: User can initialize a new trace (empty context with metadata)
 - [x] **CORE-02**: User can commit a context snapshot with message, timestamp, parent pointer, and operation (append/edit); priority annotations (skip/normal/pinned) are separate metadata
-- [ ] **CORE-03**: User can view commit history (log) with token counts per commit
-- [ ] **CORE-04**: User can view current state (status): HEAD, current branch, token budget usage
-- [ ] **CORE-05**: User can compare two commits (diff) with textual difference output
-- [ ] **CORE-06**: User can reset HEAD to a previous commit (soft: keep content accessible, hard: discard forward)
-- [ ] **CORE-07**: User can checkout a specific commit for read-only inspection
+- [x] **CORE-03**: User can view commit history (log) with token counts per commit
+- [x] **CORE-04**: User can view current state (status): HEAD, current branch, token budget usage
+- [x] **CORE-05**: User can compare two commits (diff) with textual difference output
+- [x] **CORE-06**: User can reset HEAD to a previous commit (soft: keep content accessible, hard: discard forward)
+- [x] **CORE-07**: User can checkout a specific commit for read-only inspection
 - [ ] **CORE-08**: Commits support structured content types: plain text, conversation messages (role: system/user/assistant/tool), and tool call results
 - [ ] **CORE-09**: Materialization preserves message structure (role, content) when rendering context for LLM consumption
 
@@ -57,7 +57,7 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Interfaces
 
 - [ ] **INTF-01**: Python SDK as primary interface (Repo.open(), commit(), branch(), merge(), etc.)
-- [ ] **INTF-02**: CLI wrapper for inspection/debugging (tract log, status, diff, etc.) via Click + Rich
+- [x] **INTF-02**: CLI wrapper for inspection/debugging (tract log, status, diff, etc.) via Click + Rich
 - [ ] **INTF-03**: Built-in LLM client (httpx-based) for compression and semantic merge
 - [ ] **INTF-04**: User-provided callable support for custom LLM operations
 - [ ] **INTF-05**: pip-installable package with documentation and examples
@@ -107,11 +107,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | CORE-01 | Phase 1 | Complete |
 | CORE-02 | Phase 1 | Complete (updated: pin is annotation, not operation) |
-| CORE-03 | Phase 2 | Pending |
-| CORE-04 | Phase 2 | Pending |
-| CORE-05 | Phase 2 | Pending |
-| CORE-06 | Phase 2 | Pending |
-| CORE-07 | Phase 2 | Pending |
+| CORE-03 | Phase 2 | Complete |
+| CORE-04 | Phase 2 | Complete |
+| CORE-05 | Phase 2 | Complete |
+| CORE-06 | Phase 2 | Complete |
+| CORE-07 | Phase 2 | Complete |
 | CORE-08 | Phase 1 | Complete |
 | CORE-09 | Phase 1 | Complete |
 | BRNC-01 | Phase 3 | Pending |
@@ -138,7 +138,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INFR-05 | Phase 1 | Complete |
 | INFR-06 | Phase 1 | Complete |
 | INTF-01 | Phase 1 | Complete |
-| INTF-02 | Phase 2 | Pending |
+| INTF-02 | Phase 2 | Complete |
 | INTF-03 | Phase 3 | Pending |
 | INTF-04 | Phase 3 | Pending |
 | INTF-05 | Phase 5 | Pending |
