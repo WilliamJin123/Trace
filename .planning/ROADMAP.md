@@ -134,13 +134,13 @@ Plans:
   3. User can trigger LLM-mediated semantic merge for conflicting or overlapping context, using either the built-in LLM client or a user-provided callable
   4. User can rebase the current branch onto a target with semantic safety checks that warn when reordering affects meaning
   5. User can cherry-pick specific commits from one branch into another
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
-- [ ] 03-01: Branch and switch operations (pointer-based branching, ref management)
-- [ ] 03-02: LLM client infrastructure (built-in httpx client + user-provided callable protocol)
-- [ ] 03-03: Merge strategies (fast-forward, merge commit, LLM-mediated semantic merge)
-- [ ] 03-04: Rebase, cherry-pick, and semantic safety checks
+- [ ] 03-01-PLAN.md -- Branch infrastructure: CommitParentRow schema, DAG utilities (merge_base, ancestors), branch CRUD, compiler multi-parent support
+- [ ] 03-02-PLAN.md -- LLM client: httpx OpenAI-compatible client, tenacity retry, LLMClient/ResolverCallable protocols, OpenAIResolver
+- [ ] 03-03-PLAN.md -- Merge strategies: fast-forward, clean merge with branch-blocks, structural conflict detection, LLM-mediated resolution, MergeResult review flow
+- [ ] 03-04-PLAN.md -- Rebase and cherry-pick: commit replay, EDIT target remapping, semantic safety checks
 
 ### Phase 4: Compression
 **Goal**: Users can compress context history to fit token budgets while preserving critical information and maintaining history integrity
