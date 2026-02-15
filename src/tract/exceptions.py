@@ -139,3 +139,15 @@ class NothingToMergeError(MergeError):
     def __init__(self, source_branch: str) -> None:
         self.source_branch = source_branch
         super().__init__(f"Branch '{source_branch}' is already up-to-date")
+
+
+class RebaseError(TraceError):
+    """Base exception for rebase errors."""
+
+
+class CherryPickError(TraceError):
+    """Base exception for cherry-pick errors."""
+
+
+class SemanticSafetyError(TraceError):
+    """Raised when a semantic safety check blocks and no resolver is available."""
