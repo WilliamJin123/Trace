@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-10)
 
 **Core value:** Agents produce better outputs when their context is clean, coherent, and relevant. Trace makes context a managed, version-controlled resource.
-**Current focus:** Phase 2 COMPLETE and VERIFIED. Ready for Phase 3 (Branching & Merging).
+**Current focus:** Phase 3 in progress (Branching & Merging). Plan 03-02 (LLM Client) complete.
 
 ## Current Position
 
 Phase: 3 of 5 (Branching & Merging)
-Plan: 0 of 4 in current phase
-Status: Phase 2 verified -- ready for Phase 3
-Last activity: 2026-02-12 - Phase 2 verified (17/17 must-haves, 359 tests)
+Plan: 2 of 5 in current phase
+Status: In progress -- Plan 03-02 complete
+Last activity: 2026-02-14 - Completed 03-02-PLAN.md (LLM Client Infrastructure, 56 tests, 357 total)
 
-Progress: [###########...] 55% (11/20 plans)
+Progress: [############..] 60% (12/20 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 11
+- Total plans completed: 12
 - Average duration: 5m
-- Total execution time: 0.98 hours
+- Total execution time: 1.08 hours
 
 **By Phase:**
 
@@ -33,10 +33,11 @@ Progress: [###########...] 55% (11/20 plans)
 | 1.3 | 1/1 | 3m | 3m |
 | 1.4 | 1/1 | 4m | 4m |
 | 2 | 3/3 | 14m | 4.7m |
+| 3 | 1/5 | 6m | 6m |
 
 **Recent Trend:**
-- Last 5 plans: 01.3-01 (3m), 01.4-01 (4m), 02-01 (5m), 02-02 (4m), 02-03 (5m)
-- Trend: stable execution times around 4-5m per plan
+- Last 5 plans: 01.4-01 (4m), 02-01 (5m), 02-02 (4m), 02-03 (5m), 03-02 (6m)
+- Trend: stable execution times around 4-6m per plan
 
 *Updated after each plan completion*
 
@@ -99,6 +100,10 @@ Recent decisions affecting current work:
 - [02-03]: Token budget not persisted to DB; CLI opens with default config
 - [02-03]: --force guard on hard reset as safety mechanism
 - [02-03]: CLI tests use file-backed databases (not :memory:) since CLI opens own connection
+- [03-02]: Programmatic tenacity.Retrying (not decorator) for per-instance max_retries
+- [03-02]: Status codes checked before raise_for_status() for domain-specific errors (LLMAuthError, LLMRateLimitError)
+- [03-02]: Duck-typed resolver with getattr() for cross-plan type access (ConflictInfo defined in 03-03)
+- [03-02]: Resolution.content_text as string alternative to Resolution.content (BaseModel)
 
 ### Pending Todos
 
@@ -179,8 +184,16 @@ Total test suite: 267 tests passing.
 
 Total test suite: 359 tests passing.
 
+## Phase 3 Stats (In Progress)
+
+| Plan | Name | Tests | Duration |
+|------|------|-------|----------|
+| 03-02 | LLM Client Infrastructure | 56 | 6m |
+
+Total test suite: 357 tests passing.
+
 ## Session Continuity
 
-Last session: 2026-02-12
-Stopped at: Completed 02-03-PLAN.md (CLI Layer). Phase 2 complete (3/3 plans).
+Last session: 2026-02-14
+Stopped at: Completed 03-02-PLAN.md (LLM Client Infrastructure).
 Resume file: None
