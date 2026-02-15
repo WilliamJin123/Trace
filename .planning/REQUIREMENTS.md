@@ -21,12 +21,12 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Branching & Merging
 
-- [ ] **BRNC-01**: User can create a named branch from current HEAD (pointer-based, not copy)
-- [ ] **BRNC-02**: User can switch active branch
-- [ ] **BRNC-03**: User can merge branch into current (fast-forward when possible, merge commit otherwise)
-- [ ] **BRNC-04**: User can trigger LLM-mediated semantic merge for conflicting/overlapping context
-- [ ] **BRNC-05**: User can rebase current branch onto target with semantic safety checks
-- [ ] **BRNC-06**: User can cherry-pick/inject specific commits from one branch to another
+- [x] **BRNC-01**: User can create a named branch from current HEAD (pointer-based, not copy)
+- [x] **BRNC-02**: User can switch active branch
+- [x] **BRNC-03**: User can merge branch into current (fast-forward when possible, merge commit otherwise)
+- [x] **BRNC-04**: User can trigger LLM-mediated semantic merge for conflicting/overlapping context
+- [x] **BRNC-05**: User can rebase current branch onto target with semantic safety checks
+- [x] **BRNC-06**: User can cherry-pick/inject specific commits from one branch to another
 
 ### Compression
 
@@ -58,8 +58,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [ ] **INTF-01**: Python SDK as primary interface (Repo.open(), commit(), branch(), merge(), etc.)
 - [x] **INTF-02**: CLI wrapper for inspection/debugging (tract log, status, diff, etc.) via Click + Rich
-- [ ] **INTF-03**: Built-in LLM client (httpx-based) for compression and semantic merge
-- [ ] **INTF-04**: User-provided callable support for custom LLM operations
+- [x] **INTF-03**: Built-in LLM client (httpx-based) for compression and semantic merge
+- [x] **INTF-04**: User-provided callable support for custom LLM operations
 - [ ] **INTF-05**: pip-installable package with documentation and examples
 
 ## v2 Requirements
@@ -114,12 +114,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CORE-07 | Phase 2 | Complete |
 | CORE-08 | Phase 1 | Complete |
 | CORE-09 | Phase 1 | Complete |
-| BRNC-01 | Phase 3 | Pending |
-| BRNC-02 | Phase 3 | Pending |
-| BRNC-03 | Phase 3 | Pending |
-| BRNC-04 | Phase 3 | Pending |
-| BRNC-05 | Phase 3 | Pending |
-| BRNC-06 | Phase 3 | Pending |
+| BRNC-01 | Phase 3 | Complete |
+| BRNC-02 | Phase 3 | Complete |
+| BRNC-03 | Phase 3 | Complete |
+| BRNC-04 | Phase 3 | Complete |
+| BRNC-05 | Phase 3 | Complete |
+| BRNC-06 | Phase 3 | Complete |
 | COMP-01 | Phase 4 | Pending |
 | COMP-02 | Phase 4 | Pending |
 | COMP-03 | Phase 4 | Pending |
@@ -139,8 +139,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INFR-06 | Phase 1 | Complete |
 | INTF-01 | Phase 1 | Complete |
 | INTF-02 | Phase 2 | Complete |
-| INTF-03 | Phase 3 | Pending |
-| INTF-04 | Phase 3 | Pending |
+| INTF-03 | Phase 3 | Complete |
+| INTF-04 | Phase 3 | Complete |
 | INTF-05 | Phase 5 | Pending |
 
 **Coverage:**

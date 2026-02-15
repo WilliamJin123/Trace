@@ -18,7 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1.3: Hyperparameter Config Storage** - Store LLM generation config (temperature, top_p, top_k, etc.) with commits for full call provenance (INSERTED)
 - [x] **Phase 1.4: LRU Compile Cache & Snapshot Patching** - Replace single-snapshot cache with LRU keyed by head_hash, EDIT/annotate snapshot patching instead of invalidation (INSERTED)
 - [x] **Phase 2: Linear History & CLI** - Log, status, diff, reset, checkout, and CLI wrapper for inspection
-- [ ] **Phase 3: Branching & Merging** - Branch, switch, merge (fast-forward + semantic), rebase, cherry-pick, and LLM client
+- [x] **Phase 3: Branching & Merging** - Branch, switch, merge (fast-forward + semantic), rebase, cherry-pick, and LLM client
 - [ ] **Phase 4: Compression** - Token-budget-aware compression, pinned commit preservation, commit reordering, garbage collection
 - [ ] **Phase 5: Multi-Agent & Release** - Spawn/collapse for subagents, session persistence, crash recovery, cross-repo queries, packaging
 
@@ -137,11 +137,11 @@ Plans:
 **Plans**: 5 plans
 
 Plans:
-- [ ] 03-01-PLAN.md -- Branch infrastructure: CommitParentRow schema, DAG utilities (merge_base, ancestors), branch CRUD, compiler multi-parent support
-- [ ] 03-02-PLAN.md -- LLM client: httpx OpenAI-compatible client, tenacity retry, LLMClient/ResolverCallable protocols, OpenAIResolver
-- [ ] 03-03-PLAN.md -- Merge strategies: fast-forward, clean merge with branch-blocks, structural conflict detection, LLM-mediated resolution, MergeResult review flow
-- [ ] 03-04-PLAN.md -- Rebase and cherry-pick: commit replay, EDIT target remapping, semantic safety checks
-- [ ] 03-05-PLAN.md -- CLI commands: tract branch (list/create/delete), tract switch, tract merge
+- [x] 03-01-PLAN.md -- Branch infrastructure: CommitParentRow schema, DAG utilities (merge_base, ancestors), branch CRUD, compiler multi-parent support
+- [x] 03-02-PLAN.md -- LLM client: httpx OpenAI-compatible client, tenacity retry, LLMClient/ResolverCallable protocols, OpenAIResolver
+- [x] 03-03-PLAN.md -- Merge strategies: fast-forward, clean merge with branch-blocks, structural conflict detection, LLM-mediated resolution, MergeResult review flow
+- [x] 03-04-PLAN.md -- Rebase and cherry-pick: commit replay, EDIT target remapping, semantic safety checks
+- [x] 03-05-PLAN.md -- CLI commands: tract branch (list/create/delete), tract switch, tract merge
 
 ### Phase 4: Compression
 **Goal**: Users can compress context history to fit token budgets while preserving critical information and maintaining history integrity
@@ -189,6 +189,6 @@ Phases execute in numeric order: 1 -> 1.1 -> 1.2 -> 1.3 -> 1.4 -> 2 -> 3 -> 4 ->
 | 1.3 Hyperparameter Config Storage | 1/1 | Complete | 2026-02-11 |
 | 1.4 LRU Cache & Snapshot Patching | 1/1 | Complete | 2026-02-11 |
 | 2. Linear History & CLI | 3/3 | Complete | 2026-02-12 |
-| 3. Branching & Merging | 0/4 | Not started | - |
+| 3. Branching & Merging | 5/5 | Complete | 2026-02-14 |
 | 4. Compression | 0/2 | Not started | - |
 | 5. Multi-Agent & Release | 0/3 | Not started | - |
