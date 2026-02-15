@@ -5,8 +5,8 @@ Defines pluggable interfaces for LLM interaction and conflict resolution.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Literal, Protocol, runtime_checkable
+from dataclasses import dataclass
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel
 
@@ -26,6 +26,7 @@ class LLMClient(Protocol):
         model: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        **kwargs: Any,
     ) -> dict:
         """Send messages, return response dict with 'choices' and 'usage'."""
         ...

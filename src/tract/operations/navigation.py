@@ -15,6 +15,29 @@ if TYPE_CHECKING:
     from tract.storage.repositories import CommitRepository, RefRepository
 
 
+def _store_prev_state(
+    ref_repo: RefRepository,
+    tract_id: str,
+    current_head: str | None,
+) -> None:
+    """Store the current HEAD/branch as PREV_HEAD/PREV_BRANCH.
+
+    If current_head is None (no HEAD set yet), this is a no-op.
+    Otherwise, saves PREV_HEAD and -- if on a branch -- PREV_BRANCH,
+    so that ``checkout -`` can return to this position later.
+    """
+    if current_head is None:
+        return
+    ref_repo.set_ref(tract_id, "PREV_HEAD", current_head)
+    current_branch = ref_repo.get_current_branch(tract_id)
+    if current_branch:
+        ref_repo.set_symbolic_ref(
+            tract_id, "PREV_BRANCH", f"refs/heads/{current_branch}"
+        )
+    else:
+        ref_repo.delete_ref(tract_id, "PREV_BRANCH")
+
+
 def resolve_commit(
     ref_or_prefix: str,
     tract_id: str,
@@ -136,15 +159,7 @@ def checkout(
         prev_branch_ref = ref_repo.get_symbolic_ref(tract_id, "PREV_BRANCH")
 
         # Store current state as PREV_HEAD/PREV_BRANCH (swap)
-        if current_head is not None:
-            ref_repo.set_ref(tract_id, "PREV_HEAD", current_head)
-            current_branch = ref_repo.get_current_branch(tract_id)
-            if current_branch:
-                ref_repo.set_symbolic_ref(
-                    tract_id, "PREV_BRANCH", f"refs/heads/{current_branch}"
-                )
-            else:
-                ref_repo.delete_ref(tract_id, "PREV_BRANCH")
+        _store_prev_state(ref_repo, tract_id, current_head)
 
         # Restore previous position with branch attachment
         if prev_branch_ref:
@@ -156,15 +171,7 @@ def checkout(
             return prev_head, True
 
     # Store current HEAD as PREV_HEAD before switching
-    if current_head is not None:
-        ref_repo.set_ref(tract_id, "PREV_HEAD", current_head)
-        current_branch = ref_repo.get_current_branch(tract_id)
-        if current_branch:
-            ref_repo.set_symbolic_ref(
-                tract_id, "PREV_BRANCH", f"refs/heads/{current_branch}"
-            )
-        else:
-            ref_repo.delete_ref(tract_id, "PREV_BRANCH")
+    _store_prev_state(ref_repo, tract_id, current_head)
 
     # Check if target is a branch name
     branch_hash = ref_repo.get_branch(tract_id, target)

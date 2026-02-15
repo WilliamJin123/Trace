@@ -7,12 +7,15 @@ structural conflict detection, and LLM-mediated semantic merge.
 from __future__ import annotations
 
 import json
+import logging
 from typing import TYPE_CHECKING
 
 from tract.exceptions import MergeConflictError, MergeError, NothingToMergeError
 from tract.models.commit import CommitInfo, CommitOperation
-from tract.models.merge import ConflictInfo, MergeResult
+from tract.models.merge import ConflictInfo, ConflictType, MergeResult
 from tract.operations.dag import find_merge_base, get_branch_commits, is_ancestor
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from tract.engine.commit import CommitEngine
@@ -35,6 +38,7 @@ def _load_content_text(blob_repo: BlobRepository, content_hash: str) -> str:
     """Load content text from a blob, returning a sentinel on failure."""
     blob = blob_repo.get(content_hash)
     if blob is None:
+        logger.warning("Blob not found for content_hash=%s", content_hash)
         return "[content unavailable]"
     try:
         data = json.loads(blob.payload_json)
@@ -46,8 +50,52 @@ def _load_content_text(blob_repo: BlobRepository, content_hash: str) -> str:
         if "payload" in data:
             return json.dumps(data["payload"], sort_keys=True)
         return json.dumps(data, sort_keys=True)
-    except (json.JSONDecodeError, TypeError):
+    except (json.JSONDecodeError, TypeError) as exc:
+        logger.warning("Failed to parse blob %s: %s", content_hash, exc)
         return "[content unavailable]"
+
+
+def _detect_skip_vs_edit(
+    edits: dict[str, tuple[CommitRow, CommitInfo]],
+    common_edit_targets: set[str],
+    annotation_repo: AnnotationRepository,
+    blob_repo: BlobRepository,
+    commit_repo: CommitRepository,
+    a_infos: list[CommitInfo],
+    b_infos: list[CommitInfo],
+    *,
+    editor_is_a: bool,
+) -> list[ConflictInfo]:
+    """Detect skip-vs-edit conflicts for one direction.
+
+    When ``editor_is_a=True``, *edits* come from branch A and the SKIP
+    annotation is on the other side (B).  When ``False``, it's reversed.
+    """
+    from tract.models.annotations import Priority
+
+    conflicts: list[ConflictInfo] = []
+    for target, (row, info) in edits.items():
+        if target in common_edit_targets:
+            continue
+        annotation = annotation_repo.get_latest(target)
+        if annotation is None or annotation.priority != Priority.SKIP:
+            continue
+        target_row = commit_repo.get(target)
+        target_info = _row_to_info(target_row) if target_row is not None else info
+        edit_text = _load_content_text(blob_repo, row.content_hash)
+        conflicts.append(
+            ConflictInfo(
+                conflict_type=ConflictType.SKIP_VS_EDIT,
+                commit_a=info if editor_is_a else target_info,
+                commit_b=target_info if editor_is_a else info,
+                content_a_text=edit_text if editor_is_a else "[SKIPPED]",
+                content_b_text="[SKIPPED]" if editor_is_a else edit_text,
+                target_hash=target,
+                branch_a_commits=a_infos,
+                branch_b_commits=b_infos,
+            )
+        )
+    return conflicts
 
 
 def detect_conflicts(
@@ -106,7 +154,7 @@ def detect_conflicts(
         row_b, info_b = b_edits[target]
         conflicts.append(
             ConflictInfo(
-                conflict_type="both_edit",
+                conflict_type=ConflictType.BOTH_EDIT,
                 commit_a=info_a,
                 commit_b=info_b,
                 content_a_text=_load_content_text(blob_repo, row_a.content_hash),
@@ -117,59 +165,15 @@ def detect_conflicts(
             )
         )
 
-    # --- 2. SKIP vs EDIT ---
-    # Helper to load target commit info for skip_vs_edit display
-    def _load_target_info(target_hash: str) -> CommitInfo | None:
-        target_row = commit_repo.get(target_hash)
-        if target_row is not None:
-            return _row_to_info(target_row)
-        return None
-
-    # Check if branch A has SKIP annotations on commits that branch B EDITs
-    for target, (row_b, info_b) in b_edits.items():
-        if target in common_edit_targets:
-            continue  # Already handled as both_edit
-        annotation = annotation_repo.get_latest(target)
-        if annotation is not None:
-            from tract.models.annotations import Priority
-
-            if annotation.priority == Priority.SKIP:
-                target_info = _load_target_info(target)
-                conflicts.append(
-                    ConflictInfo(
-                        conflict_type="skip_vs_edit",
-                        commit_a=target_info or info_b,  # The skipped target
-                        commit_b=info_b,  # The EDIT commit
-                        content_a_text="[SKIPPED]",
-                        content_b_text=_load_content_text(blob_repo, row_b.content_hash),
-                        target_hash=target,
-                        branch_a_commits=a_infos,
-                        branch_b_commits=b_infos,
-                    )
-                )
-
-    # Check if branch B has SKIP annotations on commits that branch A EDITs
-    for target, (row_a, info_a) in a_edits.items():
-        if target in common_edit_targets:
-            continue
-        annotation = annotation_repo.get_latest(target)
-        if annotation is not None:
-            from tract.models.annotations import Priority
-
-            if annotation.priority == Priority.SKIP:
-                target_info = _load_target_info(target)
-                conflicts.append(
-                    ConflictInfo(
-                        conflict_type="skip_vs_edit",
-                        commit_a=info_a,  # The EDIT commit
-                        commit_b=target_info or info_a,  # The skipped target
-                        content_a_text=_load_content_text(blob_repo, row_a.content_hash),
-                        content_b_text="[SKIPPED]",
-                        target_hash=target,
-                        branch_a_commits=a_infos,
-                        branch_b_commits=b_infos,
-                    )
-                )
+    # --- 2. SKIP vs EDIT (both directions) ---
+    conflicts.extend(_detect_skip_vs_edit(
+        b_edits, common_edit_targets, annotation_repo, blob_repo, commit_repo,
+        a_infos, b_infos, editor_is_a=False,
+    ))
+    conflicts.extend(_detect_skip_vs_edit(
+        a_edits, common_edit_targets, annotation_repo, blob_repo, commit_repo,
+        a_infos, b_infos, editor_is_a=True,
+    ))
 
     # --- 3. EDIT + APPEND (pre-merge-base edit only) ---
     # Collect all post-merge-base commit hashes (the branch's own divergent history)
@@ -195,7 +199,7 @@ def detect_conflicts(
             )
             conflicts.append(
                 ConflictInfo(
-                    conflict_type="edit_plus_append",
+                    conflict_type=ConflictType.EDIT_PLUS_APPEND,
                     commit_a=info_a,
                     commit_b=first_b_append,
                     content_a_text=_load_content_text(blob_repo, row_a.content_hash),
@@ -217,7 +221,7 @@ def detect_conflicts(
             )
             conflicts.append(
                 ConflictInfo(
-                    conflict_type="edit_plus_append",
+                    conflict_type=ConflictType.EDIT_PLUS_APPEND,
                     commit_a=first_a_append,
                     commit_b=info_b,
                     content_a_text=_load_content_text(blob_repo, first_a_append.content_hash),

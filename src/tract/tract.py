@@ -10,7 +10,6 @@ Not thread-safe in v1.  Each thread should open its own ``Tract``.
 from __future__ import annotations
 
 import uuid
-from collections import OrderedDict
 from contextlib import contextmanager
 from dataclasses import replace
 from datetime import datetime
@@ -18,6 +17,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
+from tract.engine.cache import CacheManager
 from tract.engine.commit import CommitEngine
 from tract.engine.compiler import DefaultContextCompiler
 from tract.engine.tokens import TiktokenCounter
@@ -32,7 +32,7 @@ from tract.exceptions import (
     DetachedHeadError,
     TraceError,
 )
-from tract.protocols import CompiledContext, CompileSnapshot, ContextCompiler, Message, TokenCounter, TokenUsage
+from tract.protocols import CompiledContext, ContextCompiler, TokenCounter, TokenUsage
 from tract.storage.engine import create_session_factory, create_trace_engine, init_db
 from tract.storage.sqlite import (
     SqliteAnnotationRepository,
@@ -104,8 +104,12 @@ class Tract:
         self._token_counter = token_counter
         self._parent_repo = parent_repo
         self._custom_type_registry: dict[str, type[BaseModel]] = {}
-        self._snapshot_cache: OrderedDict[str, CompileSnapshot] = OrderedDict()
-        self._snapshot_cache_maxsize: int = config.compile_cache_maxsize
+        self._cache = CacheManager(
+            maxsize=config.compile_cache_maxsize,
+            compiler=compiler,
+            token_counter=token_counter,
+            commit_repo=commit_repo,
+        )
         self._verify_cache: bool = verify_cache
         self._closed = False
 
@@ -330,27 +334,21 @@ class Tract:
 
         # Update compile cache: incremental extend for APPEND,
         # in-memory patching for EDIT, otherwise next compile() rebuilds
-        if (
-            operation == CommitOperation.APPEND
-            and isinstance(self._compiler, DefaultContextCompiler)
-        ):
-            parent_snapshot = self._cache_get(prev_head) if prev_head else None
+        if operation == CommitOperation.APPEND and self._cache.uses_default_compiler:
+            parent_snapshot = self._cache.get(prev_head) if prev_head else None
             if parent_snapshot is not None:
-                self._extend_snapshot_for_append(info, parent_snapshot)
+                self._cache.extend_for_append(info, parent_snapshot)
             # If no parent snapshot, next compile() builds from scratch
-        elif (
-            operation == CommitOperation.EDIT
-            and isinstance(self._compiler, DefaultContextCompiler)
-        ):
-            parent_snapshot = self._cache_get(prev_head) if prev_head else None
+        elif operation == CommitOperation.EDIT and self._cache.uses_default_compiler:
+            parent_snapshot = self._cache.get(prev_head) if prev_head else None
             if parent_snapshot is not None:
                 edit_row = self._commit_repo.get(info.commit_hash)
                 if edit_row is not None:
-                    patched = self._patch_snapshot_for_edit(
+                    patched = self._cache.patch_for_edit(
                         parent_snapshot, info.commit_hash, edit_row
                     )
                     if patched is not None:
-                        self._cache_put(info.commit_hash, patched)
+                        self._cache.put(info.commit_hash, patched)
             # Do NOT clear cache -- other entries at different HEADs remain valid
 
         return info
@@ -387,9 +385,9 @@ class Tract:
             )
 
         # Cache hit: snapshot exists for current head in LRU cache
-        cached = self._cache_get(current_head)
+        cached = self._cache.get(current_head)
         if cached is not None:
-            result = self._snapshot_to_compiled(cached)
+            result = self._cache.to_compiled(cached)
             if self._verify_cache:
                 fresh = self._compiler.compile(self._tract_id, current_head)
                 assert result.messages == fresh.messages, (
@@ -404,9 +402,9 @@ class Tract:
 
         # Cache miss: full compile and build snapshot
         result = self._compiler.compile(self._tract_id, current_head)
-        snapshot = self._build_snapshot_from_compiled(current_head, result)
+        snapshot = self._cache.build_snapshot(current_head, result)
         if snapshot is not None:
-            self._cache_put(current_head, snapshot)
+            self._cache.put(current_head, snapshot)
         return result
 
     def get_commit(self, commit_hash: str) -> CommitInfo | None:
@@ -439,20 +437,20 @@ class Tract:
 
         # Annotations affect ALL cached snapshots that include the target commit.
         # Strategy: clear everything, then optionally re-add a patched current HEAD.
-        if isinstance(self._compiler, DefaultContextCompiler):
+        if self._cache.uses_default_compiler:
             current_head = self.head
             patched = None
             if current_head:
-                snapshot = self._cache_get(current_head)
+                snapshot = self._cache.get(current_head)
                 if snapshot is not None:
-                    patched = self._patch_snapshot_for_annotate(
+                    patched = self._cache.patch_for_annotate(
                         snapshot, target_hash, priority
                     )
-            self._cache_clear()  # Clear ALL entries (other HEADs may contain the annotated commit)
+            self._cache.clear()  # Clear ALL entries (other HEADs may contain the annotated commit)
             if patched is not None:
-                self._cache_put(current_head, patched)  # Re-add patched current HEAD
+                self._cache.put(current_head, patched)  # Re-add patched current HEAD
         else:
-            self._cache_clear()
+            self._cache.clear()
 
         return annotation
 
@@ -551,9 +549,9 @@ class Tract:
             CompiledContext for the given commit.
         """
         # Check LRU cache first
-        cached = self._cache_get(commit_hash)
+        cached = self._cache.get(commit_hash)
         if cached is not None:
-            return self._snapshot_to_compiled(cached)
+            return self._cache.to_compiled(cached)
         # Cache miss: compile fresh
         return self._compiler.compile(self._tract_id, commit_hash)
 
@@ -941,7 +939,7 @@ class Tract:
             self._session.commit()
 
         # Clear compile cache (merge changes HEAD)
-        self._cache_clear()
+        self._cache.clear()
 
         return result
 
@@ -1011,7 +1009,7 @@ class Tract:
         result.merge_commit_hash = merge_info.commit_hash
 
         # Clear compile cache
-        self._cache_clear()
+        self._cache.clear()
 
         return result
 
@@ -1065,7 +1063,7 @@ class Tract:
         self._session.commit()
 
         # Clear compile cache (cherry-pick changes HEAD)
-        self._cache_clear()
+        self._cache.clear()
 
         return result
 
@@ -1109,14 +1107,13 @@ class Tract:
             parent_repo=self._parent_repo,
             blob_repo=self._blob_repo,
             commit_engine=self._commit_engine,
-            annotation_repo=self._annotation_repo,
             resolver=effective_resolver,
         )
 
         self._session.commit()
 
         # Clear compile cache (rebase changes HEAD and commit hashes)
-        self._cache_clear()
+        self._cache.clear()
 
         return result
 
@@ -1165,17 +1162,17 @@ class Tract:
             )
 
         # If no snapshot yet, trigger a compile to populate one
-        snapshot = self._cache_get(target_hash)
+        snapshot = self._cache.get(target_hash)
         if snapshot is None:
             self.compile()
-            snapshot = self._cache_get(target_hash)
+            snapshot = self._cache.get(target_hash)
 
         # Update snapshot with API-reported counts
         if snapshot is not None:
             token_source = f"api:{usage.prompt_tokens}+{usage.completion_tokens}"
             updated = replace(snapshot, token_count=usage.prompt_tokens, token_source=token_source)
-            self._cache_put(target_hash, updated)
-            return self._snapshot_to_compiled(updated)
+            self._cache.put(target_hash, updated)
+            return self._cache.to_compiled(updated)
 
         # Fallback (custom compiler, no snapshot): return minimal result
         token_source = f"api:{usage.prompt_tokens}+{usage.completion_tokens}"
@@ -1227,9 +1224,13 @@ class Tract:
                 t.commit(DialogueContent(role="user", text="Hi"))
         """
         # Invalidate compile cache on batch entry
-        self._cache_clear()
+        self._cache.clear()
 
-        # Stash the real session.commit and replace with a no-op
+        # Stash the real session.commit and replace with a no-op so that
+        # individual commit() calls inside the batch don't flush to the database.
+        # NOTE: We intentionally monkey-patch instead of using
+        # session.begin_nested() (SAVEPOINT) because SAVEPOINTs still flush
+        # intermediate state, while we want the entire batch committed atomically.
         _real_commit = self._session.commit
 
         def _noop_commit() -> None:
@@ -1246,234 +1247,6 @@ class Tract:
         finally:
             self._session.commit = _real_commit  # type: ignore[assignment]
 
-    # ------------------------------------------------------------------
-    # LRU cache helpers
-    # ------------------------------------------------------------------
-
-    def _cache_get(self, head_hash: str) -> CompileSnapshot | None:
-        """Get snapshot from LRU cache.  Returns None on miss."""
-        if head_hash not in self._snapshot_cache:
-            return None
-        self._snapshot_cache.move_to_end(head_hash)
-        return self._snapshot_cache[head_hash]
-
-    def _cache_put(self, head_hash: str, snapshot: CompileSnapshot) -> None:
-        """Store snapshot in LRU cache, evicting LRU entry if at capacity."""
-        if head_hash in self._snapshot_cache:
-            self._snapshot_cache.move_to_end(head_hash)
-        self._snapshot_cache[head_hash] = snapshot
-        while len(self._snapshot_cache) > self._snapshot_cache_maxsize:
-            self._snapshot_cache.popitem(last=False)
-
-    def _cache_clear(self) -> None:
-        """Clear all cached snapshots."""
-        self._snapshot_cache.clear()
-
-    # ------------------------------------------------------------------
-    # Incremental compile helpers
-    # ------------------------------------------------------------------
-
-    def _snapshot_to_compiled(self, snapshot: CompileSnapshot) -> CompiledContext:
-        """Convert a CompileSnapshot to a CompiledContext for return.
-
-        Uses copy-on-output for generation_configs to prevent user mutations
-        of the returned CompiledContext from corrupting the cached snapshot.
-        """
-        return CompiledContext(
-            messages=list(snapshot.messages),
-            token_count=snapshot.token_count,
-            commit_count=snapshot.commit_count,
-            token_source=snapshot.token_source,
-            generation_configs=[dict(c) for c in snapshot.generation_configs],
-            commit_hashes=list(snapshot.commit_hashes),
-        )
-
-    def _build_snapshot_from_compiled(
-        self, head_hash: str, result: CompiledContext
-    ) -> CompileSnapshot | None:
-        """Build a CompileSnapshot from a full compile result.
-
-        Returns None if the compiler is not a DefaultContextCompiler
-        (custom compilers bypass incremental cache).
-        """
-        if not isinstance(self._compiler, DefaultContextCompiler):
-            return None
-        return CompileSnapshot(
-            head_hash=head_hash,
-            messages=tuple(result.messages),
-            commit_count=result.commit_count,
-            token_count=result.token_count,
-            token_source=result.token_source,
-            generation_configs=tuple(dict(c) for c in result.generation_configs),
-            commit_hashes=tuple(result.commit_hashes),
-        )
-
-    def _tiktoken_source(self) -> str:
-        """Return the token_source string for tiktoken-based counts."""
-        if isinstance(self._token_counter, TiktokenCounter):
-            return f"tiktoken:{self._token_counter._encoding_name}"
-        return ""
-
-    def _extend_snapshot_for_append(
-        self, commit_info: CommitInfo, parent_snapshot: CompileSnapshot
-    ) -> None:
-        """Incrementally extend a cached snapshot for an APPEND commit.
-
-        Builds the message for the new commit, appends it (no aggregation),
-        and recounts tokens.  The parent snapshot stays in the LRU cache
-        under its own HEAD (useful for future checkout back).
-        """
-        commit_row = self._commit_repo.get(commit_info.commit_hash)
-        if commit_row is None:
-            return
-
-        assert isinstance(self._compiler, DefaultContextCompiler)
-        new_message = self._compiler.build_message_for_commit(commit_row)
-        new_config = dict(commit_row.generation_config_json or {})
-
-        new_messages = parent_snapshot.messages + (new_message,)
-        new_commit_hashes = parent_snapshot.commit_hashes + (commit_info.commit_hash,)
-
-        # Recount tokens on all messages
-        messages_dicts = [
-            {"role": m.role, "content": m.content}
-            if m.name is None
-            else {"role": m.role, "content": m.content, "name": m.name}
-            for m in new_messages
-        ]
-        new_token_count = self._token_counter.count_messages(messages_dicts)
-
-        self._cache_put(
-            commit_info.commit_hash,
-            CompileSnapshot(
-                head_hash=commit_info.commit_hash,
-                messages=new_messages,
-                commit_count=parent_snapshot.commit_count + 1,
-                token_count=new_token_count,
-                token_source=self._tiktoken_source(),
-                generation_configs=parent_snapshot.generation_configs + (new_config,),
-                commit_hashes=new_commit_hashes,
-            ),
-        )
-
-    def _patch_snapshot_for_edit(
-        self,
-        parent_snapshot: CompileSnapshot,
-        new_head_hash: str,
-        edit_row: CommitRow,
-    ) -> CompileSnapshot | None:
-        """Patch a cached snapshot for an EDIT commit in-memory.
-
-        Finds the message corresponding to the edited target (via response_to),
-        replaces it with the new message, and recounts tokens.
-
-        Returns None if patching is not possible (missing commit_hashes, target
-        not found), signaling caller to fall back to full recompile on next
-        compile().
-        """
-        if not parent_snapshot.commit_hashes:
-            return None
-
-        target_hash = edit_row.response_to
-        if target_hash is None:
-            return None
-
-        # Find position of the target commit in the snapshot
-        try:
-            target_idx = list(parent_snapshot.commit_hashes).index(target_hash)
-        except ValueError:
-            return None  # Target not in snapshot
-
-        assert isinstance(self._compiler, DefaultContextCompiler)
-        new_message = self._compiler.build_message_for_commit(edit_row)
-
-        # Replace message at target position
-        new_messages = list(parent_snapshot.messages)
-        new_messages[target_idx] = new_message
-
-        # Handle generation_config: edit-inherits-original rule
-        new_configs = list(parent_snapshot.generation_configs)
-        if edit_row.generation_config_json is not None:
-            new_configs[target_idx] = dict(edit_row.generation_config_json)  # copy-on-input
-        # else: keep original config at target_idx (edit-inherits-original)
-
-        # Recount tokens
-        messages_dicts = [
-            {"role": m.role, "content": m.content}
-            if m.name is None
-            else {"role": m.role, "content": m.content, "name": m.name}
-            for m in new_messages
-        ]
-        new_token_count = self._token_counter.count_messages(messages_dicts)
-
-        return CompileSnapshot(
-            head_hash=new_head_hash,
-            messages=tuple(new_messages),
-            commit_count=parent_snapshot.commit_count,  # Same count (EDIT replaces, doesn't add)
-            token_count=new_token_count,
-            token_source=self._tiktoken_source(),
-            generation_configs=tuple(new_configs),
-            commit_hashes=parent_snapshot.commit_hashes,  # Same positions
-        )
-
-    def _patch_snapshot_for_annotate(
-        self,
-        snapshot: CompileSnapshot,
-        target_hash: str,
-        new_priority: Priority,
-    ) -> CompileSnapshot | None:
-        """Patch a cached snapshot for an annotation change.
-
-        SKIP: remove the target's message from the snapshot.
-        NORMAL/PINNED on already-included commit: no change needed.
-        NORMAL/PINNED on previously-SKIP commit: return None (full recompile).
-        """
-        if not snapshot.commit_hashes:
-            return None
-
-        # Find target position
-        target_idx = None
-        for i, ch in enumerate(snapshot.commit_hashes):
-            if ch == target_hash:
-                target_idx = i
-                break
-
-        if new_priority == Priority.SKIP:
-            if target_idx is None:
-                return snapshot  # Already not in snapshot
-
-            # Remove message, config, and hash at target position
-            new_messages = list(snapshot.messages)
-            new_configs = list(snapshot.generation_configs)
-            new_hashes = list(snapshot.commit_hashes)
-            del new_messages[target_idx]
-            del new_configs[target_idx]
-            del new_hashes[target_idx]
-
-            # Recount tokens
-            messages_dicts = [
-                {"role": m.role, "content": m.content}
-                if m.name is None
-                else {"role": m.role, "content": m.content, "name": m.name}
-                for m in new_messages
-            ]
-            new_token_count = self._token_counter.count_messages(messages_dicts)
-
-            return CompileSnapshot(
-                head_hash=snapshot.head_hash,
-                messages=tuple(new_messages),
-                commit_count=snapshot.commit_count - 1,
-                token_count=new_token_count,
-                token_source=self._tiktoken_source(),
-                generation_configs=tuple(new_configs),
-                commit_hashes=tuple(new_hashes),
-            )
-        else:
-            # NORMAL or PINNED
-            if target_idx is not None:
-                return snapshot  # Already included, no change
-            else:
-                return None  # Was skipped, need full recompile (don't have message content)
 
     def register_content_type(self, name: str, model: type[BaseModel]) -> None:
         """Register a custom content type for this tract instance.

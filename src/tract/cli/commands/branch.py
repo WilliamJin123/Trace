@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import click
 
-from tract.cli.formatting import format_branches, format_error, get_console
+from tract.cli.formatting import format_branches, format_short_hash
 
 
 @click.group(invoke_without_command=True)
@@ -18,21 +18,11 @@ def branch(ctx: click.Context) -> None:
     if ctx.invoked_subcommand is not None:
         return
 
-    from tract.cli import _get_tract
+    from tract.cli import _tract_session
 
-    console = get_console()
-    try:
-        t = _get_tract(ctx)
-        try:
-            branches = t.list_branches()
-            format_branches(branches, console)
-        finally:
-            t.close()
-    except SystemExit:
-        raise
-    except Exception as e:
-        format_error(str(e), console)
-        raise SystemExit(1) from None
+    with _tract_session(ctx) as (t, console):
+        branches = t.list_branches()
+        format_branches(branches, console)
 
 
 @branch.command("create")
@@ -45,23 +35,13 @@ def branch_create(ctx: click.Context, name: str, no_switch: bool, source: str | 
 
     NAME is the new branch name. By default, switches to the new branch.
     """
-    from tract.cli import _get_tract
+    from tract.cli import _tract_session
 
-    console = get_console()
-    try:
-        t = _get_tract(ctx)
-        try:
-            commit_hash = t.branch(name, source=source, switch=not no_switch)
-            console.print(f"Created branch [green]{name}[/green] at [yellow]{commit_hash[:8]}[/yellow]")
-            if not no_switch:
-                console.print(f"Switched to branch [green]{name}[/green]")
-        finally:
-            t.close()
-    except SystemExit:
-        raise
-    except Exception as e:
-        format_error(str(e), console)
-        raise SystemExit(1) from None
+    with _tract_session(ctx) as (t, console):
+        commit_hash = t.branch(name, source=source, switch=not no_switch)
+        console.print(f"Created branch [green]{name}[/green] at {format_short_hash(commit_hash)}")
+        if not no_switch:
+            console.print(f"Switched to branch [green]{name}[/green]")
 
 
 @branch.command("delete")
@@ -73,18 +53,8 @@ def branch_delete(ctx: click.Context, name: str, force: bool) -> None:
 
     NAME is the branch to delete. Cannot delete the current branch.
     """
-    from tract.cli import _get_tract
+    from tract.cli import _tract_session
 
-    console = get_console()
-    try:
-        t = _get_tract(ctx)
-        try:
-            t.delete_branch(name, force=force)
-            console.print(f"Deleted branch [green]{name}[/green]")
-        finally:
-            t.close()
-    except SystemExit:
-        raise
-    except Exception as e:
-        format_error(str(e), console)
-        raise SystemExit(1) from None
+    with _tract_session(ctx) as (t, console):
+        t.delete_branch(name, force=force)
+        console.print(f"Deleted branch [green]{name}[/green]")

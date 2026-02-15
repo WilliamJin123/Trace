@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import click
 
-from tract.cli.formatting import format_error, get_console
+from tract.cli.formatting import format_error, format_short_hash, get_console
 
 
 @click.command()
@@ -20,24 +20,14 @@ def reset(ctx: click.Context, target: str, mode: str, force: bool) -> None:
     In Trace, soft and hard resets behave identically (no working tree).
     Hard reset requires --force as a safety guard.
     """
-    from tract.cli import _get_tract
+    from tract.cli import _tract_session
 
-    console = get_console()
-
-    # Force guard for hard reset
+    # Force guard for hard reset (before opening tract)
     if mode == "hard" and not force:
+        console = get_console()
         format_error("Hard reset requires --force flag.", console)
         raise SystemExit(1)
 
-    try:
-        t = _get_tract(ctx)
-        try:
-            resolved = t.reset(target, mode=mode)
-            console.print(f"HEAD is now at [yellow]{resolved[:8]}[/yellow] ({mode} reset)")
-        finally:
-            t.close()
-    except SystemExit:
-        raise
-    except Exception as e:
-        format_error(str(e), console)
-        raise SystemExit(1) from None
+    with _tract_session(ctx) as (t, console):
+        resolved = t.reset(target, mode=mode)
+        console.print(f"HEAD is now at {format_short_hash(resolved)} ({mode} reset)")

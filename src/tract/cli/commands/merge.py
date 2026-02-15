@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import click
 
-from tract.cli.formatting import format_error, format_merge_result, get_console
+from tract.cli.formatting import format_merge_result
 
 
 @click.command()
@@ -22,21 +22,12 @@ def merge(ctx: click.Context, source: str, no_ff: bool, strategy: str) -> None:
 
     SOURCE is the name of the branch to merge in.
     """
-    from tract.cli import _get_tract
+    from tract.cli import _tract_session
     from tract.exceptions import NothingToMergeError
 
-    console = get_console()
-    try:
-        t = _get_tract(ctx)
+    with _tract_session(ctx) as (t, console):
         try:
             result = t.merge(source, no_ff=no_ff, strategy=strategy)
             format_merge_result(result, console)
         except NothingToMergeError:
             console.print("Already up to date.")
-        finally:
-            t.close()
-    except SystemExit:
-        raise
-    except Exception as e:
-        format_error(str(e), console)
-        raise SystemExit(1) from None

@@ -131,13 +131,7 @@ class CommitEngine:
 
         # 4. Store blob (content-addressable dedup)
         now = datetime.now(timezone.utc)
-        blob = BlobRow(
-            content_hash=c_hash,
-            payload_json=json.dumps(content_dict, sort_keys=True, ensure_ascii=False),
-            byte_size=len(json.dumps(content_dict).encode("utf-8")),
-            token_count=token_count,
-            created_at=now,
-        )
+        blob = self._build_blob_row(content_dict, token_count, now)
         self._blob_repo.save_if_absent(blob)
 
         # 5. Get current HEAD
@@ -291,13 +285,7 @@ class CommitEngine:
 
         # 4. Store blob
         now = datetime.now(timezone.utc)
-        blob = BlobRow(
-            content_hash=c_hash,
-            payload_json=json.dumps(content_dict, sort_keys=True, ensure_ascii=False),
-            byte_size=len(json.dumps(content_dict).encode("utf-8")),
-            token_count=token_count,
-            created_at=now,
-        )
+        blob = self._build_blob_row(content_dict, token_count, now)
         self._blob_repo.save_if_absent(blob)
 
         # 5. Parent hashes
@@ -409,6 +397,24 @@ class CommitEngine:
             target_hash=target_hash,
             priority=priority,
             reason=reason,
+            created_at=now,
+        )
+
+    def _build_blob_row(
+        self, content_dict: dict, token_count: int, now: datetime
+    ) -> BlobRow:
+        """Build a BlobRow from a content dict.
+
+        Serializes content_dict to JSON exactly once so that payload_json
+        and byte_size are guaranteed to measure the same string.
+        """
+        c_hash = compute_content_hash(content_dict)
+        payload_json = json.dumps(content_dict, sort_keys=True, ensure_ascii=False)
+        return BlobRow(
+            content_hash=c_hash,
+            payload_json=payload_json,
+            byte_size=len(payload_json.encode("utf-8")),
+            token_count=token_count,
             created_at=now,
         )
 

@@ -7,11 +7,20 @@ and the review/commit flow.
 
 from __future__ import annotations
 
+import enum
 from typing import Literal, Optional
 
 from pydantic import BaseModel
 
 from tract.models.commit import CommitInfo
+
+
+class ConflictType(str, enum.Enum):
+    """Types of structural merge conflicts."""
+
+    BOTH_EDIT = "both_edit"
+    SKIP_VS_EDIT = "skip_vs_edit"
+    EDIT_PLUS_APPEND = "edit_plus_append"
 
 
 class ConflictInfo(BaseModel):
@@ -22,7 +31,7 @@ class ConflictInfo(BaseModel):
     branch history.
     """
 
-    conflict_type: Literal["both_edit", "skip_vs_edit", "edit_plus_append"]
+    conflict_type: ConflictType
     commit_a: CommitInfo  # From current (target) branch
     commit_b: CommitInfo  # From source branch
     content_a_text: str = ""  # Pre-loaded content text from commit_a's blob

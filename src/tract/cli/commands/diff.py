@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import click
 
-from tract.cli.formatting import format_diff, format_error, get_console
+from tract.cli.formatting import format_diff
 
 
 @click.command()
@@ -19,18 +19,8 @@ def diff(ctx: click.Context, commit_a: str | None, commit_b: str | None, stat_on
     With one argument, diffs that commit against its parent.
     With two arguments, diffs COMMIT_A against COMMIT_B.
     """
-    from tract.cli import _get_tract
+    from tract.cli import _tract_session
 
-    console = get_console()
-    try:
-        t = _get_tract(ctx)
-        try:
-            result = t.diff(commit_a=commit_a, commit_b=commit_b)
-            format_diff(result, console, stat_only=stat_only)
-        finally:
-            t.close()
-    except SystemExit:
-        raise
-    except Exception as e:
-        format_error(str(e), console)
-        raise SystemExit(1) from None
+    with _tract_session(ctx) as (t, console):
+        result = t.diff(commit_a=commit_a, commit_b=commit_b)
+        format_diff(result, console, stat_only=stat_only)

@@ -82,7 +82,15 @@ class OpenAIResolver:
             temperature=self._temperature,
             max_tokens=self._max_tokens,
         )
-        content_text = response["choices"][0]["message"]["content"]
+        try:
+            content_text = response["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            from tract.llm.errors import LLMResponseError
+
+            raise LLMResponseError(
+                f"Cannot extract content from LLM response: {exc}. "
+                f"Response: {response}"
+            ) from exc
         usage = response.get("usage")
         gen_config: dict[str, Any] = {
             "model": response.get("model", self._model),

@@ -587,7 +587,7 @@ class TestIncrementalCompileCache:
             t.compile()  # Populate snapshot
 
             # Verify snapshot is populated
-            assert t._cache_get(h1) is not None
+            assert t._cache.get(h1) is not None
 
             # EDIT commit -- parent snapshot stays in cache (different HEAD)
             t.commit(
@@ -611,7 +611,7 @@ class TestIncrementalCompileCache:
             # Compile to populate snapshot for full HEAD
             full_result = t.compile()
             head = t.head
-            assert t._cache_get(head) is not None
+            assert t._cache.get(head) is not None
 
             # Time-travel compile should NOT overwrite the snapshot
             tt_result = t.compile(at_commit=c1.commit_hash)
@@ -619,7 +619,7 @@ class TestIncrementalCompileCache:
             assert "First" in tt_result.messages[0].content
 
             # Snapshot should still be for the full HEAD
-            cached = t._cache_get(head)
+            cached = t._cache.get(head)
             assert cached is not None
             assert cached.head_hash == head
 
@@ -991,8 +991,8 @@ class TestLRUCompileCacheAndPatching:
             t.commit(DialogueContent(role="user", text="second"))
             head_2 = t.head
             t.compile()
-            assert t._cache_get(head_1) is not None
-            assert t._cache_get(head_2) is not None
+            assert t._cache.get(head_1) is not None
+            assert t._cache.get(head_2) is not None
 
     def test_lru_eviction_at_maxsize(self):
         """Cache evicts LRU entry when maxsize is exceeded."""
@@ -1007,9 +1007,9 @@ class TestLRUCompileCacheAndPatching:
             t.commit(DialogueContent(role="assistant", text="c"))
             h3 = t.head
             t.compile()
-            assert t._cache_get(h1) is None
-            assert t._cache_get(h2) is not None
-            assert t._cache_get(h3) is not None
+            assert t._cache.get(h1) is None
+            assert t._cache.get(h2) is not None
+            assert t._cache.get(h3) is not None
 
     def test_append_incremental_extends_snapshot(self):
         """APPEND commits extend the cached snapshot incrementally."""
@@ -1109,23 +1109,23 @@ class TestLRUCompileCacheAndPatching:
             t.commit(DialogueContent(role="user", text="Hello"))
             h2 = t.head
             t.compile()  # Cache entry for h2
-            assert t._cache_get(h1) is not None
-            assert t._cache_get(h2) is not None
+            assert t._cache.get(h1) is not None
+            assert t._cache.get(h2) is not None
 
             # Annotate a commit -- should clear h1 (stale), keep patched h2
             t.annotate(h1, Priority.SKIP)
-            assert t._cache_get(h1) is None  # Cleared
-            assert t._cache_get(h2) is not None  # Patched and re-added
+            assert t._cache.get(h1) is None  # Cleared
+            assert t._cache.get(h2) is not None  # Patched and re-added
 
     def test_batch_clears_entire_cache(self):
         """batch() clears the entire LRU cache."""
         with Tract.open() as t:
             t.commit(InstructionContent(text="first"))
             t.compile()
-            assert len(t._snapshot_cache) == 1
+            assert len(t._cache._cache) == 1
             with t.batch():
                 t.commit(DialogueContent(role="user", text="batched"))
-            assert len(t._snapshot_cache) == 0
+            assert len(t._cache._cache) == 0
 
     def test_record_usage_updates_correct_cache_entry(self):
         """record_usage() updates token count in the LRU cache entry."""
@@ -1137,7 +1137,7 @@ class TestLRUCompileCacheAndPatching:
             assert updated.token_count == 42
             assert "api:" in updated.token_source
 
-            cached = t._cache_get(t.head)
+            cached = t._cache.get(t.head)
             assert cached is not None
             assert cached.token_count == 42
 
@@ -1157,7 +1157,7 @@ class TestLRUCompileCacheAndPatching:
             c1 = t.commit(InstructionContent(text="a"))
             t.compile()
             c2 = t.commit(DialogueContent(role="user", text="b"))
-            snapshot = t._cache_get(t.head)
+            snapshot = t._cache.get(t.head)
             assert snapshot is not None
             assert len(snapshot.commit_hashes) == 2
             assert snapshot.commit_hashes[1] == c2.commit_hash

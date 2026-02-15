@@ -79,14 +79,30 @@ class SqliteCommitRepository(CommitRepository):
                 non-matching commits so all matching ancestors are found.
 
         Returns commits in reverse chronological order (newest first).
+
+        Implementation note: instead of issuing one SQL query per ancestor
+        (N+1 pattern), we fetch the starting commit to learn its tract_id,
+        then batch-load all commits for that tract into an in-memory dict
+        and walk the parent chain there.  This trades 2 queries for N+1.
         """
+        # 1. Fetch starting commit to learn its tract_id
+        start_commit = self.get(commit_hash)
+        if start_commit is None:
+            return []
+
+        # 2. Batch-load all commits for this tract into a dict
+        stmt = select(CommitRow).where(CommitRow.tract_id == start_commit.tract_id)
+        all_commits = self._session.execute(stmt).scalars().all()
+        commits_by_hash: dict[str, CommitRow] = {c.commit_hash: c for c in all_commits}
+
+        # 3. Walk parent chain in-memory
         ancestors: list[CommitRow] = []
         current_hash: str | None = commit_hash
 
         while current_hash is not None:
             if limit is not None and len(ancestors) >= limit:
                 break
-            commit = self.get(current_hash)
+            commit = commits_by_hash.get(current_hash)
             if commit is None:
                 break
             if op_filter is None or commit.operation == op_filter:

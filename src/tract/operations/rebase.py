@@ -23,7 +23,6 @@ if TYPE_CHECKING:
     from tract.engine.commit import CommitEngine
     from tract.llm.protocols import ResolverCallable
     from tract.storage.repositories import (
-        AnnotationRepository,
         BlobRepository,
         CommitParentRepository,
         CommitRepository,
@@ -259,7 +258,6 @@ def rebase(
     parent_repo: CommitParentRepository,
     blob_repo: BlobRepository,
     commit_engine: CommitEngine,
-    annotation_repo: AnnotationRepository | None = None,
     *,
     resolver: ResolverCallable | None = None,
 ) -> RebaseResult:
@@ -276,7 +274,6 @@ def rebase(
         parent_repo: Parent repository for multi-parent traversal.
         blob_repo: Blob repository.
         commit_engine: Commit engine for creating replayed commits.
-        annotation_repo: Annotation repository (optional).
         resolver: Optional resolver for semantic safety warnings.
 
     Returns:

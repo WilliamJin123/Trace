@@ -6,6 +6,9 @@ It is only loaded via the ``tract`` entry point defined in pyproject.toml.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from typing import TYPE_CHECKING
+
 try:
     import click
 except ImportError:
@@ -14,6 +17,13 @@ except ImportError:
     ) from None
 
 from tract.cli.formatting import format_error, get_console
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from rich.console import Console
+
+    from tract.tract import Tract
 
 
 @click.group()
@@ -51,6 +61,28 @@ def _get_tract(ctx: click.Context) -> "Tract":  # noqa: F821 (forward ref)
         tract_id = _discover_tract(db_path)
 
     return Tract.open(path=db_path, tract_id=tract_id)
+
+
+@contextmanager
+def _tract_session(ctx: click.Context) -> Iterator[tuple[Tract, Console]]:
+    """Context manager that opens a Tract, yields (tract, console), and handles cleanup.
+
+    Ensures the tract is closed on exit and formats exceptions as CLI errors.
+    Commands with special exception handling can catch specific errors inside
+    the ``with`` block before this context manager's generic handler runs.
+    """
+    console = get_console()
+    try:
+        t = _get_tract(ctx)
+        try:
+            yield t, console
+        finally:
+            t.close()
+    except SystemExit:
+        raise
+    except Exception as e:
+        format_error(str(e), console)
+        raise SystemExit(1) from None
 
 
 def _discover_tract(db_path: str) -> str:

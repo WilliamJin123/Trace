@@ -18,6 +18,11 @@ if TYPE_CHECKING:
     from tract.models.commit import CommitInfo
     from tract.models.merge import MergeResult
     from tract.operations.diff import DiffResult
+
+
+def format_short_hash(commit_hash: str) -> str:
+    """Format a commit hash as a short yellow-highlighted string."""
+    return f"[yellow]{commit_hash[:8]}[/yellow]"
     from tract.operations.history import StatusInfo
 
 
