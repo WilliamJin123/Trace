@@ -14,7 +14,9 @@ from rich.table import Table
 from rich.text import Text
 
 if TYPE_CHECKING:
+    from tract.models.branch import BranchInfo
     from tract.models.commit import CommitInfo
+    from tract.models.merge import MergeResult
     from tract.operations.diff import DiffResult
     from tract.operations.history import StatusInfo
 
@@ -208,6 +210,64 @@ def format_diff(result: DiffResult, console: Console, stat_only: bool = False) -
     # Summary
     console.print()
     _format_stat_summary(result.stat, result.generation_config_changes, console)
+
+
+def format_branches(branches: list[BranchInfo], console: Console) -> None:
+    """Display branch list with current branch highlighted.
+
+    Mimics ``git branch`` output: ``*`` marker on the current branch (green/bold),
+    other branches indented.
+    """
+    if not branches:
+        console.print("[dim]No branches.[/dim]")
+        return
+
+    for b in branches:
+        if b.is_current:
+            console.print(
+                f"[green bold]* {escape(b.name)}[/green bold]  "
+                f"[yellow]{b.commit_hash[:8]}[/yellow]"
+            )
+        else:
+            console.print(
+                f"  {escape(b.name)}  "
+                f"[yellow]{b.commit_hash[:8]}[/yellow]"
+            )
+
+
+def format_merge_result(result: MergeResult, console: Console) -> None:
+    """Display merge result summary.
+
+    Shows different output based on merge_type:
+    - fast_forward: "Fast-forward: branch -> hash"
+    - clean / semantic: "Merged source into target (merge commit: hash)"
+    - conflict: List conflicts with types and targets
+    """
+    if result.merge_type == "fast_forward":
+        head_hash = result.merge_commit_hash or ""
+        console.print(
+            f"[green]Fast-forward:[/green] {escape(result.source_branch)} "
+            f"-> [yellow]{head_hash[:8] if head_hash else '(unknown)'}[/yellow]"
+        )
+    elif result.merge_type in ("clean", "semantic"):
+        merge_hash = result.merge_commit_hash or ""
+        console.print(
+            f"[green]Merged[/green] {escape(result.source_branch)} into "
+            f"{escape(result.target_branch)} "
+            f"(merge commit: [yellow]{merge_hash[:8] if merge_hash else '(unknown)'}[/yellow])"
+        )
+    elif result.merge_type == "conflict":
+        n = len(result.conflicts)
+        console.print(
+            f"[red]CONFLICT:[/red] {n} conflict(s) detected. "
+            f"Use the SDK to resolve and commit."
+        )
+        for conflict in result.conflicts:
+            target = conflict.target_hash or "(unknown)"
+            console.print(
+                f"  [red]-[/red] {conflict.conflict_type}: target "
+                f"[yellow]{target[:8]}[/yellow]"
+            )
 
 
 def format_error(message: str, console: Console) -> None:
