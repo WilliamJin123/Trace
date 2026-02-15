@@ -49,7 +49,7 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
     from tract.models.branch import BranchInfo
-    from tract.models.merge import MergeResult
+    from tract.models.merge import CherryPickResult, MergeResult, RebaseResult
     from tract.operations.diff import DiffResult
     from tract.operations.history import StatusInfo
     from tract.storage.schema import CommitRow
@@ -1014,6 +1014,111 @@ class Tract:
         result.merge_commit_hash = merge_info.commit_hash
 
         # Clear compile cache
+        self._cache_clear()
+
+        return result
+
+    def cherry_pick(
+        self,
+        commit_hash: str,
+        *,
+        resolver: object | None = None,
+    ) -> CherryPickResult:
+        """Cherry-pick a commit onto the current branch.
+
+        Creates a new commit with the same content but different hash and
+        parentage (current HEAD as parent).
+
+        Args:
+            commit_hash: Hash (or prefix) of the commit to cherry-pick.
+            resolver: Optional resolver for handling issues (e.g., EDIT
+                target missing on current branch).  Falls back to
+                ``self._default_resolver`` if configured via
+                :meth:`configure_llm`.
+
+        Returns:
+            :class:`CherryPickResult` describing the outcome.
+
+        Raises:
+            CherryPickError: If issues detected and no resolver, or
+                resolver aborts.
+        """
+        from tract.models.merge import CherryPickResult
+        from tract.operations.rebase import cherry_pick as _cherry_pick
+
+        # Resolve commit hash (supports prefixes and branch names)
+        resolved = self.resolve_commit(commit_hash)
+
+        # Determine resolver
+        effective_resolver = resolver
+        if effective_resolver is None:
+            effective_resolver = getattr(self, "_default_resolver", None)
+
+        result = _cherry_pick(
+            commit_hash=resolved,
+            tract_id=self._tract_id,
+            commit_repo=self._commit_repo,
+            ref_repo=self._ref_repo,
+            blob_repo=self._blob_repo,
+            commit_engine=self._commit_engine,
+            parent_repo=self._parent_repo,
+            resolver=effective_resolver,
+        )
+
+        self._session.commit()
+
+        # Clear compile cache (cherry-pick changes HEAD)
+        self._cache_clear()
+
+        return result
+
+    def rebase(
+        self,
+        target_branch: str,
+        *,
+        resolver: object | None = None,
+    ) -> RebaseResult:
+        """Rebase the current branch onto a target branch.
+
+        Replays current branch's commits on top of the target branch tip,
+        producing new commits with new hashes.
+
+        Args:
+            target_branch: Name of the branch to rebase onto.
+            resolver: Optional resolver for semantic safety warnings.
+                Falls back to ``self._default_resolver`` if configured
+                via :meth:`configure_llm`.
+
+        Returns:
+            :class:`RebaseResult` describing the outcome.
+
+        Raises:
+            RebaseError: On merge commits in range, resolver abort, etc.
+            SemanticSafetyError: If safety warnings and no resolver.
+        """
+        from tract.models.merge import RebaseResult
+        from tract.operations.rebase import rebase as _rebase
+
+        # Determine resolver
+        effective_resolver = resolver
+        if effective_resolver is None:
+            effective_resolver = getattr(self, "_default_resolver", None)
+
+        result = _rebase(
+            tract_id=self._tract_id,
+            target_branch=target_branch,
+            commit_repo=self._commit_repo,
+            ref_repo=self._ref_repo,
+            parent_repo=self._parent_repo,
+            blob_repo=self._blob_repo,
+            commit_engine=self._commit_engine,
+            annotation_repo=self._annotation_repo,
+            resolver=effective_resolver,
+        )
+
+        self._session.commit()
+
+        # Clear compile cache (rebase changes HEAD and commit hashes)
         self._cache_clear()
 
         return result

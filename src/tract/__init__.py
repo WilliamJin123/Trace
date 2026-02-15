@@ -45,7 +45,14 @@ from tract.protocols import (
 from tract.models.branch import BranchInfo
 
 # Merge models
-from tract.models.merge import ConflictInfo, MergeResult
+from tract.models.merge import (
+    CherryPickIssue,
+    CherryPickResult,
+    ConflictInfo,
+    MergeResult,
+    RebaseResult,
+    RebaseWarning,
+)
 
 # Operations data models
 from tract.operations.history import StatusInfo
@@ -68,6 +75,9 @@ from tract.exceptions import (
     MergeError,
     MergeConflictError,
     NothingToMergeError,
+    RebaseError,
+    CherryPickError,
+    SemanticSafetyError,
 )
 
 __all__ = [
@@ -107,6 +117,10 @@ __all__ = [
     # Merge models
     "ConflictInfo",
     "MergeResult",
+    "RebaseWarning",
+    "CherryPickIssue",
+    "RebaseResult",
+    "CherryPickResult",
     # Operations
     "StatusInfo",
     "DiffResult",
@@ -128,4 +142,7 @@ __all__ = [
     "MergeError",
     "MergeConflictError",
     "NothingToMergeError",
+    "RebaseError",
+    "CherryPickError",
+    "SemanticSafetyError",
 ]
