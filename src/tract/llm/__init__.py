@@ -13,9 +13,11 @@ from tract.llm.errors import (
     LLMResponseError,
 )
 from tract.llm.protocols import LLMClient, Resolution, ResolverCallable
+from tract.llm.resolver import OpenAIResolver
 
 __all__ = [
     "OpenAIClient",
+    "OpenAIResolver",
     "LLMClient",
     "ResolverCallable",
     "Resolution",
