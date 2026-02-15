@@ -28,29 +28,14 @@ if TYPE_CHECKING:
     from tract.storage.schema import CommitRow
 
 
-def _row_to_info(row: CommitRow) -> CommitInfo:
-    """Convert a CommitRow to CommitInfo."""
-    return CommitInfo(
-        commit_hash=row.commit_hash,
-        tract_id=row.tract_id,
-        parent_hash=row.parent_hash,
-        content_hash=row.content_hash,
-        content_type=row.content_type,
-        operation=row.operation,
-        response_to=row.response_to,
-        message=row.message,
-        token_count=row.token_count,
-        metadata=row.metadata_json,
-        generation_config=row.generation_config_json,
-        created_at=row.created_at,
-    )
+from tract.operations import row_to_info as _row_to_info
 
 
 def _load_content_text(blob_repo: BlobRepository, content_hash: str) -> str:
-    """Load content text from a blob, returning empty string on failure."""
+    """Load content text from a blob, returning a sentinel on failure."""
     blob = blob_repo.get(content_hash)
     if blob is None:
-        return ""
+        return "[content unavailable]"
     try:
         data = json.loads(blob.payload_json)
         # Try common text fields
@@ -62,7 +47,7 @@ def _load_content_text(blob_repo: BlobRepository, content_hash: str) -> str:
             return json.dumps(data["payload"], sort_keys=True)
         return json.dumps(data, sort_keys=True)
     except (json.JSONDecodeError, TypeError):
-        return ""
+        return "[content unavailable]"
 
 
 def detect_conflicts(
@@ -70,6 +55,7 @@ def detect_conflicts(
     branch_b_commits: list[CommitRow],
     annotation_repo: AnnotationRepository,
     blob_repo: BlobRepository,
+    commit_repo: CommitRepository,
     tract_id: str,
     merge_base_hash: str | None,
 ) -> list[ConflictInfo]:
@@ -132,6 +118,13 @@ def detect_conflicts(
         )
 
     # --- 2. SKIP vs EDIT ---
+    # Helper to load target commit info for skip_vs_edit display
+    def _load_target_info(target_hash: str) -> CommitInfo | None:
+        target_row = commit_repo.get(target_hash)
+        if target_row is not None:
+            return _row_to_info(target_row)
+        return None
+
     # Check if branch A has SKIP annotations on commits that branch B EDITs
     for target, (row_b, info_b) in b_edits.items():
         if target in common_edit_targets:
@@ -141,12 +134,12 @@ def detect_conflicts(
             from tract.models.annotations import Priority
 
             if annotation.priority == Priority.SKIP:
-                # Find the corresponding info for display
+                target_info = _load_target_info(target)
                 conflicts.append(
                     ConflictInfo(
                         conflict_type="skip_vs_edit",
-                        commit_a=info_b,  # The edit commit
-                        commit_b=info_b,  # Same commit (the EDIT)
+                        commit_a=target_info or info_b,  # The skipped target
+                        commit_b=info_b,  # The EDIT commit
                         content_a_text="[SKIPPED]",
                         content_b_text=_load_content_text(blob_repo, row_b.content_hash),
                         target_hash=target,
@@ -164,11 +157,12 @@ def detect_conflicts(
             from tract.models.annotations import Priority
 
             if annotation.priority == Priority.SKIP:
+                target_info = _load_target_info(target)
                 conflicts.append(
                     ConflictInfo(
                         conflict_type="skip_vs_edit",
-                        commit_a=info_a,
-                        commit_b=info_a,
+                        commit_a=info_a,  # The EDIT commit
+                        commit_b=target_info or info_a,  # The skipped target
                         content_a_text=_load_content_text(blob_repo, row_a.content_hash),
                         content_b_text="[SKIPPED]",
                         target_hash=target,
@@ -315,8 +309,8 @@ def merge_branches(
                 target_branch=current_branch,
                 committed=True,
                 merge_commit_hash=source_hash,
-                _source_tip_hash=source_hash,
-                _target_tip_hash=current_hash,
+                source_tip_hash=source_hash,
+                target_tip_hash=current_hash,
             )
 
     # --- Find merge base ---
@@ -337,7 +331,7 @@ def merge_branches(
 
     # --- Detect conflicts ---
     conflicts = detect_conflicts(
-        a_commits, b_commits, annotation_repo, blob_repo, tract_id, merge_base
+        a_commits, b_commits, annotation_repo, blob_repo, commit_repo, tract_id, merge_base
     )
 
     # --- No conflicts: clean merge ---
@@ -362,8 +356,8 @@ def merge_branches(
             auto_merged_content=[_row_to_info(c) for c in a_commits + b_commits],
             committed=True,
             merge_commit_hash=merge_info.commit_hash,
-            _source_tip_hash=source_hash,
-            _target_tip_hash=current_hash,
+            source_tip_hash=source_hash,
+            target_tip_hash=current_hash,
         )
 
     # --- Conflicts exist ---
@@ -374,8 +368,8 @@ def merge_branches(
         merge_base_hash=merge_base,
         conflicts=conflicts,
         auto_merged_content=[_row_to_info(c) for c in a_commits + b_commits],
-        _source_tip_hash=source_hash,
-        _target_tip_hash=current_hash,
+        source_tip_hash=source_hash,
+        target_tip_hash=current_hash,
     )
 
     if resolver is not None:

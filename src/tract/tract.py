@@ -974,9 +974,6 @@ class Tract:
             )
 
         # Build merge content from resolutions
-        resolution_text = "\n\n".join(
-            f"Resolution for {k}:\n{v}" for k, v in result.resolutions.items()
-        )
         merge_content = FreeformContent(
             payload={
                 "message": f"Merged {result.source_branch} into {result.target_branch}",
@@ -985,8 +982,8 @@ class Tract:
         )
 
         # Determine parent hashes
-        source_hash = result._source_tip_hash
-        target_hash = result._target_tip_hash
+        source_hash = result.source_tip_hash
+        target_hash = result.target_tip_hash
         if source_hash is None or target_hash is None:
             # Fallback: resolve from ref_repo
             source_hash = self._ref_repo.get_branch(self._tract_id, result.source_branch)

@@ -152,6 +152,9 @@ def is_ancestor(
 ) -> bool:
     """Check if potential_ancestor is reachable from commit_hash.
 
+    Uses early-termination BFS — stops as soon as the target is found,
+    avoiding the cost of building the complete ancestor set.
+
     Args:
         commit_repo: Commit repository for hash lookups.
         parent_repo: Parent repository for multi-parent traversal.
@@ -164,5 +167,24 @@ def is_ancestor(
     if potential_ancestor == commit_hash:
         return True
 
-    ancestors = get_all_ancestors(commit_hash, commit_repo, parent_repo)
-    return potential_ancestor in ancestors
+    visited: set[str] = set()
+    queue: deque[str] = deque([commit_hash])
+
+    while queue:
+        current = queue.popleft()
+        if current in visited:
+            continue
+        visited.add(current)
+        commit = commit_repo.get(current)
+        if commit and commit.parent_hash:
+            if commit.parent_hash == potential_ancestor:
+                return True
+            queue.append(commit.parent_hash)
+        if parent_repo is not None:
+            for extra in parent_repo.get_parents(current):
+                if extra == potential_ancestor:
+                    return True
+                if extra not in visited:
+                    queue.append(extra)
+
+    return False

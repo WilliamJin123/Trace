@@ -56,9 +56,9 @@ class MergeResult(BaseModel):
     committed: bool = False  # Set True after commit_merge()
     merge_commit_hash: Optional[str] = None  # Set after commit_merge()
 
-    # Internal: parent hashes for the merge commit
-    _source_tip_hash: Optional[str] = None
-    _target_tip_hash: Optional[str] = None
+    # Parent hashes captured at merge time (for commit_merge)
+    source_tip_hash: Optional[str] = None
+    target_tip_hash: Optional[str] = None
 
     model_config = {"arbitrary_types_allowed": True}
 

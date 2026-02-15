@@ -32,22 +32,7 @@ if TYPE_CHECKING:
     from tract.storage.schema import CommitRow
 
 
-def _row_to_info(row: CommitRow) -> CommitInfo:
-    """Convert a CommitRow to CommitInfo."""
-    return CommitInfo(
-        commit_hash=row.commit_hash,
-        tract_id=row.tract_id,
-        parent_hash=row.parent_hash,
-        content_hash=row.content_hash,
-        content_type=row.content_type,
-        operation=row.operation,
-        response_to=row.response_to,
-        message=row.message,
-        token_count=row.token_count,
-        metadata=row.metadata_json,
-        generation_config=row.generation_config_json,
-        created_at=row.created_at,
-    )
+from tract.operations import row_to_info as _row_to_info
 
 
 def _load_content_model(blob_repo: BlobRepository, content_hash: str) -> object | None:
@@ -231,15 +216,19 @@ def cherry_pick(
 
     # Create the new commit
     if resolved_content is not None:
-        # Use resolved content -- create as APPEND since EDIT target is missing
+        # Use resolved content -- create as APPEND since EDIT target is missing.
+        # Preserve original operation provenance in metadata for auditing.
         from tract.models.content import FreeformContent
 
         new_content = FreeformContent(payload={"text": resolved_content})
+        meta = dict(original_row.metadata_json) if original_row.metadata_json else {}
+        meta["original_operation"] = "EDIT"
+        meta["original_response_to"] = original_row.response_to
         new_info = commit_engine.create_commit(
             content=new_content,
             operation=CommitOperation.APPEND,
             message=original_row.message,
-            metadata=dict(original_row.metadata_json) if original_row.metadata_json else None,
+            metadata=meta,
             generation_config=(
                 dict(original_row.generation_config_json)
                 if original_row.generation_config_json
@@ -267,7 +256,7 @@ def rebase(
     target_branch: str,
     commit_repo: CommitRepository,
     ref_repo: RefRepository,
-    parent_repo: CommitParentRepository | None,
+    parent_repo: CommitParentRepository,
     blob_repo: BlobRepository,
     commit_engine: CommitEngine,
     annotation_repo: AnnotationRepository | None = None,
@@ -335,11 +324,10 @@ def rebase(
         return RebaseResult(new_head=current_tip)
 
     # Pre-flight: block if any commit in replay range has merge parents
-    if parent_repo is not None:
-        for c in commits_to_replay:
-            parents = parent_repo.get_parents(c.commit_hash)
-            if parents:
-                raise RebaseError("Cannot rebase branch containing merge commits")
+    for c in commits_to_replay:
+        parents = parent_repo.get_parents(c.commit_hash)
+        if parents:
+            raise RebaseError("Cannot rebase branch containing merge commits")
 
     # Build info list for original commits
     original_infos = [_row_to_info(c) for c in commits_to_replay]
