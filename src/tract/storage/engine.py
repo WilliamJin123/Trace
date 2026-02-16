@@ -49,8 +49,9 @@ def init_db(engine: Engine) -> None:
     """Initialize the database: create all tables and set schema version.
 
     Creates all tables defined in Base.metadata, then sets schema_version.
-    For new databases, schema_version is set to "2".
-    For existing v1 databases, migrates to v2 by creating commit_parents table.
+    For new databases, schema_version is set to "3".
+    For existing v1 databases, migrates v1->v2->v3 (commit_parents + compression tables).
+    For existing v2 databases, migrates v2->v3 (compression tables).
     """
     Base.metadata.create_all(engine)
 
@@ -61,11 +62,21 @@ def init_db(engine: Engine) -> None:
         ).scalar_one_or_none()
 
         if existing is None:
-            # New database: set schema version to 2
-            session.add(TraceMetaRow(key="schema_version", value="2"))
+            # New database: set schema version to 3
+            session.add(TraceMetaRow(key="schema_version", value="3"))
             session.commit()
         elif existing.value == "1":
             # Migrate v1 -> v2: create commit_parents table
             Base.metadata.tables["commit_parents"].create(engine, checkfirst=True)
             existing.value = "2"
+            session.commit()
+            # Fall through to v2->v3 migration
+            existing = session.execute(
+                select(TraceMetaRow).where(TraceMetaRow.key == "schema_version")
+            ).scalar_one()
+        if existing is not None and existing.value == "2":
+            # Migrate v2 -> v3: create compression record tables
+            for table_name in ["compressions", "compression_sources", "compression_results"]:
+                Base.metadata.tables[table_name].create(engine, checkfirst=True)
+            existing.value = "3"
             session.commit()

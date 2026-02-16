@@ -157,6 +157,67 @@ class CommitParentRow(Base):
     )
 
 
+class CompressionRow(Base):
+    """A compression record tracking a summarization operation.
+
+    Each compression takes N source commits and produces M summary commits.
+    The source and result associations are stored in separate tables.
+    """
+
+    __tablename__ = "compressions"
+
+    compression_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tract_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    branch_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    original_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    compressed_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    target_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    instructions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class CompressionSourceRow(Base):
+    """Association between a compression and its source commits.
+
+    Position preserves the order of source commits in the original chain.
+    """
+
+    __tablename__ = "compression_sources"
+
+    compression_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("compressions.compression_id"),
+        primary_key=True,
+    )
+    commit_hash: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("commits.commit_hash"),
+        primary_key=True,
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class CompressionResultRow(Base):
+    """Association between a compression and its result (summary) commits.
+
+    Position preserves the order of summary commits.
+    """
+
+    __tablename__ = "compression_results"
+
+    compression_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("compressions.compression_id"),
+        primary_key=True,
+    )
+    commit_hash: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("commits.commit_hash"),
+        primary_key=True,
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
 class TraceMetaRow(Base):
     """Key-value metadata for the Trace database itself (e.g., schema version)."""
 

@@ -12,7 +12,17 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Sequence
 
 if TYPE_CHECKING:
-    from tract.storage.schema import AnnotationRow, BlobRow, CommitParentRow, CommitRow
+    from datetime import datetime
+
+    from tract.storage.schema import (
+        AnnotationRow,
+        BlobRow,
+        CommitParentRow,
+        CommitRow,
+        CompressionResultRow,
+        CompressionRow,
+        CompressionSourceRow,
+    )
 
 
 class CommitRepository(ABC):
@@ -224,4 +234,64 @@ class AnnotationRepository(ABC):
 
         This avoids N+1 queries during compilation.
         """
+        ...
+
+
+class CompressionRepository(ABC):
+    """Abstract interface for compression provenance storage.
+
+    Tracks which commits were compressed (sources) and what they
+    produced (results/summaries), enabling queries like:
+    - "What sources produced this summary?"
+    - "Was this commit ever compressed?"
+    """
+
+    @abstractmethod
+    def save_record(
+        self,
+        compression_id: str,
+        tract_id: str,
+        branch_name: str | None,
+        created_at: datetime,
+        original_tokens: int,
+        compressed_tokens: int,
+        target_tokens: int | None,
+        instructions: str | None,
+    ) -> None:
+        """Save a compression record."""
+        ...
+
+    @abstractmethod
+    def add_source(self, compression_id: str, commit_hash: str, position: int) -> None:
+        """Add a source commit to a compression record."""
+        ...
+
+    @abstractmethod
+    def add_result(self, compression_id: str, commit_hash: str, position: int) -> None:
+        """Add a result (summary) commit to a compression record."""
+        ...
+
+    @abstractmethod
+    def get_record(self, compression_id: str) -> CompressionRow | None:
+        """Get a compression record by ID. Returns None if not found."""
+        ...
+
+    @abstractmethod
+    def get_sources(self, compression_id: str) -> list[CompressionSourceRow]:
+        """Get source commits for a compression, ordered by position."""
+        ...
+
+    @abstractmethod
+    def get_results(self, compression_id: str) -> list[CompressionResultRow]:
+        """Get result commits for a compression, ordered by position."""
+        ...
+
+    @abstractmethod
+    def is_source_of(self, commit_hash: str) -> bool:
+        """Check if a commit is a source in any compression record."""
+        ...
+
+    @abstractmethod
+    def get_all_source_hashes(self, tract_id: str) -> set[str]:
+        """Get all source commit hashes for a tract across all compressions."""
         ...

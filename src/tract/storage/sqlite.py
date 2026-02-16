@@ -6,6 +6,7 @@ Each repository takes a Session in its constructor.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Sequence
 
 from sqlalchemy import func, select, and_
@@ -16,6 +17,7 @@ from tract.storage.repositories import (
     BlobRepository,
     CommitParentRepository,
     CommitRepository,
+    CompressionRepository,
     RefRepository,
 )
 from tract.storage.schema import (
@@ -23,6 +25,9 @@ from tract.storage.schema import (
     BlobRow,
     CommitParentRow,
     CommitRow,
+    CompressionResultRow,
+    CompressionRow,
+    CompressionSourceRow,
     RefRow,
 )
 
@@ -473,3 +478,94 @@ class SqliteAnnotationRepository(AnnotationRepository):
 
         rows = self._session.execute(stmt).scalars().all()
         return {row.target_hash: row for row in rows}
+
+
+class SqliteCompressionRepository(CompressionRepository):
+    """SQLite implementation of compression provenance storage.
+
+    Tracks compression records and their source/result commit associations.
+    """
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def save_record(
+        self,
+        compression_id: str,
+        tract_id: str,
+        branch_name: str | None,
+        created_at: datetime,
+        original_tokens: int,
+        compressed_tokens: int,
+        target_tokens: int | None,
+        instructions: str | None,
+    ) -> None:
+        row = CompressionRow(
+            compression_id=compression_id,
+            tract_id=tract_id,
+            branch_name=branch_name,
+            created_at=created_at,
+            original_tokens=original_tokens,
+            compressed_tokens=compressed_tokens,
+            target_tokens=target_tokens,
+            instructions=instructions,
+        )
+        self._session.add(row)
+        self._session.flush()
+
+    def add_source(self, compression_id: str, commit_hash: str, position: int) -> None:
+        row = CompressionSourceRow(
+            compression_id=compression_id,
+            commit_hash=commit_hash,
+            position=position,
+        )
+        self._session.add(row)
+        self._session.flush()
+
+    def add_result(self, compression_id: str, commit_hash: str, position: int) -> None:
+        row = CompressionResultRow(
+            compression_id=compression_id,
+            commit_hash=commit_hash,
+            position=position,
+        )
+        self._session.add(row)
+        self._session.flush()
+
+    def get_record(self, compression_id: str) -> CompressionRow | None:
+        stmt = select(CompressionRow).where(
+            CompressionRow.compression_id == compression_id
+        )
+        return self._session.execute(stmt).scalar_one_or_none()
+
+    def get_sources(self, compression_id: str) -> list[CompressionSourceRow]:
+        stmt = (
+            select(CompressionSourceRow)
+            .where(CompressionSourceRow.compression_id == compression_id)
+            .order_by(CompressionSourceRow.position)
+        )
+        return list(self._session.execute(stmt).scalars().all())
+
+    def get_results(self, compression_id: str) -> list[CompressionResultRow]:
+        stmt = (
+            select(CompressionResultRow)
+            .where(CompressionResultRow.compression_id == compression_id)
+            .order_by(CompressionResultRow.position)
+        )
+        return list(self._session.execute(stmt).scalars().all())
+
+    def is_source_of(self, commit_hash: str) -> bool:
+        stmt = select(CompressionSourceRow).where(
+            CompressionSourceRow.commit_hash == commit_hash
+        )
+        return self._session.execute(stmt).first() is not None
+
+    def get_all_source_hashes(self, tract_id: str) -> set[str]:
+        stmt = (
+            select(CompressionSourceRow.commit_hash)
+            .join(
+                CompressionRow,
+                CompressionSourceRow.compression_id == CompressionRow.compression_id,
+            )
+            .where(CompressionRow.tract_id == tract_id)
+        )
+        return set(self._session.execute(stmt).scalars().all())

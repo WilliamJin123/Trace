@@ -42,7 +42,7 @@ class TestTableCreation:
             select(TraceMetaRow).where(TraceMetaRow.key == "schema_version")
         ).scalar_one_or_none()
         assert row is not None
-        assert row.value == "2"
+        assert row.value == "3"
 
 
 class TestBlobRow:
