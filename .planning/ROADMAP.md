@@ -152,11 +152,12 @@ Plans:
   2. Pinned commits survive compression verbatim -- their content is unchanged and verifiable by hash
   3. User can reorder commits with semantic safety checks that warn when the reordering changes meaning
   4. User can run garbage collection to remove unreachable commits with configurable retention policies (e.g., keep last N days, keep all pinned)
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 04-01: Compression engine (LLM-powered summarization, token budget targeting, hierarchical compression)
-- [ ] 04-02: Pin preservation, commit reordering, and garbage collection
+- [ ] 04-01-PLAN.md -- CompressionRecord schema (3 new tables), storage repo, domain models, migration v2->v3, summarization prompt
+- [ ] 04-02-PLAN.md -- Compression engine (compress_range operation, Tract.compress facade, 3 autonomy modes, PINNED preservation, provenance)
+- [ ] 04-03-PLAN.md -- Compile-time reordering (order parameter, safety checks) and garbage collection (retention policies, reachability)
 
 ### Phase 5: Multi-Agent & Release
 **Goal**: Users can coordinate multiple agent traces with spawn/collapse semantics, recover from crashes, and install Trace as a pip package
@@ -190,5 +191,5 @@ Phases execute in numeric order: 1 -> 1.1 -> 1.2 -> 1.3 -> 1.4 -> 2 -> 3 -> 4 ->
 | 1.4 LRU Cache & Snapshot Patching | 1/1 | Complete | 2026-02-11 |
 | 2. Linear History & CLI | 3/3 | Complete | 2026-02-12 |
 | 3. Branching & Merging | 5/5 | Complete | 2026-02-14 |
-| 4. Compression | 0/2 | Not started | - |
+| 4. Compression | 0/3 | Not started | - |
 | 5. Multi-Agent & Release | 0/3 | Not started | - |
