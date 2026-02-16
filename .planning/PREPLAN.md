@@ -53,6 +53,10 @@ For context we would be doing a lot of **preemptive branching** to avoid any bad
   - **Human-controllable context compression** — combine these commits, throw away those ones
   - **Context-specific edits** — change this context commit (add/remove/rewrite with XYZ in mind)
   - **Auditability** — clear meta-insights into context over conversation turns, tool calls, etc.
+- We want to **persist and transfer context across sessions** — whether continuing our own work later, or handing off to a different agent
+  - End-of-session: agent/human/auto commits capture decisions made, constraints discovered, progress state, and failed approaches
+  - Start-of-session: compile prior history into clean starting context — no re-explaining, no lost invariants
+  - Cross-agent handoff: one agent's committed output becomes another agent's starting context (orthogonal to multi-agent spawn pointers — this is sequential, not concurrent)
 
 ---
 
@@ -100,7 +104,21 @@ An agent is halfway through a feature when the developer realizes it's been oper
 - **Without**: Developer either restarts entirely or corrects inline, leading to schizophrenic context mixing both paradigms.
 - **With**: Surgical correction of a historical commit. No restart, no pollution. Fix propagates forward cleanly.
 
-### 7. Mid-Flight Pivot in a Swarm
+### 7. Session Amnesia
+
+A developer spends 2 hours with an agent refining a database schema. They close the chat. Next day, they reopen and the agent has no memory of yesterday's decisions — asks "what database are you using?" again.
+
+- **Without**: Developer re-explains everything. Subtle decisions from yesterday are forgotten. Agent re-proposes approaches that were already rejected.
+- **With**: Yesterday's session was committed: schema decisions (pinned), rejected approaches (skip-annotated), and remaining TODOs. Today's session compiles that history and picks up exactly where it left off.
+
+### 8. Agent-to-Agent Relay
+
+A research agent spends 30 turns analyzing three competing API designs, producing a recommendation. Now an implementation agent needs to execute on that recommendation.
+
+- **Without**: The full 30-turn research transcript gets dumped into the implementation agent's context. It's noisy, full of dead-end analysis, and the implementation agent gets confused by the rejected options.
+- **With**: The research agent commits its conclusion and key constraints. The implementation agent compiles just the relevant history — clean recommendation, no noise from the exploration process. The full research trace is still available on its branch if questions arise.
+
+### 9. Mid-Flight Pivot in a Swarm
 
 A swarm of agents is migrating a frontend from React to Next.js. Subagent A refactors 50+ components while Subagent B sets up the App Router. Halfway through, the developer switches from Styled Components to Tailwind.
 

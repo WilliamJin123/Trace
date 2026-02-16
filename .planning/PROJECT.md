@@ -32,6 +32,8 @@ Trace is a Python library that brings git-like version control to LLM context wi
 - [ ] Commit reordering with semantic safety checks
 - [ ] Multi-agent: spawn pointers, subagent traces, context collapse, expand for debugging
 - [ ] Session persistence and crash recovery
+- [ ] Session continuity: commit session knowledge (decisions, progress, failed approaches) and compile prior sessions into clean starting context — supports manual, collaborative, and autonomous modes
+- [ ] Cross-session handoff: sequential agent-to-agent context transfer via committed session outputs (distinct from concurrent multi-agent spawn pointers)
 - [ ] Garbage collection with retention policies
 - [ ] Published pip-installable package with docs and examples
 
