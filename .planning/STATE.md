@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-10)
 
 **Core value:** Agents produce better outputs when their context is clean, coherent, and relevant. Trace makes context a managed, version-controlled resource.
-**Current focus:** Phase 4 in progress (Compression). Plan 04-02 complete. Next: 04-03.
+**Current focus:** Phase 4 COMPLETE (Compression). All 3 plans done. Next: Phase 5 (Multi-Agent).
 
 ## Current Position
 
 Phase: 4 of 5 (Compression)
-Plan: 2 of 3 in current phase
-Status: In progress
-Last activity: 2026-02-16 - Completed 04-02-PLAN.md (Compression Engine, 25 tests, 535 total)
+Plan: 3 of 3 in current phase
+Status: Phase complete
+Last activity: 2026-02-16 - Completed 04-03-PLAN.md (GC & Reorder, 28 tests, 563 total)
 
-Progress: [##################] 90% (18/20 plans)
+Progress: [####################] 95% (19/20 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 18
-- Average duration: 5.5m
-- Total execution time: 1.68 hours
+- Total plans completed: 19
+- Average duration: 5.6m
+- Total execution time: 1.83 hours
 
 **By Phase:**
 
@@ -34,11 +34,11 @@ Progress: [##################] 90% (18/20 plans)
 | 1.4 | 1/1 | 4m | 4m |
 | 2 | 3/3 | 14m | 4.7m |
 | 3 | 5/5 | 30m | 6m |
-| 4 | 2/3 | 14m | 7m |
+| 4 | 3/3 | 23m | 7.7m |
 
 **Recent Trend:**
-- Last 5 plans: 03-04 (6m), 03-05 (3m), 04-01 (6m), 04-02 (8m)
-- Trend: steady at ~3-8m
+- Last 5 plans: 03-05 (3m), 04-01 (6m), 04-02 (8m), 04-03 (9m)
+- Trend: steady at ~3-9m
 
 *Updated after each plan completion*
 
@@ -128,6 +128,10 @@ Recent decisions affecting current work:
 - [04-02]: Single summary in manual mode covers all groups (no per-group manual text)
 - [04-02]: PendingCompression stores hidden context (_range_commits etc.) for deferred commit
 - [04-02]: Root commit range handled by deleting branch ref so get_head returns None
+- [04-03]: Safety checks are advisory (warnings, not errors) and operate on commit DB
+- [04-03]: compile(order=...) returns tuple (CompiledContext, list[ReorderWarning]) for clean warning delivery
+- [04-03]: GC deletes RefRow entries (ORIG_HEAD etc.) pointing to removed commits to avoid FK violations
+- [04-03]: CommitRepository.delete() handles all FK cleanup: annotations, parent refs, child nullification
 
 ### Pending Todos
 
@@ -146,7 +150,7 @@ None.
 - ~~Phase 1: stdlib `trace` module shadowing~~ RESOLVED: Package renamed to `tract`.
 - WATCH: External linter keeps renaming `tract` back to `trace` in working tree. The git commits have correct `tract` imports. If this affects future plan execution, may need to configure ruff to ignore this rename.
 - Phase 3: Semantic merge quality is unproven for natural language context -- research flag for plan-phase
-- Phase 4: Compression is inherently lossy (3-55% degradation in research) -- need validation strategy
+- ~~Phase 4: Compression is inherently lossy (3-55% degradation in research) -- need validation strategy~~ ADDRESSED: GC with retention policies provides controlled cleanup
 - Phase 5: SQLite concurrent write behavior under multi-agent load is untested -- research flag for plan-phase
 
 ## Phase 1 Final Stats
@@ -221,18 +225,25 @@ Total test suite: 359 tests passing.
 
 Total test suite: 489 tests passing.
 
-## Phase 4 Stats (in progress)
+## Phase 4 Final Stats
 
 | Plan | Name | Tests | Duration |
 |------|------|-------|----------|
 | 04-01 | Compression Storage Foundation | 21 | 6m |
 | 04-02 | Compression Engine | 25 | 8m |
-| 04-03 | GC & CLI | - | - |
+| 04-03 | GC & Reorder | 28 | 9m |
+| **Total** | | **74** | **23m** |
 
-Total test suite: 535 tests passing.
+Total test suite: 563 tests passing.
+
+All 4 Phase 4 success criteria verified:
+- COMP-01: Compression storage (tables, repository, schema v3)
+- COMP-02: Compression engine (compress_range, 3 autonomy modes, provenance)
+- COMP-03: Compile-time reordering (order param, safety checks, cache bypass)
+- COMP-04: Garbage collection (retention policies, multi-branch reachability)
 
 ## Session Continuity
 
 Last session: 2026-02-16
-Stopped at: Completed 04-02-PLAN.md (Compression Engine). Phase 4 in progress (2/3 plans).
+Stopped at: Completed 04-03-PLAN.md (GC & Reorder). Phase 4 COMPLETE (3/3 plans).
 Resume file: None
