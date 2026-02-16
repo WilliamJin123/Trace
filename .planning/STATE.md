@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-10)
 
 **Core value:** Agents produce better outputs when their context is clean, coherent, and relevant. Trace makes context a managed, version-controlled resource.
-**Current focus:** Phase 4 in progress (Compression). Plan 04-01 complete. Next: 04-02.
+**Current focus:** Phase 4 in progress (Compression). Plan 04-02 complete. Next: 04-03.
 
 ## Current Position
 
 Phase: 4 of 5 (Compression)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: In progress
-Last activity: 2026-02-16 - Completed 04-01-PLAN.md (Compression Storage Foundation, 21 tests, 510 total)
+Last activity: 2026-02-16 - Completed 04-02-PLAN.md (Compression Engine, 25 tests, 535 total)
 
-Progress: [#################] 85% (17/20 plans)
+Progress: [##################] 90% (18/20 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 17
-- Average duration: 5.4m
-- Total execution time: 1.55 hours
+- Total plans completed: 18
+- Average duration: 5.5m
+- Total execution time: 1.68 hours
 
 **By Phase:**
 
@@ -34,10 +34,10 @@ Progress: [#################] 85% (17/20 plans)
 | 1.4 | 1/1 | 4m | 4m |
 | 2 | 3/3 | 14m | 4.7m |
 | 3 | 5/5 | 30m | 6m |
-| 4 | 1/3 | 6m | 6m |
+| 4 | 2/3 | 14m | 7m |
 
 **Recent Trend:**
-- Last 5 plans: 03-03 (8m), 03-04 (6m), 03-05 (3m), 04-01 (6m)
+- Last 5 plans: 03-04 (6m), 03-05 (3m), 04-01 (6m), 04-02 (8m)
 - Trend: steady at ~3-8m
 
 *Updated after each plan completion*
@@ -124,6 +124,10 @@ Recent decisions affecting current work:
 - [04-01]: CompressionRepository follows same ABC+SQLite pattern as other repositories
 - [04-01]: PendingCompression is mutable (not frozen) to allow summary editing before approval
 - [04-01]: v1->v2->v3 migration chain runs sequentially for v1 databases
+- [04-02]: Chain rewriting: reset HEAD to pre-range parent, replay PINNED + summaries via create_commit()
+- [04-02]: Single summary in manual mode covers all groups (no per-group manual text)
+- [04-02]: PendingCompression stores hidden context (_range_commits etc.) for deferred commit
+- [04-02]: Root commit range handled by deleting branch ref so get_head returns None
 
 ### Pending Todos
 
@@ -222,13 +226,13 @@ Total test suite: 489 tests passing.
 | Plan | Name | Tests | Duration |
 |------|------|-------|----------|
 | 04-01 | Compression Storage Foundation | 21 | 6m |
-| 04-02 | Compression Engine | - | - |
+| 04-02 | Compression Engine | 25 | 8m |
 | 04-03 | GC & CLI | - | - |
 
-Total test suite: 510 tests passing.
+Total test suite: 535 tests passing.
 
 ## Session Continuity
 
 Last session: 2026-02-16
-Stopped at: Completed 04-01-PLAN.md (Compression Storage Foundation). Phase 4 in progress (1/3 plans).
+Stopped at: Completed 04-02-PLAN.md (Compression Engine). Phase 4 in progress (2/3 plans).
 Resume file: None
