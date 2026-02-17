@@ -20,7 +20,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Linear History & CLI** - Log, status, diff, reset, checkout, and CLI wrapper for inspection
 - [x] **Phase 3: Branching & Merging** - Branch, switch, merge (fast-forward + semantic), rebase, cherry-pick, and LLM client
 - [x] **Phase 4: Compression** - Token-budget-aware compression, pinned commit preservation, commit reordering, garbage collection
-- [ ] **Phase 5: Multi-Agent & Release** - Spawn/collapse for subagents, session persistence, crash recovery, cross-repo queries, packaging
+- [x] **Phase 5: Multi-Agent & Release** - Spawn/collapse for subagents, session persistence, crash recovery, cross-repo queries, packaging
 
 ## Phase Details
 
@@ -175,9 +175,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 05-01-PLAN.md -- Storage foundation: SpawnPointerRow schema (v4 migration), SpawnPointerRepository, SessionContent model, collapse prompt
-- [ ] 05-02-PLAN.md -- Session class, spawn/collapse operations (3 inheritance modes, 3 autonomy modes for collapse), cross-repo queries, Tract.parent()/children(), crash recovery, expand for debugging
-- [ ] 05-03-PLAN.md -- Packaging (tract-ai distribution), README documentation, end-to-end integration tests, cross-session handoff test
+- [x] 05-01-PLAN.md -- Storage foundation: SpawnPointerRow schema (v4 migration), SpawnPointerRepository, SessionContent model, collapse prompt
+- [x] 05-02-PLAN.md -- Session class, spawn/collapse operations (3 inheritance modes, 3 autonomy modes for collapse), cross-repo queries, Tract.parent()/children(), crash recovery, expand for debugging
+- [x] 05-03-PLAN.md -- Packaging (tract-ai distribution), README documentation, end-to-end integration tests, cross-session handoff test
 
 ## Progress
 
@@ -194,4 +194,4 @@ Phases execute in numeric order: 1 -> 1.1 -> 1.2 -> 1.3 -> 1.4 -> 2 -> 3 -> 4 ->
 | 2. Linear History & CLI | 3/3 | Complete | 2026-02-12 |
 | 3. Branching & Merging | 5/5 | Complete | 2026-02-14 |
 | 4. Compression | 3/3 | Complete | 2026-02-16 |
-| 5. Multi-Agent & Release | 0/3 | Not started | - |
+| 5. Multi-Agent & Release | 3/3 | Complete | 2026-02-17 |

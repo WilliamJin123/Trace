@@ -9,15 +9,15 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Core Operations
 
-- [ ] **CORE-01**: User can initialize a new trace (empty context with metadata)
+- [x] **CORE-01**: User can initialize a new trace (empty context with metadata)
 - [x] **CORE-02**: User can commit a context snapshot with message, timestamp, parent pointer, and operation (append/edit); priority annotations (skip/normal/pinned) are separate metadata
 - [x] **CORE-03**: User can view commit history (log) with token counts per commit
 - [x] **CORE-04**: User can view current state (status): HEAD, current branch, token budget usage
 - [x] **CORE-05**: User can compare two commits (diff) with textual difference output
 - [x] **CORE-06**: User can reset HEAD to a previous commit (soft: keep content accessible, hard: discard forward)
 - [x] **CORE-07**: User can checkout a specific commit for read-only inspection
-- [ ] **CORE-08**: Commits support structured content types: plain text, conversation messages (role: system/user/assistant/tool), and tool call results
-- [ ] **CORE-09**: Materialization preserves message structure (role, content) when rendering context for LLM consumption
+- [x] **CORE-08**: Commits support structured content types: plain text, conversation messages (role: system/user/assistant/tool), and tool call results
+- [x] **CORE-09**: Materialization preserves message structure (role, content) when rendering context for LLM consumption
 
 ### Branching & Merging
 
@@ -37,30 +37,30 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Multi-Agent
 
-- [ ] **MAGT-01**: User can spawn a subagent trace linked to current commit (spawn pointer)
-- [ ] **MAGT-02**: Each subagent gets its own full trace repository
-- [ ] **MAGT-03**: User can collapse subagent trace into parent (summary + compressed trace + provenance pointer)
-- [ ] **MAGT-04**: User can expand a collapse commit to inspect subagent history for debugging
-- [ ] **MAGT-05**: All agent traces persist durably in storage
-- [ ] **MAGT-06**: User can resume from last committed state after process restart (crash recovery)
-- [ ] **MAGT-07**: User can query across repos within a session
+- [x] **MAGT-01**: User can spawn a subagent trace linked to current commit (spawn pointer)
+- [x] **MAGT-02**: Each subagent gets its own full trace repository
+- [x] **MAGT-03**: User can collapse subagent trace into parent (summary + compressed trace + provenance pointer)
+- [x] **MAGT-04**: User can expand a collapse commit to inspect subagent history for debugging
+- [x] **MAGT-05**: All agent traces persist durably in storage
+- [x] **MAGT-06**: User can resume from last committed state after process restart (crash recovery)
+- [x] **MAGT-07**: User can query across repos within a session
 
 ### Infrastructure
 
-- [ ] **INFR-01**: SQLite storage via SQLAlchemy with content-addressable blobs and structured metadata
-- [ ] **INFR-02**: Token counting on every commit and operation (tiktoken default)
-- [ ] **INFR-03**: Pluggable tokenizer protocol for model-specific counters
-- [ ] **INFR-04**: API response token count extraction when available
-- [ ] **INFR-05**: Pluggable materializer with simple concatenation default
-- [ ] **INFR-06**: Custom materializer support for structured prompts (message arrays, XML tags, etc.)
+- [x] **INFR-01**: SQLite storage via SQLAlchemy with content-addressable blobs and structured metadata
+- [x] **INFR-02**: Token counting on every commit and operation (tiktoken default)
+- [x] **INFR-03**: Pluggable tokenizer protocol for model-specific counters
+- [x] **INFR-04**: API response token count extraction when available
+- [x] **INFR-05**: Pluggable materializer with simple concatenation default
+- [x] **INFR-06**: Custom materializer support for structured prompts (message arrays, XML tags, etc.)
 
 ### Interfaces
 
-- [ ] **INTF-01**: Python SDK as primary interface (Repo.open(), commit(), branch(), merge(), etc.)
+- [x] **INTF-01**: Python SDK as primary interface (Tract.open(), commit(), branch(), merge(), etc.)
 - [x] **INTF-02**: CLI wrapper for inspection/debugging (tract log, status, diff, etc.) via Click + Rich
 - [x] **INTF-03**: Built-in LLM client (httpx-based) for compression and semantic merge
 - [x] **INTF-04**: User-provided callable support for custom LLM operations
-- [ ] **INTF-05**: pip-installable package with documentation and examples
+- [x] **INTF-05**: pip-installable package with documentation and examples
 
 ## v2 Requirements
 
@@ -124,13 +124,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | COMP-02 | Phase 4 | Complete |
 | COMP-03 | Phase 4 | Complete |
 | COMP-04 | Phase 4 | Complete |
-| MAGT-01 | Phase 5 | Pending |
-| MAGT-02 | Phase 5 | Pending |
-| MAGT-03 | Phase 5 | Pending |
-| MAGT-04 | Phase 5 | Pending |
-| MAGT-05 | Phase 5 | Pending |
-| MAGT-06 | Phase 5 | Pending |
-| MAGT-07 | Phase 5 | Pending |
+| MAGT-01 | Phase 5 | Complete |
+| MAGT-02 | Phase 5 | Complete |
+| MAGT-03 | Phase 5 | Complete |
+| MAGT-04 | Phase 5 | Complete |
+| MAGT-05 | Phase 5 | Complete |
+| MAGT-06 | Phase 5 | Complete |
+| MAGT-07 | Phase 5 | Complete |
 | INFR-01 | Phase 1 | Complete |
 | INFR-02 | Phase 1 | Complete |
 | INFR-03 | Phase 1 | Complete |
@@ -141,7 +141,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INTF-02 | Phase 2 | Complete |
 | INTF-03 | Phase 3 | Complete |
 | INTF-04 | Phase 3 | Complete |
-| INTF-05 | Phase 5 | Pending |
+| INTF-05 | Phase 5 | Complete |
 
 **Coverage:**
 - v1 requirements: 37 total
