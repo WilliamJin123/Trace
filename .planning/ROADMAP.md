@@ -199,10 +199,12 @@ Plans:
   4. Auto-branch detects tangential exploration and creates branches to isolate it from the main context line
   5. Auto-rebase cleans up abandoned exploration branches (configurable staleness threshold)
   6. Every automatic operation can be intercepted, reviewed, or overridden by a human before or after execution
-**Plans**: 0 plans
+**Plans**: 3 plans
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 6 to break down)
+- [ ] 06-01-PLAN.md -- Storage foundation: PolicyProposalRow + PolicyLogRow schema (v5 migration), PolicyRepository ABC, SqlitePolicyRepository, domain models, exceptions
+- [ ] 06-02-PLAN.md -- Policy ABC, PolicyEvaluator sidecar, Tract facade integration (configure_policies, register_policy, pause/resume, compile/commit hooks, config persistence)
+- [ ] 06-03-PLAN.md -- Built-in policies (CompressPolicy, PinPolicy, BranchPolicy, RebasePolicy), unit tests, end-to-end integration tests
 
 ### Phase 7: Context Management Agent
 **Goal**: A dedicated context management agent monitors context health (relevance, coherence, token usage) and proposes/executes operations via the policy engine, completing the autonomy spectrum from manual through collaborative to fully autonomous
@@ -242,5 +244,5 @@ Phases execute in numeric order: 1 -> 1.1 -> 1.2 -> 1.3 -> 1.4 -> 2 -> 3 -> 4 ->
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 6. Policy Engine | 0/? | Not Started | — |
+| 6. Policy Engine | 0/3 | Not Started | — |
 | 7. Context Management Agent | 0/? | Not Started | — |
