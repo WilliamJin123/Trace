@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-10)
 
 **Core value:** Agents produce better outputs when their context is clean, coherent, and relevant. Trace makes context a managed, version-controlled resource.
-**Current focus:** Phase 5 in progress (Multi-Agent & Release). Plan 1 of 3 complete.
+**Current focus:** Phase 5 in progress (Multi-Agent & Release). Plan 2 of 3 complete.
 
 ## Current Position
 
 Phase: 5 of 5 (Multi-Agent & Release)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: In progress
-Last activity: 2026-02-17 - Completed 05-01-PLAN.md (Spawn Storage Foundation, 24 tests, 602 total)
+Last activity: 2026-02-17 - Completed 05-02-PLAN.md (Session & Spawn Operations, 46 tests, 648 total)
 
-Progress: [####################-] 95.5% (20/21 plans)
+Progress: [#####################] 97.6% (21/22 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 20
-- Average duration: 5.6m
-- Total execution time: 1.97 hours
+- Total plans completed: 21
+- Average duration: 5.7m
+- Total execution time: 2.18 hours
 
 **By Phase:**
 
@@ -35,11 +35,11 @@ Progress: [####################-] 95.5% (20/21 plans)
 | 2 | 3/3 | 14m | 4.7m |
 | 3 | 5/5 | 30m | 6m |
 | 4 | 3/3 | 23m | 7.7m |
-| 5 | 1/3 | 8m | 8m |
+| 5 | 2/3 | 21m | 10.5m |
 
 **Recent Trend:**
-- Last 5 plans: 04-01 (6m), 04-02 (8m), 04-03 (9m), 05-01 (8m)
-- Trend: steady at ~6-9m
+- Last 5 plans: 04-02 (8m), 04-03 (9m), 05-01 (8m), 05-02 (13m)
+- Trend: increasing with complexity (~8-13m)
 
 *Updated after each plan completion*
 
@@ -138,6 +138,12 @@ Recent decisions affecting current work:
 - [05-01]: has_ancestor() uses iterative walk with visited set for cycle detection
 - [05-01]: SessionContent compression_priority=95 (protected from compression like instructions)
 - [05-01]: CollapseResult.summary_text always populated even when auto_commit=False
+- [05-02]: Pre-capture parent state before spawn commit to prevent inheritance pollution
+- [05-02]: Commit spawn_repo session before parent commit to avoid SQLite write lock contention
+- [05-02]: head_snapshot produces 1 InstructionContent commit; full_clone replays all commits with new hashes
+- [05-02]: collapse auto_commit defaults based on session autonomy level
+- [05-02]: get_child_tract reads collapse_source_tract_id from commit metadata for expand-for-debugging
+- [05-02]: Concurrent thread safety: separate tracts per thread; same-session concurrent writes are SQLAlchemy limitation
 
 ### Pending Todos
 
@@ -157,7 +163,7 @@ None.
 - WATCH: External linter keeps renaming `tract` back to `trace` in working tree. The git commits have correct `tract` imports. If this affects future plan execution, may need to configure ruff to ignore this rename.
 - Phase 3: Semantic merge quality is unproven for natural language context -- research flag for plan-phase
 - ~~Phase 4: Compression is inherently lossy (3-55% degradation in research) -- need validation strategy~~ ADDRESSED: GC with retention policies provides controlled cleanup
-- Phase 5: SQLite concurrent write behavior under multi-agent load is untested -- research flag for plan-phase
+- ~~Phase 5: SQLite concurrent write behavior under multi-agent load is untested~~ ADDRESSED: Tested with 3 concurrent tests. Per-tract sessions work correctly; same-session concurrent writes are SQLAlchemy limitation (not SQLite).
 
 ## Phase 1 Final Stats
 
@@ -253,13 +259,13 @@ All 4 Phase 4 success criteria verified:
 | Plan | Name | Tests | Duration |
 |------|------|-------|----------|
 | 05-01 | Spawn Storage Foundation | 24 | 8m |
-| 05-02 | Session & Spawn Operations | - | - |
+| 05-02 | Session & Spawn Operations | 46 | 13m |
 | 05-03 | CLI & Packaging | - | - |
 
-Total test suite: 602 tests passing.
+Total test suite: 648 tests passing.
 
 ## Session Continuity
 
 Last session: 2026-02-17
-Stopped at: Completed 05-01-PLAN.md (Spawn Storage Foundation). Phase 5 in progress (1/3 plans).
+Stopped at: Completed 05-02-PLAN.md (Session & Spawn Operations). Phase 5 in progress (2/3 plans).
 Resume file: None
