@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-10)
 
 **Core value:** Agents produce better outputs when their context is clean, coherent, and relevant. Trace makes context a managed, version-controlled resource.
-**Current focus:** Phase 5 in progress (Multi-Agent & Release). Plan 2 of 3 complete.
+**Current focus:** PROJECT COMPLETE. All 5 phases delivered. 664 tests passing.
 
 ## Current Position
 
 Phase: 5 of 5 (Multi-Agent & Release)
-Plan: 2 of 3 in current phase
-Status: In progress
-Last activity: 2026-02-17 - Completed 05-02-PLAN.md (Session & Spawn Operations, 46 tests, 648 total)
+Plan: 3 of 3 in current phase
+Status: COMPLETE
+Last activity: 2026-02-17 - Completed 05-03-PLAN.md (Packaging, Documentation & Integration Tests, 16 tests, 664 total)
 
-Progress: [#####################] 97.6% (21/22 plans)
+Progress: [######################] 100% (22/22 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 21
-- Average duration: 5.7m
-- Total execution time: 2.18 hours
+- Total plans completed: 22
+- Average duration: 5.8m
+- Total execution time: 2.30 hours
 
 **By Phase:**
 
@@ -35,11 +35,11 @@ Progress: [#####################] 97.6% (21/22 plans)
 | 2 | 3/3 | 14m | 4.7m |
 | 3 | 5/5 | 30m | 6m |
 | 4 | 3/3 | 23m | 7.7m |
-| 5 | 2/3 | 21m | 10.5m |
+| 5 | 3/3 | 28m | 9.3m |
 
 **Recent Trend:**
-- Last 5 plans: 04-02 (8m), 04-03 (9m), 05-01 (8m), 05-02 (13m)
-- Trend: increasing with complexity (~8-13m)
+- Last 5 plans: 04-03 (9m), 05-01 (8m), 05-02 (13m), 05-03 (7m)
+- Trend: steady (~7-13m)
 
 *Updated after each plan completion*
 
@@ -144,6 +144,10 @@ Recent decisions affecting current work:
 - [05-02]: collapse auto_commit defaults based on session autonomy level
 - [05-02]: get_child_tract reads collapse_source_tract_id from commit metadata for expand-for-debugging
 - [05-02]: Concurrent thread safety: separate tracts per thread; same-session concurrent writes are SQLAlchemy limitation
+- [05-03]: Distribution name `tract-ai` (import name stays `tract`) to avoid PyPI conflicts
+- [05-03]: README targets ~235 lines with copy-pasteable code examples
+- [05-03]: Integration tests use real SQLite databases (tmp_path), no mocks
+- [05-03]: py.typed PEP 561 marker added for downstream mypy/pyright support
 
 ### Pending Todos
 
@@ -254,18 +258,29 @@ All 4 Phase 4 success criteria verified:
 - COMP-03: Compile-time reordering (order param, safety checks, cache bypass)
 - COMP-04: Garbage collection (retention policies, multi-branch reachability)
 
-## Phase 5 Stats (In Progress)
+## Phase 5 Final Stats
 
 | Plan | Name | Tests | Duration |
 |------|------|-------|----------|
 | 05-01 | Spawn Storage Foundation | 24 | 8m |
 | 05-02 | Session & Spawn Operations | 46 | 13m |
-| 05-03 | CLI & Packaging | - | - |
+| 05-03 | Packaging, Documentation & Integration Tests | 16 | 7m |
+| **Total** | | **86** | **28m** |
 
-Total test suite: 648 tests passing.
+Total test suite: 664 tests passing.
+
+All Phase 5 success criteria verified:
+- MULTI-01: Spawn storage (spawn_pointers table, schema v4, pointer CRUD)
+- MULTI-02: Session class (open/create/spawn/collapse/timeline/search/resume)
+- MULTI-03: Packaging (tract-ai distribution, README, integration tests)
+
+## PROJECT COMPLETE
+
+All 5 phases delivered. 22 plans executed. 664 tests passing.
+Total execution time: 2.30 hours across all phases.
 
 ## Session Continuity
 
 Last session: 2026-02-17
-Stopped at: Completed 05-02-PLAN.md (Session & Spawn Operations). Phase 5 in progress (2/3 plans).
+Stopped at: PROJECT COMPLETE. All 22 plans across 5 phases executed successfully.
 Resume file: None
