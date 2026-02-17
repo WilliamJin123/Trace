@@ -90,8 +90,15 @@ def spawn_tract(
     # Generate child tract_id
     child_tract_id = uuid.uuid4().hex
 
-    # Record parent HEAD before creating the spawn commit
+    # Capture parent state BEFORE creating spawn commit
+    # (so inheritance doesn't include the spawn commit itself)
     parent_head = parent_tract.head
+    parent_compiled = parent_tract.compile() if parent_head else None
+    parent_commits_snapshot = None
+    if inheritance == "full_clone":
+        parent_commits_snapshot = list(
+            parent_tract._commit_repo.get_all(parent_tract.tract_id)
+        )
 
     # Create spawn pointer
     now = datetime.now(timezone.utc)
@@ -104,6 +111,9 @@ def spawn_tract(
         display_name=display_name,
         created_at=now,
     )
+    # Commit the spawn pointer session to release the write lock
+    # before the parent tract's session tries to write
+    spawn_repo._session.commit()
 
     # Create spawn commit in parent
     parent_tract.commit(
@@ -148,10 +158,10 @@ def spawn_tract(
         parent_repo=child_parent_repo,
     )
 
-    # Apply inheritance
+    # Apply inheritance using pre-captured parent state
     if inheritance == "head_snapshot":
         _head_snapshot(
-            parent_tract,
+            parent_compiled,
             child_commit_engine,
             max_tokens=max_tokens,
             token_counter=child_token_counter,
@@ -165,6 +175,7 @@ def spawn_tract(
             child_blob_repo,
             child_ref_repo,
             child_annotation_repo,
+            commits_snapshot=parent_commits_snapshot,
         )
         child_session.commit()
 
@@ -191,7 +202,7 @@ def spawn_tract(
 
 
 def _head_snapshot(
-    parent_tract,
+    parent_compiled: CompiledContext | None,
     child_commit_engine: CommitEngine,
     *,
     max_tokens: int | None = None,
@@ -200,7 +211,7 @@ def _head_snapshot(
     """Compile parent context and seed child with it.
 
     Args:
-        parent_tract: The parent Tract to snapshot.
+        parent_compiled: Pre-captured CompiledContext from parent, or None if empty.
         child_commit_engine: CommitEngine for the child tract.
         max_tokens: If set, truncate oldest messages to fit budget.
         token_counter: Token counter for measuring truncation.
@@ -208,13 +219,12 @@ def _head_snapshot(
     Returns:
         Child's HEAD hash after seeding, or None if parent is empty.
     """
-    compiled = parent_tract.compile()
-    if not compiled.messages:
+    if parent_compiled is None or not parent_compiled.messages:
         return None
 
     # Format messages into text blob
     lines = []
-    for msg in compiled.messages:
+    for msg in parent_compiled.messages:
         lines.append(f"[{msg.role}]: {msg.content}")
     text = "\n".join(lines)
 
@@ -245,6 +255,8 @@ def _full_clone(
     child_blob_repo,
     child_ref_repo,
     child_annotation_repo,
+    *,
+    commits_snapshot: list | None = None,
 ) -> str | None:
     """Replay all parent commits into child tract.
 
@@ -255,14 +267,18 @@ def _full_clone(
         child_blob_repo: Child's blob repository.
         child_ref_repo: Child's ref repository.
         child_annotation_repo: Child's annotation repository.
+        commits_snapshot: Pre-captured list of parent CommitRows to clone.
+            If None, reads from parent_tract (may include spawn commit).
 
     Returns:
         Child's HEAD hash after cloning, or None if parent is empty.
     """
     from tract.models.content import validate_content
 
-    # Get all parent commits in chronological order (oldest first)
-    all_commits = parent_tract._commit_repo.get_all(parent_tract.tract_id)
+    # Use pre-captured snapshot or read from parent (fallback)
+    all_commits = commits_snapshot if commits_snapshot is not None else list(
+        parent_tract._commit_repo.get_all(parent_tract.tract_id)
+    )
     if not all_commits:
         return None
 

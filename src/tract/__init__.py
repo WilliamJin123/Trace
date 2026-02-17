@@ -57,6 +57,10 @@ from tract.models.merge import (
 # Compression models
 from tract.models.compression import CompressResult, GCResult, PendingCompression, ReorderWarning
 
+# Session and spawn models
+from tract.session import Session
+from tract.models.session import SessionContent, SpawnInfo, CollapseResult
+
 # Operations data models
 from tract.operations.history import StatusInfo
 from tract.operations.diff import DiffResult, MessageDiff, DiffStat
@@ -83,6 +87,8 @@ from tract.exceptions import (
     SemanticSafetyError,
     CompressionError,
     GCError,
+    SpawnError,
+    SessionError,
 )
 
 __all__ = [
@@ -150,6 +156,11 @@ __all__ = [
     "RebaseError",
     "CherryPickError",
     "SemanticSafetyError",
+    # Session and spawn models
+    "Session",
+    "SessionContent",
+    "SpawnInfo",
+    "CollapseResult",
     # Compression models
     "CompressResult",
     "GCResult",
@@ -157,4 +168,6 @@ __all__ = [
     "ReorderWarning",
     "CompressionError",
     "GCError",
+    "SpawnError",
+    "SessionError",
 ]
