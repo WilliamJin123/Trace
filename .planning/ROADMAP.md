@@ -27,7 +27,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **v2 Milestone: Autonomous Context Management**
 
 - [x] **Phase 6: Policy Engine** - Rule/trigger system for automatic context operations (auto-compress, auto-pin, auto-branch, auto-rebase) with configurable policies and human override
-- [ ] **Phase 7: Agent Toolkit & Orchestrator** - Expose Tract operations as agent tools with customizable prompts/profiles, ship a lightweight policy-integrated orchestrator as reference implementation, complete the autonomy spectrum
+- [x] **Phase 7: Agent Toolkit & Orchestrator** - Expose Tract operations as agent tools with customizable prompts/profiles, ship a lightweight policy-integrated orchestrator as reference implementation, complete the autonomy spectrum
 
 ## Phase Details
 
@@ -219,9 +219,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 07-01-PLAN.md -- Toolkit foundation: ToolDefinition, ToolProfile, ToolConfig models, 15 hand-crafted tool definitions, 3 built-in profiles (self/supervisor/full), ToolExecutor, Tract.as_tools() facade
-- [ ] 07-02-PLAN.md -- Orchestrator models: OrchestratorConfig, AutonomyLevel, OrchestratorState, TriggerConfig, OrchestratorProposal, ProposalResponse, built-in callbacks (auto_approve, log_and_approve, cli_prompt), assessment prompts
-- [ ] 07-03-PLAN.md -- Orchestrator loop: Orchestrator class (assess->LLM->tools->repeat), stop/pause lifecycle, policy integration (_orchestrating guard), Tract.orchestrate() facade, integration tests
+- [x] 07-01-PLAN.md -- Toolkit foundation: ToolDefinition, ToolProfile, ToolConfig models, 15 hand-crafted tool definitions, 3 built-in profiles (self/supervisor/full), ToolExecutor, Tract.as_tools() facade
+- [x] 07-02-PLAN.md -- Orchestrator models: OrchestratorConfig, AutonomyLevel, OrchestratorState, TriggerConfig, OrchestratorProposal, ProposalResponse, built-in callbacks (auto_approve, log_and_approve, cli_prompt), assessment prompts
+- [x] 07-03-PLAN.md -- Orchestrator loop: Orchestrator class (assess->LLM->tools->repeat), stop/pause lifecycle, policy integration (_orchestrating guard), Tract.orchestrate() facade, integration tests
 
 ## Progress
 
@@ -247,4 +247,4 @@ Phases execute in numeric order: 1 -> 1.1 -> 1.2 -> 1.3 -> 1.4 -> 2 -> 3 -> 4 ->
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 6. Policy Engine | 3/3 | Complete | 2026-02-17 |
-| 7. Agent Toolkit & Orchestrator | 0/3 | Not Started | — |
+| 7. Agent Toolkit & Orchestrator | 3/3 | Complete | 2026-02-18 |
