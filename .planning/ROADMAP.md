@@ -27,7 +27,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **v2 Milestone: Autonomous Context Management**
 
 - [x] **Phase 6: Policy Engine** - Rule/trigger system for automatic context operations (auto-compress, auto-pin, auto-branch, auto-rebase) with configurable policies and human override
-- [ ] **Phase 7: Context Management Agent** - Dedicated agent monitoring context health, proposing and executing operations via policies, full autonomy spectrum integration
+- [ ] **Phase 7: Agent Toolkit & Orchestrator** - Expose Tract operations as agent tools with customizable prompts/profiles, ship a lightweight policy-integrated orchestrator as reference implementation, complete the autonomy spectrum
 
 ## Phase Details
 
@@ -202,24 +202,26 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 06-01-PLAN.md -- Storage foundation: PolicyProposalRow + PolicyLogRow schema (v5 migration), PolicyRepository ABC, SqlitePolicyRepository, domain models, exceptions
-- [ ] 06-02-PLAN.md -- Policy ABC, PolicyEvaluator sidecar, Tract facade integration (configure_policies, register_policy, pause/resume, compile/commit hooks, config persistence)
-- [ ] 06-03-PLAN.md -- Built-in policies (CompressPolicy, PinPolicy, BranchPolicy, RebasePolicy), unit tests, end-to-end integration tests
+- [x] 06-01-PLAN.md -- Storage foundation: PolicyProposalRow + PolicyLogRow schema (v5 migration), PolicyRepository ABC, SqlitePolicyRepository, domain models, exceptions
+- [x] 06-02-PLAN.md -- Policy ABC, PolicyEvaluator sidecar, Tract facade integration (configure_policies, register_policy, pause/resume, compile/commit hooks, config persistence)
+- [x] 06-03-PLAN.md -- Built-in policies (CompressPolicy, PinPolicy, BranchPolicy, RebasePolicy), unit tests, end-to-end integration tests
 
-### Phase 7: Context Management Agent
-**Goal**: A dedicated context management agent monitors context health (relevance, coherence, token usage) and proposes/executes operations via the policy engine, completing the autonomy spectrum from manual through collaborative to fully autonomous
+### Phase 7: Agent Toolkit & Orchestrator
+**Goal**: Expose Tract operations as an agent toolkit (tool schemas with customizable prompts and profiles) and ship a lightweight built-in orchestrator that uses the toolkit. The orchestrator is policy-integrated: policies trigger it, it reasons via LLM, policies constrain it. This completes the autonomy spectrum from Core Value #2.
 **Depends on**: Phase 6 (policy engine provides the rule infrastructure)
-**Requirements**: AUTO-07 (context health monitoring), AUTO-08 (operation proposals), AUTO-09 (autonomous execution), AUTO-10 (human override integration)
+**Requirements**: AUTO-07 (agent toolkit), AUTO-08 (operation proposals), AUTO-09 (autonomous execution), AUTO-10 (human override integration)
 **Success Criteria** (what must be TRUE):
-  1. A context management agent can monitor a running agent's trace and assess context health (relevance decay, coherence, token pressure)
-  2. The agent proposes context operations (compress, reorder, branch, pin) with explanations humans can review
-  3. In autonomous mode, the agent executes operations end-to-end without human intervention
-  4. In collaborative mode, the agent proposes and humans approve/reject/modify before execution
-  5. Human can override or disable the context agent at any point without data loss
-**Plans**: 0 plans
+  1. User can call `Tract.as_tools()` to get tool definitions with customizable profiles (self-management vs supervisor) and description overrides
+  2. The built-in orchestrator proposes context operations with reasoning and alternatives that humans can review via callbacks
+  3. In autonomous mode, the orchestrator executes operations end-to-end via policy triggers without human intervention
+  4. In collaborative mode, the orchestrator proposes and humans approve/reject/fully-override before execution
+  5. Human can stop (immediate) or pause (graceful) the orchestrator at any point without data loss, and change the global autonomy ceiling at runtime
+**Plans**: 3 plans
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 7 to break down)
+- [ ] 07-01-PLAN.md -- Toolkit foundation: ToolDefinition, ToolProfile, ToolConfig models, 15 hand-crafted tool definitions, 3 built-in profiles (self/supervisor/full), ToolExecutor, Tract.as_tools() facade
+- [ ] 07-02-PLAN.md -- Orchestrator models: OrchestratorConfig, AutonomyLevel, OrchestratorState, TriggerConfig, OrchestratorProposal, ProposalResponse, built-in callbacks (auto_approve, log_and_approve, cli_prompt), assessment prompts
+- [ ] 07-03-PLAN.md -- Orchestrator loop: Orchestrator class (assess->LLM->tools->repeat), stop/pause lifecycle, policy integration (_orchestrating guard), Tract.orchestrate() facade, integration tests
 
 ## Progress
 
@@ -245,4 +247,4 @@ Phases execute in numeric order: 1 -> 1.1 -> 1.2 -> 1.3 -> 1.4 -> 2 -> 3 -> 4 ->
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 6. Policy Engine | 3/3 | Complete | 2026-02-17 |
-| 7. Context Management Agent | 0/? | Not Started | — |
+| 7. Agent Toolkit & Orchestrator | 0/3 | Not Started | — |
