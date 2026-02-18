@@ -57,6 +57,10 @@ from tract.models.merge import (
 # Compression models
 from tract.models.compression import CompressResult, GCResult, PendingCompression, ReorderWarning
 
+# Policy engine
+from tract.policy import Policy, PolicyEvaluator
+from tract.models.policy import PolicyAction, PolicyProposal, EvaluationResult, PolicyLogEntry
+
 # Session and spawn models
 from tract.session import Session
 from tract.models.session import SessionContent, SpawnInfo, CollapseResult
@@ -89,6 +93,8 @@ from tract.exceptions import (
     GCError,
     SpawnError,
     SessionError,
+    PolicyExecutionError,
+    PolicyConfigError,
 )
 
 __all__ = [
@@ -160,6 +166,15 @@ __all__ = [
     "GCError",
     "SpawnError",
     "SessionError",
+    "PolicyExecutionError",
+    "PolicyConfigError",
+    # Policy engine
+    "Policy",
+    "PolicyEvaluator",
+    "PolicyAction",
+    "PolicyProposal",
+    "EvaluationResult",
+    "PolicyLogEntry",
     # Compression models
     "CompressResult",
     "GCResult",

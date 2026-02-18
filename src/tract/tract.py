@@ -45,7 +45,7 @@ from tract.storage.sqlite import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
 
     from sqlalchemy import Engine
     from sqlalchemy.orm import Session
@@ -53,10 +53,13 @@ if TYPE_CHECKING:
     from tract.models.branch import BranchInfo
     from tract.models.compression import CompressResult, GCResult, PendingCompression
     from tract.models.merge import CherryPickResult, MergeResult, RebaseResult
+    from tract.models.policy import PolicyProposal
     from tract.models.session import SpawnInfo
     from tract.operations.diff import DiffResult
     from tract.operations.history import StatusInfo
+    from tract.policy.evaluator import PolicyEvaluator
     from tract.storage.schema import CommitRow
+    from tract.storage.sqlite import SqlitePolicyRepository
 
 
 class Tract:
@@ -120,6 +123,8 @@ class Tract:
         self._verify_cache: bool = verify_cache
         self._in_batch: bool = False
         self._closed = False
+        self._policy_evaluator: PolicyEvaluator | None = None
+        self._policy_repo: SqlitePolicyRepository | None = None
 
     @classmethod
     def open(
@@ -195,6 +200,10 @@ class Tract:
         # Spawn pointer repository
         spawn_repo = SqliteSpawnPointerRepository(session)
 
+        # Policy repository
+        from tract.storage.sqlite import SqlitePolicyRepository as _SqlitePolicyRepository
+        policy_repo = _SqlitePolicyRepository(session)
+
         # Ensure "main" branch ref exists (idempotent)
         head = ref_repo.get_head(tract_id)
         if head is None:
@@ -218,6 +227,7 @@ class Tract:
             verify_cache=verify_cache,
         )
         tract._spawn_repo = spawn_repo
+        tract._policy_repo = policy_repo
         return tract
 
     @classmethod
@@ -301,6 +311,11 @@ class Tract:
     def spawn_repo(self) -> SqliteSpawnPointerRepository | None:
         """Expose spawn repo for internal use by Session."""
         return self._spawn_repo
+
+    @property
+    def policy_evaluator(self) -> PolicyEvaluator | None:
+        """The policy evaluator, or None if not configured."""
+        return self._policy_evaluator
 
     # ------------------------------------------------------------------
     # Spawn relationship helpers
@@ -406,6 +421,13 @@ class Tract:
                             self._cache.put(info.commit_hash, patched)
                 # Do NOT clear cache -- other entries at different HEADs remain valid
 
+        # Evaluate commit-triggered policies (after commit)
+        if (
+            self._policy_evaluator is not None
+            and not self._in_batch
+        ):
+            self._policy_evaluator.evaluate(trigger="commit")
+
         return info
 
     def compile(
@@ -436,6 +458,13 @@ class Tract:
             :class:`CompiledContext` when ``order`` is None (default).
             ``(CompiledContext, list[ReorderWarning])`` when ``order`` is provided.
         """
+        # Evaluate compile-triggered policies (before compilation)
+        if (
+            self._policy_evaluator is not None
+            and not self._in_batch
+        ):
+            self._policy_evaluator.evaluate(trigger="compile")
+
         current_head = self.head
         if current_head is None:
             empty = CompiledContext(messages=[], token_count=0, commit_count=0, token_source="")
@@ -1633,6 +1662,163 @@ class Tract:
             self._in_batch = False
             self._session.commit = _real_commit  # type: ignore[assignment]
 
+
+    # ------------------------------------------------------------------
+    # Policy management
+    # ------------------------------------------------------------------
+
+    def configure_policies(
+        self,
+        policies: list | None = None,
+        *,
+        on_proposal: Callable[[PolicyProposal], None] | None = None,
+        cooldown_seconds: float = 0,
+    ) -> None:
+        """Configure the policy evaluator.
+
+        Creates a PolicyEvaluator with the given policies, enabling
+        automatic policy evaluation on compile() and commit() calls.
+
+        Args:
+            policies: List of Policy instances to register.
+            on_proposal: Callback invoked when a collaborative policy
+                creates a proposal.
+            cooldown_seconds: Minimum seconds between re-evaluations
+                of the same policy. Default 0 (no cooldown).
+        """
+        from tract.policy.evaluator import PolicyEvaluator as _PolicyEvaluator
+
+        self._policy_evaluator = _PolicyEvaluator(
+            tract=self,
+            policies=policies,
+            policy_repo=self._policy_repo,
+            on_proposal=on_proposal,
+            cooldown_seconds=cooldown_seconds,
+        )
+
+    def register_policy(self, policy: object) -> None:
+        """Register a single policy with the evaluator.
+
+        If no evaluator exists, one is created automatically.
+
+        Args:
+            policy: A Policy instance to register.
+        """
+        if self._policy_evaluator is None:
+            self.configure_policies()
+        self._policy_evaluator.register(policy)  # type: ignore[union-attr]
+
+    def unregister_policy(self, policy_name: str) -> None:
+        """Remove a policy by name.
+
+        No-op if no evaluator exists.
+
+        Args:
+            policy_name: The name of the policy to remove.
+        """
+        if self._policy_evaluator is not None:
+            self._policy_evaluator.unregister(policy_name)
+
+    def pause_all_policies(self) -> None:
+        """Pause all policy evaluation (emergency kill switch).
+
+        No-op if no evaluator exists.
+        """
+        if self._policy_evaluator is not None:
+            self._policy_evaluator.pause()
+
+    def resume_all_policies(self) -> None:
+        """Resume all policy evaluation.
+
+        No-op if no evaluator exists.
+        """
+        if self._policy_evaluator is not None:
+            self._policy_evaluator.resume()
+
+    def get_pending_proposals(self) -> list[PolicyProposal]:
+        """Get all pending policy proposals.
+
+        Returns:
+            List of PolicyProposal objects with status="pending".
+            Empty list if no evaluator configured.
+        """
+        if self._policy_evaluator is None:
+            return []
+        return self._policy_evaluator.get_pending_proposals()
+
+    def approve_proposal(self, proposal_id: str) -> object:
+        """Approve and execute a pending policy proposal.
+
+        Args:
+            proposal_id: The ID of the proposal to approve.
+
+        Returns:
+            Result of executing the action.
+
+        Raises:
+            PolicyExecutionError: If no evaluator or proposal not found.
+        """
+        if self._policy_evaluator is None:
+            from tract.exceptions import PolicyExecutionError
+
+            raise PolicyExecutionError("No policy evaluator configured")
+        return self._policy_evaluator.approve_proposal(proposal_id)
+
+    def reject_proposal(self, proposal_id: str, reason: str = "") -> None:
+        """Reject a pending policy proposal.
+
+        Args:
+            proposal_id: The ID of the proposal to reject.
+            reason: Optional reason for rejection.
+
+        Raises:
+            PolicyExecutionError: If no evaluator or proposal not found.
+        """
+        if self._policy_evaluator is None:
+            from tract.exceptions import PolicyExecutionError
+
+            raise PolicyExecutionError("No policy evaluator configured")
+        self._policy_evaluator.reject_proposal(proposal_id, reason)
+
+    def save_policy_config(self, config_data: dict) -> None:
+        """Persist policy configuration to _trace_meta.
+
+        Args:
+            config_data: Dictionary of policy configuration to persist.
+        """
+        import json as _json
+
+        from sqlalchemy import select as _select
+
+        from tract.storage.schema import TraceMetaRow
+
+        stmt = _select(TraceMetaRow).where(TraceMetaRow.key == "policy_config")
+        existing = self._session.execute(stmt).scalar_one_or_none()
+        if existing is None:
+            self._session.add(
+                TraceMetaRow(key="policy_config", value=_json.dumps(config_data))
+            )
+        else:
+            existing.value = _json.dumps(config_data)
+        self._session.commit()
+
+    def load_policy_config(self) -> dict | None:
+        """Load policy configuration from _trace_meta.
+
+        Returns:
+            Dictionary of policy configuration, or None if not set.
+        """
+        import json as _json
+
+        from sqlalchemy import select as _select
+
+        from tract.storage.schema import TraceMetaRow
+
+        stmt = _select(TraceMetaRow).where(TraceMetaRow.key == "policy_config")
+        row = self._session.execute(stmt).scalar_one_or_none()
+        if row is None:
+            return None
+        return _json.loads(row.value)
 
     def register_content_type(self, name: str, model: type[BaseModel]) -> None:
         """Register a custom content type for this tract instance.
