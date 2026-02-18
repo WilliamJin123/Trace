@@ -5,25 +5,25 @@
 See: .planning/PROJECT.md (updated 2026-02-10)
 
 **Core value:** Agents produce better outputs when their context is clean, coherent, and relevant. Trace makes context a managed, version-controlled resource.
-**Current focus:** PROJECT COMPLETE. All 5 phases delivered. 664 tests passing.
+**Current focus:** Phase 6 (Policy Engine) in progress. 713 tests passing.
 
 ## Current Position
 
 Milestone: v2 — Autonomous Context Management
 Phase: 6 of 7 (Policy Engine)
-Plan: 0 of ? in current phase
-Status: NOT STARTED
-Last activity: 2026-02-17 - v2 milestone created with Phase 6 (Policy Engine) and Phase 7 (Context Management Agent)
+Plan: 1 of 3 in current phase
+Status: In progress
+Last activity: 2026-02-18 - Completed 06-01-PLAN.md (Policy Storage Foundation)
 
 v1 Progress: [######################] 100% (22/22 plans)
-v2 Progress: [______________________] 0%
+v2 Progress: [####__________________] 17% (1/6 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 22
-- Average duration: 5.8m
-- Total execution time: 2.30 hours
+- Total plans completed: 23
+- Average duration: 5.9m
+- Total execution time: 2.42 hours
 
 **By Phase:**
 
@@ -40,7 +40,7 @@ v2 Progress: [______________________] 0%
 | 5 | 3/3 | 28m | 9.3m |
 
 **Recent Trend:**
-- Last 5 plans: 04-03 (9m), 05-01 (8m), 05-02 (13m), 05-03 (7m)
+- Last 5 plans: 05-01 (8m), 05-02 (13m), 05-03 (7m), 06-01 (7m)
 - Trend: steady (~7-13m)
 
 *Updated after each plan completion*
@@ -150,6 +150,11 @@ Recent decisions affecting current work:
 - [05-03]: README targets ~235 lines with copy-pasteable code examples
 - [05-03]: Integration tests use real SQLite databases (tmp_path), no mocks
 - [05-03]: py.typed PEP 561 marker added for downstream mypy/pyright support
+- [06-01]: Schema version bumped 4->5 with auto-migration for policy tables
+- [06-01]: PolicyRepository follows same ABC+SQLite pattern as other repositories
+- [06-01]: PolicyProposal follows PendingCompression pattern (mutable, _execute_fn for deferred approval)
+- [06-01]: PolicyAction is frozen (determined once), PolicyProposal is mutable (status changes)
+- [06-01]: Composite indexes on (tract_id, status) and (tract_id, created_at) for primary query patterns
 
 ### Pending Todos
 
@@ -277,13 +282,16 @@ All Phase 5 success criteria verified:
 - MULTI-02: Session class (open/create/spawn/collapse/timeline/search/resume)
 - MULTI-03: Packaging (tract-ai distribution, README, integration tests)
 
-## PROJECT COMPLETE
+## Phase 6 Stats (In Progress)
 
-All 5 phases delivered. 22 plans executed. 664 tests passing.
-Total execution time: 2.30 hours across all phases.
+| Plan | Name | Tests | Duration |
+|------|------|-------|----------|
+| 06-01 | Policy Storage Foundation | 29 | 7m |
+
+Total test suite: 713 tests passing.
 
 ## Session Continuity
 
-Last session: 2026-02-17
-Stopped at: PROJECT COMPLETE. All 22 plans across 5 phases executed successfully.
-Resume file: None
+Last session: 2026-02-18
+Stopped at: Completed 06-01-PLAN.md (Policy Storage Foundation)
+Resume file: .planning/phases/06-policy-engine/06-02-PLAN.md
