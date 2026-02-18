@@ -1,10 +1,18 @@
 """Policy engine package -- automatic context management policies.
 
-Provides the Policy ABC and PolicyEvaluator for registering and
-evaluating policies against a Tract instance.
+Provides the Policy ABC, PolicyEvaluator, and built-in policies for
+registering and evaluating policies against a Tract instance.
 """
 
 from tract.policy.protocols import Policy
 from tract.policy.evaluator import PolicyEvaluator
+from tract.policy.builtin import BranchPolicy, CompressPolicy, PinPolicy, RebasePolicy
 
-__all__ = ["Policy", "PolicyEvaluator"]
+__all__ = [
+    "Policy",
+    "PolicyEvaluator",
+    "CompressPolicy",
+    "PinPolicy",
+    "BranchPolicy",
+    "RebasePolicy",
+]
