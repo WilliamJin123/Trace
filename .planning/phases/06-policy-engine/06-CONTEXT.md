@@ -37,7 +37,7 @@ Extensible, protocol-based policy system that automatically triggers context ope
 - Preserves pinned content verbatim (existing compression behavior)
 
 ### Auto-pin defaults (opt-in)
-- Auto-pin InstructionContent and SystemContent commits out of the box
+- Auto-pin InstructionContent and SessionContent commits out of the box
 - User can add custom pattern rules (content type + role + text regex/substring matching)
 - Rules are additive — user rules layer on top of defaults, can also override
 - Manual overrides always win: if user explicitly sets NORMAL or SKIP, auto-pin won't re-pin

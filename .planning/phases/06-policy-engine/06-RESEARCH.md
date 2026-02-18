@@ -285,7 +285,7 @@ Decision point: Where to store policy config? Two options:
 1. **_trace_meta table** (key-value): Simple, uses existing table, store as `"policy_config" -> JSON string`
 2. **New policy_config column on a new table**: More structured
 
-**Recommendation:** Use `_trace_meta` table for policy configuration. It already exists, supports key-value storage, and policy config is inherently per-database (not per-commit). This avoids creating yet another table for what is essentially a single JSON blob. Store as key=`"policy_config:{tract_id}"`, value=JSON string.
+**Recommendation:** Use `_trace_meta` table for policy configuration. It already exists, supports key-value storage, and policy config is inherently per-database (not per-commit). This avoids creating yet another table for what is essentially a single JSON blob. Store as key=`"policy_config"`, value=JSON string. (Each Tract typically uses its own SQLite database, so a bare key is sufficient.)
 
 ### Anti-Patterns to Avoid
 - **Modifying existing operations:** The policy engine must NOT change compress_range(), annotate(), branch(), or rebase(). It calls them through Tract's public API.
