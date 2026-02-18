@@ -1,7 +1,8 @@
 """Orchestrator package -- context management orchestrator types and callbacks.
 
-Provides configuration, proposal models, step/result types, and
-built-in callbacks for the context management orchestrator loop.
+Provides the Orchestrator class, configuration, proposal models,
+step/result types, and built-in callbacks for the context management
+orchestrator loop.
 """
 
 from tract.orchestrator.callbacks import (
@@ -16,6 +17,7 @@ from tract.orchestrator.config import (
     OrchestratorState,
     TriggerConfig,
 )
+from tract.orchestrator.loop import Orchestrator
 from tract.orchestrator.models import (
     OrchestratorProposal,
     OrchestratorResult,
@@ -26,6 +28,8 @@ from tract.orchestrator.models import (
 )
 
 __all__ = [
+    # Core
+    "Orchestrator",
     # Config
     "AutonomyLevel",
     "OrchestratorConfig",
