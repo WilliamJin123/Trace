@@ -48,24 +48,24 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CORE-01 | TBD | Pending |
-| CORE-02 | TBD | Pending |
-| CORE-03 | TBD | Pending |
-| CONV-01 | TBD | Pending |
-| CONV-02 | TBD | Pending |
-| CONV-03 | TBD | Pending |
-| LLM-01 | TBD | Pending |
-| LLM-02 | TBD | Pending |
-| LLM-03 | TBD | Pending |
-| LLM-04 | TBD | Pending |
-| FMT-01 | TBD | Pending |
-| FMT-02 | TBD | Pending |
+| CORE-01 | Phase 8 | Pending |
+| CORE-02 | Phase 8 | Pending |
+| CORE-03 | Phase 8 | Pending |
+| CONV-01 | Phase 9 | Pending |
+| CONV-02 | Phase 9 | Pending |
+| CONV-03 | Phase 9 | Pending |
+| LLM-01 | Phase 9 | Pending |
+| LLM-02 | Phase 9 | Pending |
+| LLM-03 | Phase 9 | Pending |
+| LLM-04 | Phase 10 | Pending |
+| FMT-01 | Phase 8 | Pending |
+| FMT-02 | Phase 8 | Pending |
 
 **Coverage:**
 - v3 requirements: 12 total
-- Mapped to phases: 0
-- Unmapped: 12 (pending roadmap)
+- Mapped to phases: 12
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-19*
-*Last updated: 2026-02-19 after initial definition*
+*Last updated: 2026-02-19 after roadmap creation*

@@ -5,15 +5,15 @@
 See: .planning/PROJECT.md (updated 2026-02-19)
 
 **Core value:** Agents produce better outputs when their context is clean, coherent, and relevant. Trace makes context a managed, version-controlled resource.
-**Current focus:** v3.0 DX & API Overhaul
+**Current focus:** v3.0 DX & API Overhaul -- Phase 8: Format & Commit Shorthand
 
 ## Current Position
 
-Milestone: v3.0 — DX & API Overhaul
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-02-19 — Milestone v3.0 started
+Milestone: v3.0 -- DX & API Overhaul
+Phase: 8 of 10 (Format & Commit Shorthand)
+Plan: --
+Status: Ready to plan
+Last activity: 2026-02-19 -- Roadmap created for v3.0
 
 v1 Progress: [######################] 100% (22/22 plans)
 v2 Progress: [######################] 100% (6/6 plans)
@@ -59,5 +59,5 @@ None active.
 ## Session Continuity
 
 Last session: 2026-02-19
-Stopped at: Defining v3.0 requirements
+Stopped at: v3.0 roadmap created, ready to plan Phase 8
 Resume file: None
