@@ -11,20 +11,20 @@ See: .planning/PROJECT.md (updated 2026-02-19)
 
 Milestone: v3.0 -- DX & API Overhaul
 Phase: 8 of 10 (Format & Commit Shorthand)
-Plan: --
-Status: Ready to plan
-Last activity: 2026-02-19 -- Roadmap created for v3.0
+Plan: 1 of 1
+Status: Phase 8 Plan 1 complete
+Last activity: 2026-02-19 -- Completed 08-01-PLAN.md
 
 v1 Progress: [######################] 100% (22/22 plans)
 v2 Progress: [######################] 100% (6/6 plans)
-v3 Progress: [                      ] 0% (0/? plans)
+v3 Progress: [##                    ] 7% (1/? plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 28
+- Total plans completed: 29
 - Average duration: 6.1m
-- Total execution time: 2.97 hours
+- Total execution time: 3.08 hours
 
 **By Phase:**
 
@@ -41,12 +41,21 @@ v3 Progress: [                      ] 0% (0/? plans)
 | 5 | 3/3 | 28m | 9.3m |
 | 6 | 3/3 | 20m | 6.7m |
 | 7 | 3/3 | 23m | 7.7m |
+| 8 | 1/? | 7m | 7m |
 
 ## Accumulated Context
 
 ### Decisions
 
 All v1/v2 decisions logged in PROJECT.md Key Decisions table.
+
+| ID | Decision | Rationale |
+|----|----------|-----------|
+| 08-01-D1 | to_openai() delegates to to_dicts() | OpenAI uses inline system messages |
+| 08-01-D2 | to_anthropic() returns {system: str\|None, messages: list} | Anthropic requires separate system key |
+| 08-01-D3 | Auto-message uses content_type prefix | Provides context and specificity |
+| 08-01-D4 | Auto-message max 72 chars with "..." truncation | Matches git commit convention |
+| 08-01-D5 | message=None triggers auto-gen, message="" stores empty | Natural Python convention |
 
 ### Pending Todos
 
@@ -59,5 +68,5 @@ None active.
 ## Session Continuity
 
 Last session: 2026-02-19
-Stopped at: v3.0 roadmap created, ready to plan Phase 8
+Stopped at: Completed 08-01-PLAN.md
 Resume file: None
