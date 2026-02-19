@@ -7,9 +7,9 @@
 
 ### Core API Simplification (CORE)
 
-- [ ] **CORE-01**: commit() accepts shorthand args (role + text string) without requiring content model imports
-- [ ] **CORE-02**: compile() output provides clean path to LLM-ready dicts (no manual list comprehension)
-- [ ] **CORE-03**: Commit messages auto-generated when not provided (reduce ceremony)
+- [x] **CORE-01**: commit() accepts shorthand args (role + text string) without requiring content model imports
+- [x] **CORE-02**: compile() output provides clean path to LLM-ready dicts (no manual list comprehension)
+- [x] **CORE-03**: Commit messages auto-generated when not provided (reduce ceremony)
 
 ### Conversation Layer (CONV)
 
@@ -26,8 +26,8 @@
 
 ### Format & Output (FMT)
 
-- [ ] **FMT-01**: CompiledContext.to_dicts() returns list[dict] with role/content keys
-- [ ] **FMT-02**: CompiledContext.to_openai() / .to_anthropic() for provider-specific formats
+- [x] **FMT-01**: CompiledContext.to_dicts() returns list[dict] with role/content keys
+- [x] **FMT-02**: CompiledContext.to_openai() / .to_anthropic() for provider-specific formats
 
 ## Future Requirements
 
@@ -48,9 +48,9 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CORE-01 | Phase 8 | Pending |
-| CORE-02 | Phase 8 | Pending |
-| CORE-03 | Phase 8 | Pending |
+| CORE-01 | Phase 8 | Complete |
+| CORE-02 | Phase 8 | Complete |
+| CORE-03 | Phase 8 | Complete |
 | CONV-01 | Phase 9 | Pending |
 | CONV-02 | Phase 9 | Pending |
 | CONV-03 | Phase 9 | Pending |
@@ -58,8 +58,8 @@
 | LLM-02 | Phase 9 | Pending |
 | LLM-03 | Phase 9 | Pending |
 | LLM-04 | Phase 10 | Pending |
-| FMT-01 | Phase 8 | Pending |
-| FMT-02 | Phase 8 | Pending |
+| FMT-01 | Phase 8 | Complete |
+| FMT-02 | Phase 8 | Complete |
 
 **Coverage:**
 - v3 requirements: 12 total
@@ -68,4 +68,4 @@
 
 ---
 *Requirements defined: 2026-02-19*
-*Last updated: 2026-02-19 after roadmap creation*
+*Last updated: 2026-02-19 after Phase 8 completion*

@@ -57,7 +57,7 @@
 
 **Phase Numbering:** Integer phases (8, 9, 10): Planned milestone work. Decimal phases (8.1, 9.1): Urgent insertions.
 
-- [ ] **Phase 8: Format & Commit Shorthand** - Eliminate import ceremony and output boilerplate
+- [x] **Phase 8: Format & Commit Shorthand** - Eliminate import ceremony and output boilerplate
 - [ ] **Phase 9: Conversation Layer** - One-call chat/generate with integrated LLM
 - [ ] **Phase 10: Per-Operation LLM Config** - Independent model/params per LLM-powered operation
 
@@ -73,10 +73,10 @@
   3. User can call compiled.to_openai() and compiled.to_anthropic() and receive provider-specific formatted messages
   4. User can omit the message= parameter on commit() and get an auto-generated commit message describing the content
   5. CORE-02 verified: the path from compile() to LLM-ready dicts requires zero manual transformation
-**Plans**: 1 plans
+**Plans**: 1/1 complete
 
 Plans:
-- [ ] 08-01-PLAN.md -- Format methods, commit shorthand, and auto-generated messages
+- [x] 08-01-PLAN.md -- Format methods, commit shorthand, and auto-generated messages
 
 ### Phase 9: Conversation Layer
 **Goal**: Users can have multi-turn LLM conversations with version control using 1-2 lines per turn instead of 15
@@ -124,6 +124,6 @@ Phases execute in numeric order: 8 -> 9 -> 10 (plus any inserted decimal phases)
 | 5. Multi-Agent | v1.0 | 3/3 | Complete | 2026-02-16 |
 | 6. Policy Engine | v2.0 | 3/3 | Complete | 2026-02-17 |
 | 7. Agent Toolkit | v2.0 | 3/3 | Complete | 2026-02-18 |
-| 8. Format & Shorthand | v3.0 | 0/1 | In progress | - |
+| 8. Format & Shorthand | v3.0 | 1/1 | Complete | 2026-02-19 |
 | 9. Conversation Layer | v3.0 | 0/? | Not started | - |
 | 10. Per-Op LLM Config | v3.0 | 0/? | Not started | - |
