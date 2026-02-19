@@ -301,3 +301,138 @@ class TestShorthandMethods:
             assert dicts[2] == {"role": "assistant", "content": "Hello! How can I help?"}
         finally:
             t.close()
+
+
+# -----------------------------------------------------------------------
+# Auto-generated commit message tests
+# -----------------------------------------------------------------------
+
+
+class TestAutoMessage:
+    """Tests for auto-generated commit messages."""
+
+    def test_instruction_auto_message(self):
+        """commit(InstructionContent) without message= generates auto-message."""
+        from tract import Tract
+        from tract.models.content import InstructionContent
+
+        t = Tract.open()
+        try:
+            info = t.commit(InstructionContent(text="Be helpful"))
+            commit = t.get_commit(info.commit_hash)
+            assert commit is not None
+            assert commit.message == "instruction: Be helpful"
+        finally:
+            t.close()
+
+    def test_dialogue_auto_message(self):
+        """commit(DialogueContent) without message= generates auto-message."""
+        from tract import Tract
+        from tract.models.content import DialogueContent
+
+        t = Tract.open()
+        try:
+            info = t.commit(DialogueContent(role="user", text="Hello world"))
+            commit = t.get_commit(info.commit_hash)
+            assert commit is not None
+            assert commit.message == "dialogue: Hello world"
+        finally:
+            t.close()
+
+    def test_shorthand_inherits_auto_message(self):
+        """Shorthand methods also generate auto-messages."""
+        from tract import Tract
+
+        t = Tract.open()
+        try:
+            info = t.system("Be helpful")
+            commit = t.get_commit(info.commit_hash)
+            assert commit is not None
+            assert commit.message == "instruction: Be helpful"
+        finally:
+            t.close()
+
+    def test_long_text_truncated(self):
+        """Long text is truncated with '...' to stay within 72 chars."""
+        from tract import Tract
+
+        t = Tract.open()
+        try:
+            long_text = "A" * 200
+            info = t.system(long_text)
+            commit = t.get_commit(info.commit_hash)
+            assert commit is not None
+            assert len(commit.message) <= 72
+            assert commit.message.endswith("...")
+        finally:
+            t.close()
+
+    def test_empty_string_message_not_auto_generated(self):
+        """message='' stores empty string, does NOT trigger auto-generation."""
+        from tract import Tract
+        from tract.models.content import InstructionContent
+
+        t = Tract.open()
+        try:
+            info = t.commit(InstructionContent(text="Be helpful"), message="")
+            commit = t.get_commit(info.commit_hash)
+            assert commit is not None
+            assert commit.message == ""
+        finally:
+            t.close()
+
+    def test_custom_message_preserved(self):
+        """message='custom' stores 'custom', not auto-generated."""
+        from tract import Tract
+        from tract.models.content import InstructionContent
+
+        t = Tract.open()
+        try:
+            info = t.commit(InstructionContent(text="Be helpful"), message="custom")
+            commit = t.get_commit(info.commit_hash)
+            assert commit is not None
+            assert commit.message == "custom"
+        finally:
+            t.close()
+
+    def test_dict_content_auto_message(self):
+        """Dict content also gets auto-message after validation."""
+        from tract import Tract
+
+        t = Tract.open()
+        try:
+            info = t.commit({"content_type": "instruction", "text": "Be helpful"})
+            commit = t.get_commit(info.commit_hash)
+            assert commit is not None
+            assert commit.message == "instruction: Be helpful"
+        finally:
+            t.close()
+
+    def test_multiline_text_flattened(self):
+        """Multi-line text is flattened to a single line."""
+        from tract import Tract
+
+        t = Tract.open()
+        try:
+            info = t.user("Hello\nworld\nfoo")
+            commit = t.get_commit(info.commit_hash)
+            assert commit is not None
+            assert "\n" not in commit.message
+            assert "Hello world foo" in commit.message
+        finally:
+            t.close()
+
+    def test_freeform_dict_payload_auto_message(self):
+        """FreeformContent with dict payload generates reasonable message."""
+        from tract import Tract
+        from tract.models.content import FreeformContent
+
+        t = Tract.open()
+        try:
+            info = t.commit(FreeformContent(payload={"key": "value"}))
+            commit = t.get_commit(info.commit_hash)
+            assert commit is not None
+            # FreeformContent extract_text returns JSON string of payload
+            assert commit.message.startswith("freeform: ")
+        finally:
+            t.close()

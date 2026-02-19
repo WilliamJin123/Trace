@@ -65,6 +65,33 @@ if TYPE_CHECKING:
     from tract.storage.sqlite import SqlitePolicyRepository
 
 
+# ------------------------------------------------------------------
+# Auto-message generation helper
+# ------------------------------------------------------------------
+
+_MAX_AUTO_MSG_LEN = 72
+
+
+def _auto_message(content_type: str, text: str) -> str:
+    """Generate a descriptive commit message from content type and text.
+
+    Args:
+        content_type: The content type discriminator (e.g. "instruction").
+        text: The text content of the commit.
+
+    Returns:
+        A message like "instruction: Be helpful" (max 72 chars).
+    """
+    preview = text.strip().replace("\n", " ")
+    if not preview:
+        return content_type
+    max_text = _MAX_AUTO_MSG_LEN - len(content_type) - 2  # ": " separator
+    if len(preview) > max_text:
+        max_text = _MAX_AUTO_MSG_LEN - len(content_type) - 5  # ": " + "..."
+        preview = preview[:max_text] + "..."
+    return f"{content_type}: {preview}"
+
+
 class Tract:
     """Primary entry point for Trace -- git-like version control for LLM context.
 
@@ -418,6 +445,14 @@ class Tract:
         # Auto-validate dicts through the content type system
         if isinstance(content, dict):
             content = validate_content(content, custom_registry=self._custom_type_registry)
+
+        # Auto-generate commit message if not provided
+        if message is None and isinstance(content, BaseModel):
+            from tract.engine.commit import extract_text_from_content as _extract_text
+
+            _text = _extract_text(content)
+            _ctype = content.model_dump(mode="json").get("content_type", "unknown")
+            message = _auto_message(_ctype, _text)
 
         prev_head = self.head
 
