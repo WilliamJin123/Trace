@@ -263,7 +263,8 @@ class TestShorthandMethods:
             # Verify via get_commit
             commit = t.get_commit(info.commit_hash)
             assert commit is not None
-            assert commit.generation_config == {"model": "gpt-4"}
+            from tract import LLMConfig
+            assert commit.generation_config == LLMConfig(model="gpt-4")
         finally:
             t.close()
 

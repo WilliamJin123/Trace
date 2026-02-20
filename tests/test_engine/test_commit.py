@@ -334,7 +334,8 @@ class TestGenerationConfig:
         # Fetch via get_commit which uses _row_to_info
         fetched = commit_engine.get_commit(info.commit_hash)
         assert fetched is not None
-        assert fetched.generation_config == config
+        from tract.models.config import LLMConfig
+        assert fetched.generation_config == LLMConfig.from_dict(config)
 
     def test_generation_config_not_in_content_hash(self, commit_engine) -> None:
         """generation_config does not affect content_hash."""

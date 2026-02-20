@@ -94,25 +94,36 @@ def _serialize_message(msg: Message) -> str:
 
 
 def _compute_generation_config_changes(
-    configs_a: list[dict],
-    configs_b: list[dict],
+    configs_a: list,
+    configs_b: list,
 ) -> dict[str, tuple[Any, Any]]:
     """Compare the last generation config in each chain.
 
+    Accepts either list[dict] or list[LLMConfig | None].
     Returns a dict mapping field names to (old_value, new_value) tuples
     for fields that differ between the two configs.
     """
+    def _to_dict(c: object) -> dict:
+        if c is None:
+            return {}
+        if isinstance(c, dict):
+            return c
+        # LLMConfig or similar with to_dict()
+        return c.to_dict() if hasattr(c, "to_dict") else {}
+
     # Use the last non-empty config from each side as "active" config
     config_a: dict[str, Any] = {}
     for c in reversed(configs_a):
-        if c:
-            config_a = c
+        d = _to_dict(c)
+        if d:
+            config_a = d
             break
 
     config_b: dict[str, Any] = {}
     for c in reversed(configs_b):
-        if c:
-            config_b = c
+        d = _to_dict(c)
+        if d:
+            config_b = d
             break
 
     if not config_a and not config_b:
@@ -136,8 +147,8 @@ def compute_diff(
     commit_b_hash: str,
     messages_a: list[Message],
     messages_b: list[Message],
-    configs_a: list[dict],
-    configs_b: list[dict],
+    configs_a: list,
+    configs_b: list,
     token_counts_a: list[int] | None = None,
     token_counts_b: list[int] | None = None,
 ) -> DiffResult:

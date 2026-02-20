@@ -704,8 +704,8 @@ class TestMergeIntegration:
         merge_commit = t.get_commit(result.merge_commit_hash)
         assert merge_commit is not None
         assert merge_commit.generation_config is not None
-        assert merge_commit.generation_config.get("model") == "gpt-4o"
-        assert merge_commit.generation_config.get("source") == "infrastructure:merge"
+        assert merge_commit.generation_config.model == "gpt-4o"
+        assert merge_commit.generation_config.extra["source"] == "infrastructure:merge"
         t.close()
 
     def test_merge_clears_compile_cache(self) -> None:

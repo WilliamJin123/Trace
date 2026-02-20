@@ -161,7 +161,8 @@ class TestCherryPickAppend:
         assert result.new_commit is not None
         assert result.new_commit.message == "important commit"
         assert result.new_commit.metadata == {"source": "test"}
-        assert result.new_commit.generation_config == {"temperature": 0.7}
+        from tract.models.config import LLMConfig
+        assert result.new_commit.generation_config == LLMConfig(temperature=0.7)
         t.close()
 
     def test_cherry_pick_from_commit_hash(self):

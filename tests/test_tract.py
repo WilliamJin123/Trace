@@ -25,6 +25,7 @@ from tract import (
     EditTargetError,
     FreeformContent,
     InstructionContent,
+    LLMConfig,
     Message,
     OutputContent,
     Priority,
@@ -832,15 +833,16 @@ class TestGenerationConfig:
     # SC1: Attach and retrieve generation_config
     def test_commit_with_generation_config(self, tract: Tract):
         config = {"model": "gpt-4o", "temperature": 0.7, "top_p": 0.95}
+        expected = LLMConfig.from_dict(config)
         info = tract.commit(
             DialogueContent(role="user", text="Hello"),
             generation_config=config,
         )
-        assert info.generation_config == config
+        assert info.generation_config == expected
         # Retrieve via get_commit
         fetched = tract.get_commit(info.commit_hash)
         assert fetched is not None
-        assert fetched.generation_config == config
+        assert fetched.generation_config == expected
 
     def test_commit_without_generation_config(self, tract: Tract):
         info = tract.commit(DialogueContent(role="user", text="Hi"))
@@ -851,12 +853,13 @@ class TestGenerationConfig:
 
     def test_generation_config_in_log(self, tract: Tract):
         config = {"temperature": 0.9}
+        expected = LLMConfig.from_dict(config)
         tract.commit(
             DialogueContent(role="user", text="Hello"),
             generation_config=config,
         )
         entries = tract.log(limit=1)
-        assert entries[0].generation_config == config
+        assert entries[0].generation_config == expected
 
     # SC2: Flexible schema -- any provider params work
     def test_generation_config_arbitrary_provider_params(self, tract: Tract):
@@ -868,9 +871,9 @@ class TestGenerationConfig:
         c2 = tract.commit(DialogueContent(role="user", text="b"), generation_config=anthropic_config)
         c3 = tract.commit(DialogueContent(role="user", text="c"), generation_config=meta_config)
 
-        assert c1.generation_config == openai_config
-        assert c2.generation_config == anthropic_config
-        assert c3.generation_config == meta_config
+        assert c1.generation_config == LLMConfig.from_dict(openai_config)
+        assert c2.generation_config == LLMConfig.from_dict(anthropic_config)
+        assert c3.generation_config == LLMConfig.from_dict(meta_config)
 
     # SC3: generation_configs preserved through compile
     def test_compile_exposes_generation_configs(self, tract: Tract):
@@ -880,26 +883,28 @@ class TestGenerationConfig:
         tract.commit(DialogueContent(role="user", text="Hi"), generation_config=config2)
         result = tract.compile()
         assert len(result.generation_configs) == 2
-        assert result.generation_configs[0] == config1
-        assert result.generation_configs[1] == config2
+        assert result.generation_configs[0] == LLMConfig.from_dict(config1)
+        assert result.generation_configs[1] == LLMConfig.from_dict(config2)
 
     def test_compile_empty_config_for_commits_without_config(self, tract: Tract):
         tract.commit(InstructionContent(text="System"))
         tract.commit(DialogueContent(role="user", text="Hi"), generation_config={"temperature": 0.7})
         result = tract.compile()
-        assert result.generation_configs[0] == {}
-        assert result.generation_configs[1] == {"temperature": 0.7}
+        assert result.generation_configs[0] is None
+        assert result.generation_configs[1] == LLMConfig(temperature=0.7)
 
     def test_compile_incremental_carries_generation_configs(self, tract: Tract):
         config1 = {"temperature": 0.3}
         config2 = {"temperature": 0.7}
+        expected1 = LLMConfig.from_dict(config1)
+        expected2 = LLMConfig.from_dict(config2)
         tract.commit(InstructionContent(text="System"), generation_config=config1)
         result1 = tract.compile()
-        assert result1.generation_configs == [config1]
+        assert result1.generation_configs == [expected1]
 
         tract.commit(DialogueContent(role="user", text="Hi"), generation_config=config2)
         result2 = tract.compile()
-        assert result2.generation_configs == [config1, config2]
+        assert result2.generation_configs == [expected1, expected2]
 
     # SC4: generation_config NOT in commit hash
     def test_generation_config_not_in_hash(self, tract: Tract):
@@ -955,16 +960,17 @@ class TestGenerationConfig:
 
     # Cache safety: copy-on-output prevents corruption
     def test_compile_cache_not_corrupted_by_mutation(self, tract: Tract):
-        """Mutating generation_configs on a returned CompiledContext
+        """Mutating generation_configs list on a returned CompiledContext
         should not affect subsequent compile() results."""
         config = {"temperature": 0.5}
+        expected = LLMConfig.from_dict(config)
         tract.commit(DialogueContent(role="user", text="Hi"), generation_config=config)
         result1 = tract.compile()
-        # Mutate the returned dict
-        result1.generation_configs[0]["temperature"] = 999
+        # Mutate the returned list (LLMConfig objects are frozen, but list is mutable)
+        result1.generation_configs[0] = LLMConfig(temperature=999.0)
         # Compile again -- should return clean copy from cache
         result2 = tract.compile()
-        assert result2.generation_configs[0] == config
+        assert result2.generation_configs[0] == expected
 
 
 # ===========================================================================
@@ -1056,7 +1062,7 @@ class TestLRUCompileCacheAndPatching:
                 response_to=c1.commit_hash,
             )
             result = t.compile()
-            assert result.generation_configs[0] == {"temperature": 0.7}
+            assert result.generation_configs[0] == LLMConfig(temperature=0.7)
 
     def test_edit_patching_with_new_config(self):
         """EDIT with its own generation_config replaces the original's config."""
@@ -1074,7 +1080,7 @@ class TestLRUCompileCacheAndPatching:
                 generation_config={"temperature": 0.9},
             )
             result = t.compile()
-            assert result.generation_configs[0] == {"temperature": 0.9}
+            assert result.generation_configs[0] == LLMConfig(temperature=0.9)
 
     def test_annotate_skip_removes_message(self):
         """Annotating with SKIP patches snapshot by removing message."""
@@ -1388,7 +1394,7 @@ class TestVerifyCacheAllFields:
             t.compile()
             # Second compile triggers oracle -- should not raise
             result = t.compile()
-            assert result.generation_configs[0] == {"temperature": 0.7}
+            assert result.generation_configs[0] == LLMConfig(temperature=0.7)
 
     def test_verify_cache_checks_commit_hashes(self):
         """verify_cache=True asserts commit_hashes match."""

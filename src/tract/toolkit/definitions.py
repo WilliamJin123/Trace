@@ -584,7 +584,7 @@ def _handle_get_commit(tract: Tract, commit_hash: str) -> str:
     if info is None:
         return f"Commit {commit_hash} not found."
     meta = json.dumps(info.metadata) if info.metadata else "none"
-    gen_cfg = json.dumps(info.generation_config) if info.generation_config else "none"
+    gen_cfg = json.dumps(info.generation_config.to_dict()) if info.generation_config else "none"
     return (
         f"Commit {info.commit_hash[:8]}: "
         f"type={info.content_type}, op={info.operation.value}, "

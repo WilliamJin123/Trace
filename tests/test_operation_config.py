@@ -1,6 +1,6 @@
 """Tests for per-operation LLM configuration.
 
-Covers LLMOperationConfig dataclass, configure_operations(), _resolve_llm_config(),
+Covers LLMConfig dataclass, configure_operations(), _resolve_llm_config(),
 Tract.open() with operation_configs, and integration with chat/generate, merge,
 compress, and orchestrate operations.
 """
@@ -14,7 +14,7 @@ import pytest
 from tract import (
     DialogueContent,
     InstructionContent,
-    LLMOperationConfig,
+    LLMConfig,
     Tract,
 )
 from tract.models.commit import CommitOperation
@@ -55,38 +55,86 @@ class MockLLMClient:
 
 
 # ---------------------------------------------------------------------------
-# LLMOperationConfig dataclass tests
+# LLMConfig dataclass tests
 # ---------------------------------------------------------------------------
 
-class TestLLMOperationConfig:
-    """Tests for the LLMOperationConfig frozen dataclass."""
+class TestLLMConfig:
+    """Tests for the LLMConfig frozen dataclass."""
 
     def test_create_with_defaults(self):
         """All fields default to None."""
-        config = LLMOperationConfig()
+        config = LLMConfig()
         assert config.model is None
         assert config.temperature is None
+        assert config.top_p is None
         assert config.max_tokens is None
-        assert config.extra_kwargs is None
+        assert config.stop_sequences is None
+        assert config.frequency_penalty is None
+        assert config.presence_penalty is None
+        assert config.top_k is None
+        assert config.seed is None
+        assert config.extra is None
 
     def test_create_with_values(self):
-        """All fields can be set, including extra_kwargs."""
-        config = LLMOperationConfig(
+        """All fields can be set, including extra."""
+        config = LLMConfig(
             model="gpt-4o",
             temperature=0.7,
             max_tokens=1000,
-            extra_kwargs={"top_p": 0.9, "seed": 42},
+            top_p=0.9,
+            seed=42,
+            extra={"custom_param": "val"},
         )
         assert config.model == "gpt-4o"
         assert config.temperature == 0.7
         assert config.max_tokens == 1000
-        assert config.extra_kwargs == {"top_p": 0.9, "seed": 42}
+        assert config.top_p == 0.9
+        assert config.seed == 42
+        assert config.extra["custom_param"] == "val"
 
     def test_frozen(self):
         """Attempting to modify a frozen dataclass raises FrozenInstanceError."""
-        config = LLMOperationConfig(model="gpt-4o")
+        config = LLMConfig(model="gpt-4o")
         with pytest.raises(dataclasses.FrozenInstanceError):
             config.model = "gpt-3.5-turbo"  # type: ignore[misc]
+
+    def test_from_dict_round_trip(self):
+        """from_dict and to_dict are inverse operations."""
+        d = {"model": "gpt-4o", "temperature": 0.5, "custom_key": "abc"}
+        config = LLMConfig.from_dict(d)
+        assert config.model == "gpt-4o"
+        assert config.temperature == 0.5
+        assert config.extra["custom_key"] == "abc"
+        assert LLMConfig.from_dict(config.to_dict()) == config
+
+    def test_from_dict_none(self):
+        """from_dict(None) returns None."""
+        assert LLMConfig.from_dict(None) is None
+
+    def test_non_none_fields(self):
+        """non_none_fields returns only set fields (excluding extra)."""
+        config = LLMConfig(model="gpt-4o", temperature=0.5)
+        result = config.non_none_fields()
+        assert result == {"model": "gpt-4o", "temperature": 0.5}
+
+    def test_stop_sequences_tuple_conversion(self):
+        """stop_sequences list is converted to tuple."""
+        config = LLMConfig.from_dict({"stop_sequences": ["stop1", "stop2"]})
+        assert config.stop_sequences == ("stop1", "stop2")
+        assert config.to_dict()["stop_sequences"] == ["stop1", "stop2"]
+
+    def test_extra_is_immutable(self):
+        """extra dict is wrapped in MappingProxyType."""
+        config = LLMConfig(extra={"key": "val"})
+        with pytest.raises(TypeError):
+            config.extra["key"] = "new"  # type: ignore[index]
+
+    def test_hashable(self):
+        """LLMConfig is hashable (can be used in sets/dicts)."""
+        c1 = LLMConfig(model="gpt-4o")
+        c2 = LLMConfig(model="gpt-4o")
+        assert hash(c1) == hash(c2)
+        assert {c1, c2} == {c1}
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +147,7 @@ class TestConfigureOperations:
     def test_configure_single_operation(self):
         """Set a single operation config and verify via property."""
         t = Tract.open()
-        chat_config = LLMOperationConfig(model="gpt-4o")
+        chat_config = LLMConfig(model="gpt-4o")
         t.configure_operations(chat=chat_config)
 
         configs = t.operation_configs
@@ -111,9 +159,9 @@ class TestConfigureOperations:
         """Set multiple operation configs in one call."""
         t = Tract.open()
         t.configure_operations(
-            chat=LLMOperationConfig(model="gpt-4o"),
-            compress=LLMOperationConfig(model="gpt-3.5-turbo"),
-            merge=LLMOperationConfig(model="gpt-4o", temperature=0.3),
+            chat=LLMConfig(model="gpt-4o"),
+            compress=LLMConfig(model="gpt-3.5-turbo"),
+            merge=LLMConfig(model="gpt-4o", temperature=0.3),
         )
 
         configs = t.operation_configs
@@ -126,17 +174,17 @@ class TestConfigureOperations:
     def test_configure_overwrites_existing(self):
         """Calling configure_operations twice replaces the config for that operation."""
         t = Tract.open()
-        t.configure_operations(chat=LLMOperationConfig(model="gpt-4o"))
+        t.configure_operations(chat=LLMConfig(model="gpt-4o"))
         assert t.operation_configs["chat"].model == "gpt-4o"
 
-        t.configure_operations(chat=LLMOperationConfig(model="gpt-3.5-turbo"))
+        t.configure_operations(chat=LLMConfig(model="gpt-3.5-turbo"))
         assert t.operation_configs["chat"].model == "gpt-3.5-turbo"
         t.close()
 
     def test_configure_type_error(self):
-        """Passing a non-LLMOperationConfig value raises TypeError."""
+        """Passing a non-LLMConfig value raises TypeError."""
         t = Tract.open()
-        with pytest.raises(TypeError, match="Expected LLMOperationConfig"):
+        with pytest.raises(TypeError, match="Expected LLMConfig"):
             t.configure_operations(chat={"model": "gpt-4o"})  # type: ignore[arg-type]
         t.close()
 
@@ -152,7 +200,7 @@ class TestResolveLLMConfig:
         """Call-level model overrides operation and tract defaults."""
         t = Tract.open()
         t._default_model = "tract-default"
-        t.configure_operations(chat=LLMOperationConfig(model="op-model"))
+        t.configure_operations(chat=LLMConfig(model="op-model"))
 
         resolved = t._resolve_llm_config("chat", model="call-model")
         assert resolved["model"] == "call-model"
@@ -162,7 +210,7 @@ class TestResolveLLMConfig:
         """Operation-level model overrides tract default."""
         t = Tract.open()
         t._default_model = "tract-default"
-        t.configure_operations(chat=LLMOperationConfig(model="op-model"))
+        t.configure_operations(chat=LLMConfig(model="op-model"))
 
         resolved = t._resolve_llm_config("chat")
         assert resolved["model"] == "op-model"
@@ -187,7 +235,7 @@ class TestResolveLLMConfig:
     def test_resolve_temperature_chain(self):
         """Temperature follows call > operation resolution."""
         t = Tract.open()
-        t.configure_operations(chat=LLMOperationConfig(temperature=0.5))
+        t.configure_operations(chat=LLMConfig(temperature=0.5))
 
         # Operation level
         resolved = t._resolve_llm_config("chat")
@@ -198,21 +246,34 @@ class TestResolveLLMConfig:
         assert resolved["temperature"] == 0.9
         t.close()
 
-    def test_resolve_extra_kwargs_merged(self):
-        """extra_kwargs from operation config are forwarded, call kwargs override."""
+    def test_resolve_extra_merged(self):
+        """extra from operation config is forwarded, call kwargs override."""
         t = Tract.open()
         t.configure_operations(
-            chat=LLMOperationConfig(extra_kwargs={"top_p": 0.9, "seed": 42})
+            chat=LLMConfig(extra={"custom_param": "val", "another": 42})
+        )
+
+        resolved = t._resolve_llm_config("chat")
+        assert resolved["custom_param"] == "val"
+        assert resolved["another"] == 42
+
+        # Call-level kwargs override operation extra
+        resolved = t._resolve_llm_config("chat", another=99)
+        assert resolved["another"] == 99
+        assert resolved["custom_param"] == "val"
+        t.close()
+
+    def test_resolve_typed_fields(self):
+        """New typed fields (top_p, seed, etc.) are resolved from operation config."""
+        t = Tract.open()
+        t.configure_operations(
+            chat=LLMConfig(top_p=0.9, seed=42, frequency_penalty=0.5)
         )
 
         resolved = t._resolve_llm_config("chat")
         assert resolved["top_p"] == 0.9
         assert resolved["seed"] == 42
-
-        # Call-level kwargs override operation extra_kwargs
-        resolved = t._resolve_llm_config("chat", seed=99)
-        assert resolved["seed"] == 99
-        assert resolved["top_p"] == 0.9
+        assert resolved["frequency_penalty"] == 0.5
         t.close()
 
 
@@ -227,8 +288,8 @@ class TestOpenWithOperationConfigs:
         """Pass operation_configs dict to Tract.open(), verify applied."""
         t = Tract.open(
             operation_configs={
-                "chat": LLMOperationConfig(model="gpt-4o"),
-                "compress": LLMOperationConfig(model="gpt-3.5-turbo"),
+                "chat": LLMConfig(model="gpt-4o"),
+                "compress": LLMConfig(model="gpt-3.5-turbo"),
             }
         )
         configs = t.operation_configs
@@ -255,7 +316,7 @@ class TestChatGenerateIntegration:
         t = Tract.open()
         mock = MockLLMClient()
         t.configure_llm(mock)
-        t.configure_operations(chat=LLMOperationConfig(model="chat-model"))
+        t.configure_operations(chat=LLMConfig(model="chat-model"))
 
         t.system("You are helpful")
         t.user("Hello")
@@ -269,7 +330,7 @@ class TestChatGenerateIntegration:
         t = Tract.open()
         mock = MockLLMClient()
         t.configure_llm(mock)
-        t.configure_operations(chat=LLMOperationConfig(model="op-model"))
+        t.configure_operations(chat=LLMConfig(model="op-model"))
 
         t.system("You are helpful")
         t.user("Hello")
@@ -283,7 +344,7 @@ class TestChatGenerateIntegration:
         t = Tract.open()
         mock = MockLLMClient()
         t.configure_llm(mock)
-        t.configure_operations(chat=LLMOperationConfig(temperature=0.8))
+        t.configure_operations(chat=LLMConfig(temperature=0.8))
 
         t.system("You are helpful")
         t.user("Hello")
@@ -297,7 +358,7 @@ class TestChatGenerateIntegration:
         t = Tract.open()
         mock = MockLLMClient(model="default-model")
         t.configure_llm(mock)
-        t.configure_operations(chat=LLMOperationConfig(model="chat-model"))
+        t.configure_operations(chat=LLMConfig(model="chat-model"))
 
         t.system("You are helpful")
         t.user("Hello")
@@ -307,7 +368,7 @@ class TestChatGenerateIntegration:
         assert mock.last_kwargs.get("model") == "chat-model"
         # generation_config uses the response model (authoritative)
         # The mock returns the requested model in the response
-        assert resp.generation_config["model"] == "chat-model"
+        assert resp.generation_config.model == "chat-model"
         t.close()
 
 
@@ -348,7 +409,7 @@ class TestMergeIntegration:
     def test_merge_uses_operation_config(self):
         """Configure merge model, verify resolver gets it."""
         t, mock = self._make_diverged_tract()
-        t.configure_operations(merge=LLMOperationConfig(model="merge-model"))
+        t.configure_operations(merge=LLMConfig(model="merge-model"))
 
         # The merge will use semantic resolution -- the resolver should
         # be created with the operation config model
@@ -361,7 +422,7 @@ class TestMergeIntegration:
     def test_merge_call_override_beats_operation(self):
         """model= on merge() overrides operation config."""
         t, mock = self._make_diverged_tract()
-        t.configure_operations(merge=LLMOperationConfig(model="op-merge"))
+        t.configure_operations(merge=LLMConfig(model="op-merge"))
 
         result = t.merge("feature", model="call-merge", auto_commit=True)
         assert result is not None
@@ -371,7 +432,7 @@ class TestMergeIntegration:
         """temperature/max_tokens from operation config forwarded to resolver."""
         t, mock = self._make_diverged_tract()
         t.configure_operations(
-            merge=LLMOperationConfig(model="merge-model", temperature=0.1, max_tokens=512)
+            merge=LLMConfig(model="merge-model", temperature=0.1, max_tokens=512)
         )
 
         result = t.merge("feature", auto_commit=True)
@@ -391,7 +452,7 @@ class TestCompressIntegration:
         t = Tract.open()
         mock = MockLLMClient(responses=["Summary text"])
         t.configure_llm(mock)
-        t.configure_operations(compress=LLMOperationConfig(model="compress-model"))
+        t.configure_operations(compress=LLMConfig(model="compress-model"))
 
         t.commit(InstructionContent(text="First instruction"))
         t.commit(DialogueContent(role="user", text="Hello"))
@@ -423,7 +484,7 @@ class TestCompressIntegration:
         t = Tract.open()
         mock = MockLLMClient(responses=["Summary text"])
         t.configure_llm(mock)
-        t.configure_operations(compress=LLMOperationConfig(model="op-compress"))
+        t.configure_operations(compress=LLMConfig(model="op-compress"))
 
         t.commit(InstructionContent(text="First instruction"))
         t.commit(DialogueContent(role="user", text="Hello"))
@@ -438,7 +499,7 @@ class TestCompressIntegration:
         t = Tract.open()
         mock = MockLLMClient(responses=["Summary text"])
         t.configure_llm(mock)
-        t.configure_operations(compress=LLMOperationConfig(temperature=0.1))
+        t.configure_operations(compress=LLMConfig(temperature=0.1))
 
         t.commit(InstructionContent(text="First instruction"))
         t.commit(DialogueContent(role="user", text="Hello"))
@@ -462,7 +523,7 @@ class TestOrchestrateIntegration:
         t = Tract.open()
         mock = MockLLMClient()
         t.configure_llm(mock)
-        t.configure_operations(orchestrate=LLMOperationConfig(model="orch-model"))
+        t.configure_operations(orchestrate=LLMConfig(model="orch-model"))
 
         # Capture the config that gets passed to the Orchestrator
         created_configs = []
@@ -502,7 +563,7 @@ class TestOrchestrateIntegration:
         t = Tract.open()
         mock = MockLLMClient()
         t.configure_llm(mock)
-        t.configure_operations(orchestrate=LLMOperationConfig(model="op-orch"))
+        t.configure_operations(orchestrate=LLMConfig(model="op-orch"))
 
         created_configs = []
         from tract.orchestrator.loop import Orchestrator as _Orchestrator
@@ -537,7 +598,7 @@ class TestOrchestrateIntegration:
         t = Tract.open()
         mock = MockLLMClient()
         t.configure_llm(mock)
-        t.configure_operations(orchestrate=LLMOperationConfig(model="op-orch", temperature=0.5))
+        t.configure_operations(orchestrate=LLMConfig(model="op-orch", temperature=0.5))
 
         t.commit(InstructionContent(text="System prompt"))
 

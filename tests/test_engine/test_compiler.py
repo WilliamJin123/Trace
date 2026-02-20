@@ -231,4 +231,5 @@ class TestUniqueEdgeCases:
         result = compiler.compile(TRACT_ID, head)
         # Only c1 should be in the result
         assert len(result.generation_configs) == 1
-        assert result.generation_configs[0] == {"temperature": 0.3}
+        from tract.models.config import LLMConfig
+        assert result.generation_configs[0] == LLMConfig(temperature=0.3)

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from tract import ChatResponse, Tract
+from tract import ChatResponse, LLMConfig, Tract
 from tract.exceptions import TraceError
 from tract.models.commit import CommitInfo, CommitOperation
 from tract.protocols import TokenUsage
@@ -78,12 +78,12 @@ class TestChatResponse:
             text="Hello",
             usage=usage,
             commit_info=info,
-            generation_config={"model": "gpt-4o"},
+            generation_config=LLMConfig(model="gpt-4o"),
         )
         assert resp.text == "Hello"
         assert resp.usage is usage
         assert resp.commit_info is info
-        assert resp.generation_config == {"model": "gpt-4o"}
+        assert resp.generation_config == LLMConfig(model="gpt-4o")
 
     def test_usage_none_is_valid(self):
         info = _make_commit_info()
@@ -91,7 +91,7 @@ class TestChatResponse:
             text="Hello",
             usage=None,
             commit_info=info,
-            generation_config={},
+            generation_config=LLMConfig(),
         )
         assert resp.usage is None
 
@@ -101,7 +101,7 @@ class TestChatResponse:
             text="Hello",
             usage=None,
             commit_info=info,
-            generation_config={},
+            generation_config=LLMConfig(),
         )
         with pytest.raises(dataclasses.FrozenInstanceError):
             resp.text = "Changed"  # type: ignore[misc]
@@ -223,7 +223,7 @@ class TestGenerate:
         assert resp.usage.prompt_tokens == 10
         assert resp.usage.completion_tokens == 5
         assert isinstance(resp.commit_info, CommitInfo)
-        assert resp.generation_config.get("model") == "mock-model"
+        assert resp.generation_config.model == "mock-model"
         t.close()
 
     def test_generate_creates_assistant_commit(self):
@@ -264,9 +264,9 @@ class TestGenerate:
 
         resp = t.generate(model="gpt-4o", temperature=0.7, max_tokens=100)
 
-        assert resp.generation_config["model"] == "gpt-4o"
-        assert resp.generation_config["temperature"] == 0.7
-        assert resp.generation_config["max_tokens"] == 100
+        assert resp.generation_config.model == "gpt-4o"
+        assert resp.generation_config.temperature == 0.7
+        assert resp.generation_config.max_tokens == 100
         # Verify mock received the kwargs
         assert mock.last_kwargs.get("model") == "gpt-4o"
         assert mock.last_kwargs.get("temperature") == 0.7
