@@ -386,6 +386,7 @@ def compress_range(
     instructions: str | None = None,
     system_prompt: str | None = None,
     llm_kwargs: dict | None = None,
+    generation_config: dict | None = None,
     type_registry: dict[str, type] | None = None,
 ) -> CompressResult | PendingCompression:
     """Core compression operation.
@@ -417,6 +418,7 @@ def compress_range(
         instructions: Optional LLM instructions.
         system_prompt: Optional custom system prompt for LLM.
         llm_kwargs: Optional per-operation LLM config (model, temperature, etc.).
+        generation_config: Optional generation config to record on summary commits.
         type_registry: Optional custom content type registry.
 
     Returns:
@@ -508,6 +510,7 @@ def compress_range(
         pending._target_tokens = target_tokens
         pending._instructions = instructions
         pending._head_hash = head_hash
+        pending._generation_config = generation_config
         return pending
 
     # i. Autonomous mode: commit immediately
@@ -531,6 +534,7 @@ def compress_range(
         instructions=instructions,
         branch_name=branch_name,
         type_registry=type_registry,
+        generation_config=generation_config,
     )
 
 
@@ -556,6 +560,7 @@ def _commit_compression(
     branch_name: str | None,
     type_registry: dict[str, type] | None = None,
     expected_head: str | None = None,
+    generation_config: dict | None = None,
 ) -> CompressResult:
     """Create summary commits, interleave with PINNED, record provenance.
 
@@ -665,6 +670,7 @@ def _commit_compression(
                 info = commit_engine.create_commit(
                     content=summary_content,
                     message=f"Compressed {n_commits} commits",
+                    generation_config=generation_config,
                 )
                 summary_commit_hashes.append(info.commit_hash)
                 all_new_commit_hashes.append(info.commit_hash)

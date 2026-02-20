@@ -63,6 +63,7 @@ class PendingCompression:
     _target_tokens: int | None = field(default=None, repr=False)
     _instructions: str | None = field(default=None, repr=False)
     _head_hash: str | None = field(default=None, repr=False)
+    _generation_config: dict | None = field(default=None, repr=False)
 
     def edit_summary(self, index: int, new_text: str) -> None:
         """Replace the summary text at the given index.

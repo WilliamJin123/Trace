@@ -86,6 +86,8 @@ class OrchestratorConfig:
         triggers: Configuration for automatic orchestrator activation.
         model: LLM model identifier (None = use default from LLM client).
         temperature: LLM temperature for orchestrator calls.
+        max_tokens: Maximum tokens for LLM response in orchestrator calls.
+        extra_llm_kwargs: Additional LLM kwargs (top_p, seed, etc.) forwarded to client.chat().
         on_proposal: Callback invoked when the orchestrator proposes an action.
         on_step: Callback invoked after each orchestrator step completes.
     """
@@ -98,5 +100,7 @@ class OrchestratorConfig:
     triggers: TriggerConfig | None = None
     model: str | None = None
     temperature: float = 0.0
+    max_tokens: int | None = None
+    extra_llm_kwargs: dict | None = None
     on_proposal: Callable[[OrchestratorProposal], ProposalResponse] | None = None
     on_step: Callable[[StepResult], None] | None = None

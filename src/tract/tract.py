@@ -2048,6 +2048,7 @@ class Tract:
                 auto_commit=auto_commit,
                 llm_client=llm_client,
                 llm_kwargs=llm_kwargs,
+                generation_config=llm_kwargs if llm_kwargs else None,
                 content=content,
                 instructions=instructions,
                 system_prompt=system_prompt,
@@ -2706,14 +2707,25 @@ class Tract:
                     overrides["model"] = orch_resolved["model"]
                 if config.temperature == 0.0 and "temperature" in orch_resolved:
                     overrides["temperature"] = orch_resolved["temperature"]
+                if config.max_tokens is None and "max_tokens" in orch_resolved:
+                    overrides["max_tokens"] = orch_resolved["max_tokens"]
+                # Collect remaining resolved fields into extra_llm_kwargs
+                _orch_known = {"model", "temperature", "max_tokens"}
+                extra = {k: v for k, v in orch_resolved.items() if k not in _orch_known}
+                if extra and config.extra_llm_kwargs is None:
+                    overrides["extra_llm_kwargs"] = extra
                 if overrides:
                     config = replace(config, **overrides)
             else:
                 # No caller config -- create one from operation defaults
                 from tract.orchestrator.config import OrchestratorConfig as _OrchestratorConfig
+                _orch_known = {"model", "temperature", "max_tokens"}
+                extra = {k: v for k, v in orch_resolved.items() if k not in _orch_known}
                 config = _OrchestratorConfig(
                     model=orch_resolved.get("model"),
                     temperature=orch_resolved.get("temperature", 0.0),
+                    max_tokens=orch_resolved.get("max_tokens"),
+                    extra_llm_kwargs=extra if extra else None,
                 )
 
         # Step 3: Three-way branch (now with resolved config)

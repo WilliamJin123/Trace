@@ -296,12 +296,16 @@ class Orchestrator:
             )
 
         # OpenAIClient.chat() accepts tools via **kwargs passthrough
-        return client.chat(
-            messages,
-            model=self._config.model,
-            temperature=self._config.temperature,
-            tools=tools,
-        )
+        kwargs: dict = {"tools": tools}
+        if self._config.model:
+            kwargs["model"] = self._config.model
+        if self._config.temperature is not None:
+            kwargs["temperature"] = self._config.temperature
+        if self._config.max_tokens is not None:
+            kwargs["max_tokens"] = self._config.max_tokens
+        if self._config.extra_llm_kwargs:
+            kwargs.update(self._config.extra_llm_kwargs)
+        return client.chat(messages, **kwargs)
 
     def _extract_tool_calls(self, response: dict) -> list[ToolCall]:
         """Parse OpenAI-format response to extract tool calls.
