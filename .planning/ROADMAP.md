@@ -4,7 +4,7 @@
 
 - v1.0 Core (Phases 1-5) -- shipped 2026-02-16
 - v2.0 Autonomy (Phases 6-7) -- shipped 2026-02-18
-- v3.0 DX & API Overhaul (Phases 8-12) -- shipped 2026-02-20
+- v3.0 DX & API Overhaul (Phases 8-13) -- in progress
 
 ## Phases
 
@@ -52,7 +52,7 @@
 </details>
 
 <details>
-<summary>v3.0 DX & API Overhaul (Phases 8-12) -- SHIPPED 2026-02-20</summary>
+<summary>v3.0 DX & API Overhaul (Phases 8-13)</summary>
 
 **Milestone Goal:** Rich functionality through minimal interfaces. Easy for the common case, configurable for every edge case. Cookbook-driven -- every API change must make a cookbook example simpler.
 
@@ -63,6 +63,7 @@
 - [x] **Phase 10: Per-Operation LLM Config** - Independent model/params per LLM-powered operation
 - [x] **Phase 11: Unified LLM Config & Query** - Replace LLMOperationConfig with fully-typed LLMConfig; upgrade query_by_config for multi-field, whole-config, and IN queries; update Tier 1 cookbook examples to use LLMConfig
 - [x] **Phase 12: LLMConfig Cleanup & Tightening** - Typed OperationConfigs, consolidated default config, call-level llm_config=, smart from_dict() aliases, full generation_config capture, orchestrator/compression fixes
+- [ ] **Phase 13: Unified Operation Events & Compile Records** - Replace per-operation tables with unified OperationEvent+OperationCommit model; add CompileRecord persistence; rewrite rebase as reorganize-with-receipts; dissolve cherry-pick; clean break from old schema
 
 </details>
 
@@ -147,10 +148,30 @@ Plans:
 - [x] 12-01-PLAN.md -- Config layer: OperationConfigs dataclass, from_dict aliases, from_obj, consolidated _default_config, updated init/open/configure/property
 - [x] 12-02-PLAN.md -- Wire everything: 4-level resolution chain, full gen_config capture, llm_config= parameter, compression/orchestrator fixes, error guards
 
+### Phase 13: Unified Operation Events & Compile Records
+**Goal**: Replace brittle per-operation event tables with a unified 2-table model (OperationEvent + OperationCommit) that records any structural transformation. Add compile record persistence so the exact context sent to the LLM is always recoverable. Clean break -- zero backward compatibility artifacts.
+**Depends on**: Phase 12
+**Requirements**: PROV-01 (unified operation events), PROV-02 (compile records), PROV-03 (rebase as reorganize), PROV-04 (dissolve cherry-pick), PROV-05 (GC update), PROV-06 (compression migration)
+**Success Criteria** (what must be TRUE):
+  1. OperationEventRow + OperationCommitRow tables exist and can record compress, reorganize, and import operations with a single schema
+  2. CompressionRow, CompressionSourceRow, CompressionResultRow tables are completely removed -- zero references in source or tests
+  3. CompileRecordRow + CompileEffectiveRow tables persist what context was compiled; chat()/generate() automatically create compile records
+  4. Rebase creates an OperationEvent of type "reorganize" with source/result commit mappings -- old commits remain linked permanently
+  5. Cherry-pick is dissolved into a convenience method (import_commit or similar) that creates a normal commit + a "reorganize" event
+  6. OperationEventRow has indexed columns for original_tokens and compressed_tokens (not just params_json) for compression benchmarking
+  7. GC respects OperationCommitRow FKs -- commits referenced as "source" in any event are not garbage collected
+  8. No backward compatibility artifacts: no old table references, no migration shims, no compat layers, no renamed-but-unused code
+**Plans**: 3 plans
+
+Plans:
+- [ ] 13-01-PLAN.md -- New schema tables (OperationEvent/OperationCommit/CompileRecord/CompileEffective), repository ABCs + SQLite impls, v5->v6 migration, rewritten storage tests
+- [ ] 13-02-PLAN.md -- Wire event_repo through compression/GC/rebase, dissolve cherry-pick into import_commit, remove old public API artifacts, update all operation tests
+- [ ] 13-03-PLAN.md -- Compile record persistence in generate(), compile record tests, full-suite regression sweep, SC-8 clean break verification
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 8 -> 9 -> 10 -> 11 -> 12 (plus any inserted decimal phases)
+Phases execute in numeric order: 8 -> 9 -> 10 -> 11 -> 12 -> 13 (plus any inserted decimal phases)
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -170,3 +191,4 @@ Phases execute in numeric order: 8 -> 9 -> 10 -> 11 -> 12 (plus any inserted dec
 | 10. Per-Op LLM Config | v3.0 | 1/1 | Complete | 2026-02-20 |
 | 11. Unified LLM Config | v3.0 | 2/2 | Complete | 2026-02-20 |
 | 12. LLMConfig Cleanup | v3.0 | 2/2 | Complete | 2026-02-20 |
+| 13. Operation Events & Compile Records | v3.0 | 0/3 | Planned | - |
