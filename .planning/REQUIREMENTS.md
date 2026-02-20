@@ -35,6 +35,15 @@
 - [x] **QUERY-01**: query_by_config supports multi-field AND queries, IN operator, and whole-config matching via LLMConfig object
 - [x] **COOK-01**: All 3 Tier 1 cookbook examples updated to use LLMConfig typed access (response.generation_config.model instead of response.generation_config.get("model"))
 
+### LLMConfig Cleanup (CLEAN)
+
+- [x] **CLEAN-01**: OperationConfigs frozen dataclass with typed chat/merge/compress/orchestrate fields — typos caught at construction, IDE autocomplete
+- [x] **CLEAN-02**: Consolidated _default_config: LLMConfig replaces _default_model; open(model=...) is sugar
+- [x] **CLEAN-03**: chat()/generate()/merge()/compress() accept llm_config: LLMConfig for full call-level override
+- [x] **CLEAN-04**: LLMConfig.from_dict() handles cross-framework aliases and ignores API plumbing keys; from_obj() extracts from arbitrary objects
+- [x] **CLEAN-05**: _build_generation_config captures ALL resolved fields (top_p, seed, frequency_penalty, etc.)
+- [x] **CLEAN-06**: Compression gen_config threading, orchestrator full config forwarding, compress error guard
+
 ## Future Requirements
 
 - Cookbook-driven: additional requirements will be added as cookbook examples are rewritten against the new API
@@ -70,11 +79,18 @@
 | QUERY-01 | Phase 11 | Complete |
 | COOK-01 | Phase 11 | Complete |
 
+| CLEAN-01 | Phase 12 | Complete |
+| CLEAN-02 | Phase 12 | Complete |
+| CLEAN-03 | Phase 12 | Complete |
+| CLEAN-04 | Phase 12 | Complete |
+| CLEAN-05 | Phase 12 | Complete |
+| CLEAN-06 | Phase 12 | Complete |
+
 **Coverage:**
-- v3 requirements: 15 total
-- Mapped to phases: 15
+- v3 requirements: 21 total
+- Mapped to phases: 21
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-19*
-*Last updated: 2026-02-20 after Phase 11 completion*
+*Last updated: 2026-02-20 after Phase 12 completion*

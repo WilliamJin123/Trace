@@ -4,7 +4,7 @@
 
 - v1.0 Core (Phases 1-5) -- shipped 2026-02-16
 - v2.0 Autonomy (Phases 6-7) -- shipped 2026-02-18
-- v3.0 DX & API Overhaul (Phases 8-12) -- in progress
+- v3.0 DX & API Overhaul (Phases 8-12) -- shipped 2026-02-20
 
 ## Phases
 
@@ -52,7 +52,7 @@
 </details>
 
 <details>
-<summary>v3.0 DX & API Overhaul (Phases 8-12)</summary>
+<summary>v3.0 DX & API Overhaul (Phases 8-12) -- SHIPPED 2026-02-20</summary>
 
 **Milestone Goal:** Rich functionality through minimal interfaces. Easy for the common case, configurable for every edge case. Cookbook-driven -- every API change must make a cookbook example simpler.
 
@@ -62,7 +62,7 @@
 - [x] **Phase 9: Conversation Layer** - One-call chat/generate with integrated LLM
 - [x] **Phase 10: Per-Operation LLM Config** - Independent model/params per LLM-powered operation
 - [x] **Phase 11: Unified LLM Config & Query** - Replace LLMOperationConfig with fully-typed LLMConfig; upgrade query_by_config for multi-field, whole-config, and IN queries; update Tier 1 cookbook examples to use LLMConfig
-- [ ] **Phase 12: LLMConfig Cleanup & Tightening** - Typed OperationConfigs, consolidated default config, call-level llm_config=, smart from_dict() aliases, full generation_config capture, orchestrator/compression fixes
+- [x] **Phase 12: LLMConfig Cleanup & Tightening** - Typed OperationConfigs, consolidated default config, call-level llm_config=, smart from_dict() aliases, full generation_config capture, orchestrator/compression fixes
 
 </details>
 
@@ -141,11 +141,11 @@ Plans:
   5. `_build_generation_config()` captures ALL resolved fields (top_p, seed, frequency_penalty, etc.), not just model/temperature/max_tokens
   6. Compression summary commits record generation_config; orchestrator _call_llm() forwards full config (max_tokens, extra kwargs); compress() raises on explicit LLM params without LLM client
   7. All existing tests continue to pass; new tests cover every fix
-**Plans**: 2 plans
+**Plans**: 2/2 complete
 
 Plans:
-- [ ] 12-01-PLAN.md -- Config layer: OperationConfigs dataclass, from_dict aliases, from_obj, consolidated _default_config, updated init/open/configure/property
-- [ ] 12-02-PLAN.md -- Wire everything: 4-level resolution chain, full gen_config capture, llm_config= parameter, compression/orchestrator fixes, error guards
+- [x] 12-01-PLAN.md -- Config layer: OperationConfigs dataclass, from_dict aliases, from_obj, consolidated _default_config, updated init/open/configure/property
+- [x] 12-02-PLAN.md -- Wire everything: 4-level resolution chain, full gen_config capture, llm_config= parameter, compression/orchestrator fixes, error guards
 
 ## Progress
 
@@ -169,4 +169,4 @@ Phases execute in numeric order: 8 -> 9 -> 10 -> 11 -> 12 (plus any inserted dec
 | 9. Conversation Layer | v3.0 | 1/1 | Complete | 2026-02-19 |
 | 10. Per-Op LLM Config | v3.0 | 1/1 | Complete | 2026-02-20 |
 | 11. Unified LLM Config | v3.0 | 2/2 | Complete | 2026-02-20 |
-| 12. LLMConfig Cleanup | v3.0 | 0/2 | Not started | - |
+| 12. LLMConfig Cleanup | v3.0 | 2/2 | Complete | 2026-02-20 |

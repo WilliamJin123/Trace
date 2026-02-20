@@ -5,15 +5,15 @@
 See: .planning/PROJECT.md (updated 2026-02-19)
 
 **Core value:** Agents produce better outputs when their context is clean, coherent, and relevant. Trace makes context a managed, version-controlled resource.
-**Current focus:** v3.0 DX & API Overhaul -- Phase 12: LLMConfig Cleanup & Tightening -- COMPLETE
+**Current focus:** v3.0 DX & API Overhaul -- MILESTONE COMPLETE
 
 ## Current Position
 
 Milestone: v3.0 -- DX & API Overhaul
 Phase: 12 of 12 (LLMConfig Cleanup & Tightening)
 Plan: 2 of 2 (config wiring & downstream fixes complete)
-Status: Phase complete -- all plans delivered
-Last activity: 2026-02-20 -- Completed 12-02-PLAN.md
+Status: v3.0 MILESTONE COMPLETE -- all 5 phases, 7 plans, 21 requirements delivered
+Last activity: 2026-02-20 -- Phase 12 complete, v3.0 milestone shipped
 
 v1 Progress: [######################] 100% (22/22 plans)
 v2 Progress: [######################] 100% (6/6 plans)
@@ -101,6 +101,7 @@ All v1/v2 decisions logged in PROJECT.md Key Decisions table.
 - Phase 12 Plan 01 complete: config layer foundation (OperationConfigs, aliases, from_obj, _default_config)
 - Phase 12 Plan 02 complete: 4-level resolution, full gen_config capture, downstream wiring
 - Phase 12 COMPLETE: All LLMConfig cleanup and tightening delivered
+- v3.0 MILESTONE COMPLETE: All 21 DX requirements delivered across Phases 8-12
 
 ### Blockers/Concerns
 
@@ -109,5 +110,5 @@ None active.
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Completed 12-02-PLAN.md -- Phase 12 complete
+Stopped at: v3.0 milestone complete -- all phases shipped
 Resume file: None
