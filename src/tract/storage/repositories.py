@@ -19,9 +19,10 @@ if TYPE_CHECKING:
         BlobRow,
         CommitParentRow,
         CommitRow,
-        CompressionResultRow,
-        CompressionRow,
-        CompressionSourceRow,
+        CompileEffectiveRow,
+        CompileRecordRow,
+        OperationCommitRow,
+        OperationEventRow,
         PolicyLogRow,
         PolicyProposalRow,
         SpawnPointerRow,
@@ -276,83 +277,115 @@ class AnnotationRepository(ABC):
         ...
 
 
-class CompressionRepository(ABC):
-    """Abstract interface for compression provenance storage.
+class OperationEventRepository(ABC):
+    """Abstract interface for unified operation event storage.
 
-    Tracks which commits were compressed (sources) and what they
-    produced (results/summaries), enabling queries like:
-    - "What sources produced this summary?"
-    - "Was this commit ever compressed?"
+    Tracks operation events (compress, reorganize, import) and their
+    associated commits (sources and results).
+    """
+
+    @abstractmethod
+    def save_event(
+        self,
+        event_id: str,
+        tract_id: str,
+        event_type: str,
+        branch_name: str | None,
+        created_at: datetime,
+        original_tokens: int,
+        compressed_tokens: int,
+        params_json: dict | None,
+    ) -> None:
+        """Save an operation event."""
+        ...
+
+    @abstractmethod
+    def add_commit(
+        self, event_id: str, commit_hash: str, role: str, position: int
+    ) -> None:
+        """Add a commit association to an operation event."""
+        ...
+
+    @abstractmethod
+    def get_event(self, event_id: str) -> OperationEventRow | None:
+        """Get an operation event by ID. Returns None if not found."""
+        ...
+
+    @abstractmethod
+    def get_commits(
+        self, event_id: str, role: str | None = None
+    ) -> list[OperationCommitRow]:
+        """Get commit associations for an event, optionally filtered by role."""
+        ...
+
+    @abstractmethod
+    def is_source_of(self, commit_hash: str) -> bool:
+        """Check if a commit is a source in any operation event."""
+        ...
+
+    @abstractmethod
+    def get_all_source_hashes(self, tract_id: str) -> set[str]:
+        """Get all source commit hashes for a tract across all events."""
+        ...
+
+    @abstractmethod
+    def get_all_ids(self, tract_id: str) -> list[str]:
+        """Get all event IDs for a tract."""
+        ...
+
+    @abstractmethod
+    def delete_commit(self, commit_hash: str) -> None:
+        """Delete all OperationCommitRow entries for a commit hash."""
+        ...
+
+    @abstractmethod
+    def delete_event(self, event_id: str) -> None:
+        """Delete an event and all its commit associations."""
+        ...
+
+
+class CompileRecordRepository(ABC):
+    """Abstract interface for compile record storage.
+
+    Tracks compile operations: which head was compiled, how many
+    tokens/commits were included, and which commits were effective.
     """
 
     @abstractmethod
     def save_record(
         self,
-        compression_id: str,
+        record_id: str,
         tract_id: str,
-        branch_name: str | None,
+        head_hash: str,
+        token_count: int,
+        commit_count: int,
+        token_source: str,
+        params_json: dict | None,
         created_at: datetime,
-        original_tokens: int,
-        compressed_tokens: int,
-        target_tokens: int | None,
-        instructions: str | None,
     ) -> None:
-        """Save a compression record."""
+        """Save a compile record."""
         ...
 
     @abstractmethod
-    def add_source(self, compression_id: str, commit_hash: str, position: int) -> None:
-        """Add a source commit to a compression record."""
+    def add_effective(
+        self, record_id: str, commit_hash: str, position: int
+    ) -> None:
+        """Add an effective commit to a compile record."""
         ...
 
     @abstractmethod
-    def add_result(self, compression_id: str, commit_hash: str, position: int) -> None:
-        """Add a result (summary) commit to a compression record."""
+    def get_record(self, record_id: str) -> CompileRecordRow | None:
+        """Get a compile record by ID. Returns None if not found."""
         ...
 
     @abstractmethod
-    def get_record(self, compression_id: str) -> CompressionRow | None:
-        """Get a compression record by ID. Returns None if not found."""
+    def get_all(self, tract_id: str) -> list[CompileRecordRow]:
+        """Get all compile records for a tract, ordered by created_at."""
         ...
 
     @abstractmethod
-    def get_sources(self, compression_id: str) -> list[CompressionSourceRow]:
-        """Get source commits for a compression, ordered by position."""
-        ...
-
-    @abstractmethod
-    def get_results(self, compression_id: str) -> list[CompressionResultRow]:
-        """Get result commits for a compression, ordered by position."""
-        ...
-
-    @abstractmethod
-    def is_source_of(self, commit_hash: str) -> bool:
-        """Check if a commit is a source in any compression record."""
-        ...
-
-    @abstractmethod
-    def get_all_source_hashes(self, tract_id: str) -> set[str]:
-        """Get all source commit hashes for a tract across all compressions."""
-        ...
-
-    @abstractmethod
-    def get_all_ids(self, tract_id: str) -> list[str]:
-        """Get all compression IDs for a tract."""
-        ...
-
-    @abstractmethod
-    def delete_source(self, commit_hash: str) -> None:
-        """Delete CompressionSourceRow entries for a commit hash."""
-        ...
-
-    @abstractmethod
-    def delete_result(self, commit_hash: str) -> None:
-        """Delete CompressionResultRow entries for a commit hash."""
-        ...
-
-    @abstractmethod
-    def delete_record(self, compression_id: str) -> None:
-        """Delete a CompressionRow and all its source/result associations."""
+    def get_effectives(self, record_id: str) -> list[CompileEffectiveRow]:
+        """Get effective commits for a compile record, ordered by position."""
         ...
 
 

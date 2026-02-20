@@ -17,7 +17,8 @@ from tract.storage.repositories import (
     BlobRepository,
     CommitParentRepository,
     CommitRepository,
-    CompressionRepository,
+    CompileRecordRepository,
+    OperationEventRepository,
     PolicyRepository,
     RefRepository,
     SpawnPointerRepository,
@@ -27,9 +28,10 @@ from tract.storage.schema import (
     BlobRow,
     CommitParentRow,
     CommitRow,
-    CompressionResultRow,
-    CompressionRow,
-    CompressionSourceRow,
+    CompileEffectiveRow,
+    CompileRecordRow,
+    OperationCommitRow,
+    OperationEventRow,
     PolicyLogRow,
     PolicyProposalRow,
     RefRow,
@@ -586,10 +588,131 @@ class SqliteAnnotationRepository(AnnotationRepository):
         return {row.target_hash: row for row in rows}
 
 
-class SqliteCompressionRepository(CompressionRepository):
-    """SQLite implementation of compression provenance storage.
+class SqliteOperationEventRepository(OperationEventRepository):
+    """SQLite implementation of unified operation event storage.
 
-    Tracks compression records and their source/result commit associations.
+    Tracks operation events (compress, reorganize, import) and their
+    associated source/result commits.
+    """
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def save_event(
+        self,
+        event_id: str,
+        tract_id: str,
+        event_type: str,
+        branch_name: str | None,
+        created_at: datetime,
+        original_tokens: int,
+        compressed_tokens: int,
+        params_json: dict | None,
+    ) -> None:
+        row = OperationEventRow(
+            event_id=event_id,
+            tract_id=tract_id,
+            event_type=event_type,
+            branch_name=branch_name,
+            created_at=created_at,
+            original_tokens=original_tokens,
+            compressed_tokens=compressed_tokens,
+            params_json=params_json,
+        )
+        self._session.add(row)
+        self._session.flush()
+
+    def add_commit(
+        self, event_id: str, commit_hash: str, role: str, position: int
+    ) -> None:
+        row = OperationCommitRow(
+            event_id=event_id,
+            commit_hash=commit_hash,
+            role=role,
+            position=position,
+        )
+        self._session.add(row)
+        self._session.flush()
+
+    def get_event(self, event_id: str) -> OperationEventRow | None:
+        stmt = select(OperationEventRow).where(
+            OperationEventRow.event_id == event_id
+        )
+        return self._session.execute(stmt).scalar_one_or_none()
+
+    def get_commits(
+        self, event_id: str, role: str | None = None
+    ) -> list[OperationCommitRow]:
+        conditions = [OperationCommitRow.event_id == event_id]
+        if role is not None:
+            conditions.append(OperationCommitRow.role == role)
+        stmt = (
+            select(OperationCommitRow)
+            .where(and_(*conditions))
+            .order_by(OperationCommitRow.position)
+        )
+        return list(self._session.execute(stmt).scalars().all())
+
+    def is_source_of(self, commit_hash: str) -> bool:
+        stmt = select(OperationCommitRow).where(
+            OperationCommitRow.commit_hash == commit_hash,
+            OperationCommitRow.role == "source",
+        )
+        return self._session.execute(stmt).first() is not None
+
+    def get_all_source_hashes(self, tract_id: str) -> set[str]:
+        stmt = (
+            select(OperationCommitRow.commit_hash)
+            .join(
+                OperationEventRow,
+                OperationCommitRow.event_id == OperationEventRow.event_id,
+            )
+            .where(
+                OperationEventRow.tract_id == tract_id,
+                OperationCommitRow.role == "source",
+            )
+        )
+        return set(self._session.execute(stmt).scalars().all())
+
+    def get_all_ids(self, tract_id: str) -> list[str]:
+        stmt = select(OperationEventRow.event_id).where(
+            OperationEventRow.tract_id == tract_id
+        )
+        return list(self._session.execute(stmt).scalars().all())
+
+    def delete_commit(self, commit_hash: str) -> None:
+        """Delete all OperationCommitRow entries for a commit hash."""
+        stmt = select(OperationCommitRow).where(
+            OperationCommitRow.commit_hash == commit_hash
+        )
+        for row in self._session.execute(stmt).scalars().all():
+            self._session.delete(row)
+        self._session.flush()
+
+    def delete_event(self, event_id: str) -> None:
+        """Delete an event and all its commit associations."""
+        # Delete commit associations first
+        for row in self._session.execute(
+            select(OperationCommitRow).where(
+                OperationCommitRow.event_id == event_id
+            )
+        ).scalars().all():
+            self._session.delete(row)
+        # Delete the event itself
+        event = self._session.execute(
+            select(OperationEventRow).where(
+                OperationEventRow.event_id == event_id
+            )
+        ).scalar_one_or_none()
+        if event is not None:
+            self._session.delete(event)
+        self._session.flush()
+
+
+class SqliteCompileRecordRepository(CompileRecordRepository):
+    """SQLite implementation of compile record storage.
+
+    Tracks compile operations and their effective commits.
     """
 
     def __init__(self, session: Session) -> None:
@@ -597,134 +720,60 @@ class SqliteCompressionRepository(CompressionRepository):
 
     def save_record(
         self,
-        compression_id: str,
+        record_id: str,
         tract_id: str,
-        branch_name: str | None,
+        head_hash: str,
+        token_count: int,
+        commit_count: int,
+        token_source: str,
+        params_json: dict | None,
         created_at: datetime,
-        original_tokens: int,
-        compressed_tokens: int,
-        target_tokens: int | None,
-        instructions: str | None,
     ) -> None:
-        row = CompressionRow(
-            compression_id=compression_id,
+        row = CompileRecordRow(
+            record_id=record_id,
             tract_id=tract_id,
-            branch_name=branch_name,
+            head_hash=head_hash,
+            token_count=token_count,
+            commit_count=commit_count,
+            token_source=token_source,
+            params_json=params_json,
             created_at=created_at,
-            original_tokens=original_tokens,
-            compressed_tokens=compressed_tokens,
-            target_tokens=target_tokens,
-            instructions=instructions,
         )
         self._session.add(row)
         self._session.flush()
 
-    def add_source(self, compression_id: str, commit_hash: str, position: int) -> None:
-        row = CompressionSourceRow(
-            compression_id=compression_id,
+    def add_effective(
+        self, record_id: str, commit_hash: str, position: int
+    ) -> None:
+        row = CompileEffectiveRow(
+            record_id=record_id,
             commit_hash=commit_hash,
             position=position,
         )
         self._session.add(row)
         self._session.flush()
 
-    def add_result(self, compression_id: str, commit_hash: str, position: int) -> None:
-        row = CompressionResultRow(
-            compression_id=compression_id,
-            commit_hash=commit_hash,
-            position=position,
-        )
-        self._session.add(row)
-        self._session.flush()
-
-    def get_record(self, compression_id: str) -> CompressionRow | None:
-        stmt = select(CompressionRow).where(
-            CompressionRow.compression_id == compression_id
+    def get_record(self, record_id: str) -> CompileRecordRow | None:
+        stmt = select(CompileRecordRow).where(
+            CompileRecordRow.record_id == record_id
         )
         return self._session.execute(stmt).scalar_one_or_none()
 
-    def get_sources(self, compression_id: str) -> list[CompressionSourceRow]:
+    def get_all(self, tract_id: str) -> list[CompileRecordRow]:
         stmt = (
-            select(CompressionSourceRow)
-            .where(CompressionSourceRow.compression_id == compression_id)
-            .order_by(CompressionSourceRow.position)
+            select(CompileRecordRow)
+            .where(CompileRecordRow.tract_id == tract_id)
+            .order_by(CompileRecordRow.created_at)
         )
         return list(self._session.execute(stmt).scalars().all())
 
-    def get_results(self, compression_id: str) -> list[CompressionResultRow]:
+    def get_effectives(self, record_id: str) -> list[CompileEffectiveRow]:
         stmt = (
-            select(CompressionResultRow)
-            .where(CompressionResultRow.compression_id == compression_id)
-            .order_by(CompressionResultRow.position)
+            select(CompileEffectiveRow)
+            .where(CompileEffectiveRow.record_id == record_id)
+            .order_by(CompileEffectiveRow.position)
         )
         return list(self._session.execute(stmt).scalars().all())
-
-    def is_source_of(self, commit_hash: str) -> bool:
-        stmt = select(CompressionSourceRow).where(
-            CompressionSourceRow.commit_hash == commit_hash
-        )
-        return self._session.execute(stmt).first() is not None
-
-    def get_all_source_hashes(self, tract_id: str) -> set[str]:
-        stmt = (
-            select(CompressionSourceRow.commit_hash)
-            .join(
-                CompressionRow,
-                CompressionSourceRow.compression_id == CompressionRow.compression_id,
-            )
-            .where(CompressionRow.tract_id == tract_id)
-        )
-        return set(self._session.execute(stmt).scalars().all())
-
-    def get_all_ids(self, tract_id: str) -> list[str]:
-        stmt = (
-            select(CompressionRow.compression_id)
-            .where(CompressionRow.tract_id == tract_id)
-        )
-        return list(self._session.execute(stmt).scalars().all())
-
-    def delete_source(self, commit_hash: str) -> None:
-        """Delete CompressionSourceRow entries for a commit hash."""
-        stmt = select(CompressionSourceRow).where(
-            CompressionSourceRow.commit_hash == commit_hash
-        )
-        for row in self._session.execute(stmt).scalars().all():
-            self._session.delete(row)
-        self._session.flush()
-
-    def delete_result(self, commit_hash: str) -> None:
-        """Delete CompressionResultRow entries for a commit hash."""
-        stmt = select(CompressionResultRow).where(
-            CompressionResultRow.commit_hash == commit_hash
-        )
-        for row in self._session.execute(stmt).scalars().all():
-            self._session.delete(row)
-        self._session.flush()
-
-    def delete_record(self, compression_id: str) -> None:
-        """Delete a CompressionRow and all its source/result associations."""
-        # Delete source and result associations first
-        for row in self._session.execute(
-            select(CompressionSourceRow).where(
-                CompressionSourceRow.compression_id == compression_id
-            )
-        ).scalars().all():
-            self._session.delete(row)
-        for row in self._session.execute(
-            select(CompressionResultRow).where(
-                CompressionResultRow.compression_id == compression_id
-            )
-        ).scalars().all():
-            self._session.delete(row)
-        # Delete the compression record itself
-        record = self._session.execute(
-            select(CompressionRow).where(
-                CompressionRow.compression_id == compression_id
-            )
-        ).scalar_one_or_none()
-        if record is not None:
-            self._session.delete(record)
-        self._session.flush()
 
 
 class SqliteSpawnPointerRepository(SpawnPointerRepository):
