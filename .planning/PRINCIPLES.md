@@ -9,3 +9,5 @@
 - human-triggered context operations (rebase, reset, edits + appends, branching, etc.) ==> agent-triggered is possible
 - Any human-exposed interface (apis, python functions, etc.) can also be exposed to an LLM (toolkits, customizable prompts, etc.)
 - etc.
+3. Full History
+- 

@@ -5,18 +5,21 @@ response. The retrieval context and user question are committed atomically
 via batch() — either both land or neither does. Then generate() handles the
 LLM call and assistant commit separately.
 
-Also demonstrates auto-captured generation_config: the exact model and
-temperature that produced each response are stored with the commit
-automatically — no manual tracking required.
+Also demonstrates:
+- Auto-captured generation_config: the exact model, temperature, top_p, seed,
+  etc. that produced each response are stored with the commit automatically.
+- LLMConfig for typed call-level overrides via llm_config= parameter.
+- query_by_config() for finding commits by their LLM configuration.
 
-Demonstrates: batch(), generate(), auto generation_config, query_by_config()
+Demonstrates: batch(), generate(), LLMConfig, llm_config=, auto generation_config,
+              query_by_config()
 """
 
 import os
 
 from dotenv import load_dotenv
 
-from tract import FreeformContent, Tract
+from tract import FreeformContent, LLMConfig, Tract
 
 load_dotenv()
 
@@ -64,22 +67,30 @@ def main():
             t.user(query)
 
         # generate() compiles all context, calls the LLM, commits the response,
-        # and auto-captures generation_config (model, temperature, etc.)
+        # and auto-captures generation_config — ALL resolved fields are stored
+        # (model, temperature, top_p, seed, etc.), not just model/temperature
         response = t.generate(temperature=0.3)
 
         print(f"Assistant: {response.text[:200]}...")
         print(f"Config captured: {response.generation_config}\n")
 
-        # --- Batch 2: Follow-up exchange ---
-        print("=== Batch 2: Follow-up ===\n")
+        # --- Batch 2: Follow-up with typed LLMConfig override ---
+        print("=== Batch 2: Follow-up with LLMConfig override ===\n")
 
         follow_up = "Which of those changes has the biggest real-world impact?"
 
-        # For simple exchanges, user() + generate() works without batch
-        t.user(follow_up)
-        response = t.generate(temperature=0.3)
+        # Use LLMConfig for a typed, full-featured override on a single call.
+        # This is the call-level override — it takes priority over operation
+        # and tract defaults, but sugar params (model=, temperature=) beat it.
+        creative_config = LLMConfig(temperature=0.7, top_p=0.9, seed=42)
 
-        print(f"Assistant: {response.text[:200]}...\n")
+        t.user(follow_up)
+        response = t.generate(llm_config=creative_config)
+
+        print(f"Assistant: {response.text[:200]}...")
+        # generation_config now captures ALL fields: temperature, top_p, seed, etc.
+        gc = response.generation_config
+        print(f"Config: model={gc.model}, temp={gc.temperature}, top_p={gc.top_p}, seed={gc.seed}\n")
 
         # --- Inspect the full history ---
         print("=== Full History ===\n")

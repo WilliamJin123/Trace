@@ -28,9 +28,17 @@ Check `status()` before every LLM call to see current token count vs budget. Aft
 
 **Use case:** A RAG pipeline that retrieves documents, asks the user a clarifying question, and gets a response — all of which should land as one atomic unit or not at all.
 
-Wrap the retrieval commit, user commit, and assistant commit inside `batch()` so either all three land or none do. Attach `generation_config={"model": "gpt-4o", "temperature": 0.7}` to the assistant commit so you know exactly what settings produced it.
+Wrap the retrieval commit, user commit, and assistant commit inside `batch()` so either all three land or none do. Use `llm_config=LLMConfig(temperature=0.7, top_p=0.9, seed=42)` for a typed, full-featured call-level override. The full generation config — all resolved fields including top_p, seed, frequency_penalty, etc. — is auto-captured on every assistant commit.
 
-> `batch()`, `commit(generation_config={...})`
+> `batch()`, `generate(llm_config=LLMConfig(...))`, `query_by_config()`
+
+### 1.4 — LLM Configuration Hierarchy
+
+**Use case:** A multi-purpose agent that needs different LLM settings for different operations — creative responses for chat, deterministic output for compression, and the ability to override any setting on a per-call basis.
+
+Set a tract-level default with `default_config=LLMConfig(model="gpt-4o", temperature=0.5)`. Override per-operation with `configure_operations(chat=LLMConfig(temperature=0.8), compress=LLMConfig(temperature=0.1, seed=42))`. Override per-call with `llm_config=LLMConfig(...)` or sugar params like `temperature=0.9`. The 4-level chain resolves each field independently: sugar > llm_config > operation > default. Use `LLMConfig.from_dict()` to parse configs from OpenAI-style dicts with cross-framework alias handling (`stop` → `stop_sequences`, `max_completion_tokens` → `max_tokens`).
+
+> `LLMConfig`, `OperationConfigs`, `configure_operations()`, `default_config=`, `llm_config=`, `LLMConfig.from_dict()`
 
 ---
 
