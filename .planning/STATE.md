@@ -5,26 +5,26 @@
 See: .planning/PROJECT.md (updated 2026-02-19)
 
 **Core value:** Agents produce better outputs when their context is clean, coherent, and relevant. Trace makes context a managed, version-controlled resource.
-**Current focus:** v3.0 DX & API Overhaul -- Phase 12: LLMConfig Cleanup & Tightening -- PLANNED
+**Current focus:** v3.0 DX & API Overhaul -- Phase 12: LLMConfig Cleanup & Tightening -- IN PROGRESS
 
 ## Current Position
 
 Milestone: v3.0 -- DX & API Overhaul
 Phase: 12 of 12 (LLMConfig Cleanup & Tightening)
-Plan: 0 of 2 (planned, not started)
-Status: Planned -- ready for execution
-Last activity: 2026-02-19 -- Phase 12 plans created
+Plan: 1 of 2 (config layer foundation complete)
+Status: In progress -- Plan 01 complete, Plan 02 remaining
+Last activity: 2026-02-20 -- Completed 12-01-PLAN.md
 
 v1 Progress: [######################] 100% (22/22 plans)
 v2 Progress: [######################] 100% (6/6 plans)
-v3 Progress: [####################--] 80% (4/5 phases)
+v3 Progress: [######################] 97% (34/35 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 33
-- Average duration: 6.1m
-- Total execution time: 3.51 hours
+- Total plans completed: 34
+- Average duration: 6.0m
+- Total execution time: 3.60 hours
 
 **By Phase:**
 
@@ -45,6 +45,7 @@ v3 Progress: [####################--] 80% (4/5 phases)
 | 9 | 1/1 | 5m | 5m |
 | 10 | 1/1 | 8m | 8m |
 | 11 | 2/2 | 13m | 6.5m |
+| 12 | 1/2 | 5m | 5m |
 
 ## Accumulated Context
 
@@ -76,6 +77,11 @@ All v1/v2 decisions logged in PROJECT.md Key Decisions table.
 | 11-02-D1 | get_by_config delegates to get_by_config_multi | DRY: single implementation handles both single and multi-field queries |
 | 11-02-D2 | query_by_config uses isinstance dispatch (str vs LLMConfig) | Clean multi-dispatch without @overload, backward compatible |
 | 11-02-D3 | Empty LLMConfig returns [] | No fields to match on; returning all commits would be surprising |
+| 12-01-D1 | OperationConfigs is a frozen dataclass (not Pydantic) | Runtime-only, matches LLMConfig pattern |
+| 12-01-D2 | Canonical wins when both alias and canonical exist in from_dict() | No ambiguity, no error |
+| 12-01-D3 | from_obj() dispatch: dataclass fields > model_dump > vars | Covers all common Python config patterns |
+| 12-01-D4 | model= and default_config= mutually exclusive on Tract.open() | Clear error prevents ambiguity |
+| 12-01-D5 | configure_operations() positional-only _configs param | Avoids name collision with operation kwargs |
 
 ### Pending Todos
 
@@ -87,6 +93,7 @@ All v1/v2 decisions logged in PROJECT.md Key Decisions table.
 - v3 milestone COMPLETE: All 15 DX requirements delivered across Phases 8-11
 - Phase 12 added: LLMConfig Cleanup & Tightening (typed OperationConfigs, consolidated defaults, smart from_dict, full gen_config capture)
 - Phase 12 planned: 2 plans in 2 waves (01: config layer, 02: wiring)
+- Phase 12 Plan 01 complete: config layer foundation (OperationConfigs, aliases, from_obj, _default_config)
 
 ### Blockers/Concerns
 
@@ -94,6 +101,6 @@ None active.
 
 ## Session Continuity
 
-Last session: 2026-02-19
-Stopped at: Phase 12 planned -- 2 plans created, ready for execution
+Last session: 2026-02-20
+Stopped at: Completed 12-01-PLAN.md
 Resume file: None
