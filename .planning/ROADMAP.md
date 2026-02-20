@@ -4,7 +4,7 @@
 
 - v1.0 Core (Phases 1-5) -- shipped 2026-02-16
 - v2.0 Autonomy (Phases 6-7) -- shipped 2026-02-18
-- v3.0 DX & API Overhaul (Phases 8-11) -- shipped 2026-02-20
+- v3.0 DX & API Overhaul (Phases 8-12) -- in progress
 
 ## Phases
 
@@ -52,7 +52,7 @@
 </details>
 
 <details>
-<summary>v3.0 DX & API Overhaul (Phases 8-11) -- SHIPPED 2026-02-20</summary>
+<summary>v3.0 DX & API Overhaul (Phases 8-12)</summary>
 
 **Milestone Goal:** Rich functionality through minimal interfaces. Easy for the common case, configurable for every edge case. Cookbook-driven -- every API change must make a cookbook example simpler.
 
@@ -62,6 +62,7 @@
 - [x] **Phase 9: Conversation Layer** - One-call chat/generate with integrated LLM
 - [x] **Phase 10: Per-Operation LLM Config** - Independent model/params per LLM-powered operation
 - [x] **Phase 11: Unified LLM Config & Query** - Replace LLMOperationConfig with fully-typed LLMConfig; upgrade query_by_config for multi-field, whole-config, and IN queries; update Tier 1 cookbook examples to use LLMConfig
+- [ ] **Phase 12: LLMConfig Cleanup & Tightening** - Typed OperationConfigs, consolidated default config, call-level llm_config=, smart from_dict() aliases, full generation_config capture, orchestrator/compression fixes
 
 </details>
 
@@ -128,10 +129,28 @@ Plans:
 - [x] 11-01-PLAN.md -- Define LLMConfig, replace LLMOperationConfig, migrate all ~20 files
 - [x] 11-02-PLAN.md -- Rich query_by_config (multi-field AND, IN, whole-config), cookbook updates, comprehensive tests
 
+### Phase 12: LLMConfig Cleanup & Tightening
+**Goal**: Resolve all typing artifacts from incremental LLMConfig development — typed OperationConfigs dataclass, consolidated tract-level default, call-level llm_config= parameter, alias-aware from_dict(), full generation_config capture, and orchestrator/compression config wiring fixes
+**Depends on**: Phase 11
+**Requirements**: CLEAN-01 (typed operation configs), CLEAN-02 (consolidated default), CLEAN-03 (call-level LLMConfig), CLEAN-04 (smart from_dict), CLEAN-05 (full gen_config capture), CLEAN-06 (orchestrator/compression fixes)
+**Success Criteria** (what must be TRUE):
+  1. OperationConfigs is a frozen dataclass with chat/merge/compress/orchestrate fields — typos caught at construction time, IDE autocomplete works
+  2. `_default_model` eliminated — replaced by tract-level `_default_config: LLMConfig | None`, `open(model=...)` is sugar that creates LLMConfig internally
+  3. chat()/generate()/merge()/compress() accept `llm_config: LLMConfig | None` for full call-level override; sugar params (model, temperature, max_tokens) documented as higher-priority overrides
+  4. LLMConfig.from_dict() handles cross-framework aliases (stop→stop_sequences, max_completion_tokens→max_tokens) and ignores API plumbing keys (messages, tools, stream); LLMConfig.from_obj() extracts config from arbitrary objects
+  5. `_build_generation_config()` captures ALL resolved fields (top_p, seed, frequency_penalty, etc.), not just model/temperature/max_tokens
+  6. Compression summary commits record generation_config; orchestrator _call_llm() forwards full config (max_tokens, extra kwargs); compress() raises on explicit LLM params without LLM client
+  7. All existing tests continue to pass; new tests cover every fix
+**Plans**: 2 plans
+
+Plans:
+- [ ] 12-01-PLAN.md -- Config layer: OperationConfigs dataclass, from_dict aliases, from_obj, consolidated _default_config, updated init/open/configure/property
+- [ ] 12-02-PLAN.md -- Wire everything: 4-level resolution chain, full gen_config capture, llm_config= parameter, compression/orchestrator fixes, error guards
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 8 -> 9 -> 10 -> 11 (plus any inserted decimal phases)
+Phases execute in numeric order: 8 -> 9 -> 10 -> 11 -> 12 (plus any inserted decimal phases)
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -150,3 +169,4 @@ Phases execute in numeric order: 8 -> 9 -> 10 -> 11 (plus any inserted decimal p
 | 9. Conversation Layer | v3.0 | 1/1 | Complete | 2026-02-19 |
 | 10. Per-Op LLM Config | v3.0 | 1/1 | Complete | 2026-02-20 |
 | 11. Unified LLM Config | v3.0 | 2/2 | Complete | 2026-02-20 |
+| 12. LLMConfig Cleanup | v3.0 | 0/2 | Not started | - |

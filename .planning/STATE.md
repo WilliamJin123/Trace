@@ -5,19 +5,19 @@
 See: .planning/PROJECT.md (updated 2026-02-19)
 
 **Core value:** Agents produce better outputs when their context is clean, coherent, and relevant. Trace makes context a managed, version-controlled resource.
-**Current focus:** v3.0 DX & API Overhaul -- Phase 11: Unified LLM Config & Query -- COMPLETE
+**Current focus:** v3.0 DX & API Overhaul -- Phase 12: LLMConfig Cleanup & Tightening -- PLANNED
 
 ## Current Position
 
 Milestone: v3.0 -- DX & API Overhaul
-Phase: 11 of 11 (Unified LLM Config & Query)
-Plan: 2 of 2
-Status: Phase complete
-Last activity: 2026-02-20 -- Completed 11-02-PLAN.md
+Phase: 12 of 12 (LLMConfig Cleanup & Tightening)
+Plan: 0 of 2 (planned, not started)
+Status: Planned -- ready for execution
+Last activity: 2026-02-19 -- Phase 12 plans created
 
 v1 Progress: [######################] 100% (22/22 plans)
 v2 Progress: [######################] 100% (6/6 plans)
-v3 Progress: [######################] 100% (4/4 phases)
+v3 Progress: [####################--] 80% (4/5 phases)
 
 ## Performance Metrics
 
@@ -85,6 +85,8 @@ All v1/v2 decisions logged in PROJECT.md Key Decisions table.
 
 - Phase 11 added: Unified LLM Config & Query (replace LLMOperationConfig with LLMConfig, full hyperparameters, rich querying)
 - v3 milestone COMPLETE: All 15 DX requirements delivered across Phases 8-11
+- Phase 12 added: LLMConfig Cleanup & Tightening (typed OperationConfigs, consolidated defaults, smart from_dict, full gen_config capture)
+- Phase 12 planned: 2 plans in 2 waves (01: config layer, 02: wiring)
 
 ### Blockers/Concerns
 
@@ -92,6 +94,6 @@ None active.
 
 ## Session Continuity
 
-Last session: 2026-02-20
-Stopped at: Completed 11-02-PLAN.md (Phase 11 complete, v3 milestone complete)
+Last session: 2026-02-19
+Stopped at: Phase 12 planned -- 2 plans created, ready for execution
 Resume file: None
