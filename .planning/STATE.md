@@ -11,20 +11,20 @@ See: .planning/PROJECT.md (updated 2026-02-19)
 
 Milestone: v3.0 -- DX & API Overhaul
 Phase: 11 of 11 (Unified LLM Config & Query)
-Plan: 0 of 0 (not planned yet)
-Status: Not started
-Last activity: 2026-02-20 -- Phase 11 added to roadmap
+Plan: 1 of 2
+Status: In progress
+Last activity: 2026-02-20 -- Completed 11-01-PLAN.md
 
 v1 Progress: [######################] 100% (22/22 plans)
 v2 Progress: [######################] 100% (6/6 plans)
-v3 Progress: [################------] 75% (3/4 phases)
+v3 Progress: [##################----] 87.5% (3.5/4 phases)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 31
-- Average duration: 6.1m
-- Total execution time: 3.29 hours
+- Total plans completed: 32
+- Average duration: 6.2m
+- Total execution time: 3.46 hours
 
 **By Phase:**
 
@@ -44,6 +44,7 @@ v3 Progress: [################------] 75% (3/4 phases)
 | 8 | 1/1 | 7m | 7m |
 | 9 | 1/1 | 5m | 5m |
 | 10 | 1/1 | 8m | 8m |
+| 11 | 1/2 | 10m | 10m |
 
 ## Accumulated Context
 
@@ -67,6 +68,11 @@ All v1/v2 decisions logged in PROJECT.md Key Decisions table.
 | 10-01-D3 | dataclasses.replace() for mutation-safe OrchestratorConfig updates | Avoids mutating caller-supplied objects |
 | 10-01-D4 | auto_message excluded from per-operation config | Pure-string function, no LLM call |
 | 10-01-D5 | Orchestrate resolution before three-way branch | All code paths benefit from operation config |
+| 11-01-D1 | LLMConfig replaces both LLMOperationConfig and dict generation_config | Eliminates type gap between runtime config and persisted config |
+| 11-01-D2 | CompileSnapshot internal cache stays tuple[dict,...] | Conversion at boundaries only, for performance |
+| 11-01-D3 | Pydantic field_validator auto-coerces dict->LLMConfig on CommitInfo | Backward compatible with all existing code paths |
+| 11-01-D4 | extra uses MappingProxyType, unknown dict keys route to extra | Immutable escape hatch for provider-specific params |
+| 11-01-D5 | Commits without generation_config produce None in CompiledContext | Not empty LLMConfig(); None signals "not set" clearly |
 
 ### Pending Todos
 
@@ -83,5 +89,5 @@ None active.
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Phase 11 added to roadmap, not yet planned
+Stopped at: Completed 11-01-PLAN.md
 Resume file: None
