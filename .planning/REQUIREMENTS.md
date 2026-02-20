@@ -22,7 +22,7 @@
 - [x] **LLM-01**: LLM configurable on Tract.open() — api_key, model, base_url as params
 - [x] **LLM-02**: Auto generation_config capture from LLM request parameters
 - [x] **LLM-03**: Auto usage recording from LLM response
-- [ ] **LLM-04**: Per-operation LLM configuration — each LLM-powered operation (chat, merge, compress, orchestrate, auto-commit-messages) independently configurable with model, params, and custom client kwargs
+- [x] **LLM-04**: Per-operation LLM configuration — each LLM-powered operation (chat, merge, compress, orchestrate) independently configurable with model, params, and custom client kwargs
 
 ### Format & Output (FMT)
 
@@ -57,7 +57,7 @@
 | LLM-01 | Phase 9 | Complete |
 | LLM-02 | Phase 9 | Complete |
 | LLM-03 | Phase 9 | Complete |
-| LLM-04 | Phase 10 | Pending |
+| LLM-04 | Phase 10 | Complete |
 | FMT-01 | Phase 8 | Complete |
 | FMT-02 | Phase 8 | Complete |
 
@@ -68,4 +68,4 @@
 
 ---
 *Requirements defined: 2026-02-19*
-*Last updated: 2026-02-19 after Phase 9 completion*
+*Last updated: 2026-02-20 after Phase 10 completion*

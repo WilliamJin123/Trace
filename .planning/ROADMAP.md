@@ -4,7 +4,7 @@
 
 - v1.0 Core (Phases 1-5) -- shipped 2026-02-16
 - v2.0 Autonomy (Phases 6-7) -- shipped 2026-02-18
-- v3.0 DX & API Overhaul (Phases 8-10) -- in progress
+- v3.0 DX & API Overhaul (Phases 8-10) -- shipped 2026-02-20
 
 ## Phases
 
@@ -59,7 +59,7 @@
 
 - [x] **Phase 8: Format & Commit Shorthand** - Eliminate import ceremony and output boilerplate
 - [x] **Phase 9: Conversation Layer** - One-call chat/generate with integrated LLM
-- [ ] **Phase 10: Per-Operation LLM Config** - Independent model/params per LLM-powered operation
+- [x] **Phase 10: Per-Operation LLM Config** - Independent model/params per LLM-powered operation
 
 ## Phase Details
 
@@ -101,10 +101,10 @@ Plans:
   1. User can configure chat/generate to use one model while merge uses a different model, without reconfiguring the Tract instance between operations
   2. User can set per-operation defaults (e.g., compress always uses a cheap model, chat uses a powerful model) that persist across calls
   3. User can override per-operation config on individual calls (e.g., t.chat("complex question", model="gpt-4o") even when default chat model is gpt-4o-mini)
-**Plans**: 1 plans
+**Plans**: 1/1 complete
 
 Plans:
-- [ ] 10-01-PLAN.md -- LLMOperationConfig, configure_operations(), wire all operations through resolution chain
+- [x] 10-01-PLAN.md -- LLMOperationConfig, configure_operations(), wire all operations through resolution chain
 
 ## Progress
 
@@ -126,4 +126,4 @@ Phases execute in numeric order: 8 -> 9 -> 10 (plus any inserted decimal phases)
 | 7. Agent Toolkit | v2.0 | 3/3 | Complete | 2026-02-18 |
 | 8. Format & Shorthand | v3.0 | 1/1 | Complete | 2026-02-19 |
 | 9. Conversation Layer | v3.0 | 1/1 | Complete | 2026-02-19 |
-| 10. Per-Op LLM Config | v3.0 | 0/1 | Not started | - |
+| 10. Per-Op LLM Config | v3.0 | 1/1 | Complete | 2026-02-20 |
