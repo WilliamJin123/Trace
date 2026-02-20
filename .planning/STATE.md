@@ -5,27 +5,27 @@
 See: .planning/PROJECT.md (updated 2026-02-19)
 
 **Core value:** Agents produce better outputs when their context is clean, coherent, and relevant. Trace makes context a managed, version-controlled resource.
-**Current focus:** v3.0 Phase 13 -- Unified Operation Events & Compile Records
+**Current focus:** Phase 13 COMPLETE -- ready for next milestone planning
 
 ## Current Position
 
 Milestone: v3.0 -- DX & API Overhaul
 Phase: 13 (Unified Operation Events & Compile Records)
-Plan: 2 of 3
-Status: In progress
-Last activity: 2026-02-20 -- Completed 13-02-PLAN.md
+Plan: 3 of 3
+Status: Phase complete
+Last activity: 2026-02-20 -- Completed 13-03-PLAN.md
 
 v1 Progress: [######################] 100% (22/22 plans)
 v2 Progress: [######################] 100% (6/6 plans)
 v3 Progress: [######################] 100% (35/35 plans)
-Phase 13: [################......] 67% (2/3 plans)
+Phase 13: [######################] 100% (3/3 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 37
+- Total plans completed: 38
 - Average duration: 6.2m
-- Total execution time: 3.87 hours
+- Total execution time: 4.02 hours
 
 **By Phase:**
 
@@ -47,7 +47,7 @@ Phase 13: [################......] 67% (2/3 plans)
 | 10 | 1/1 | 8m | 8m |
 | 11 | 2/2 | 13m | 6.5m |
 | 12 | 2/2 | 13m | 6.5m |
-| 13 | 2/3 | 17m | 8.5m |
+| 13 | 3/3 | 26m | 8.7m |
 
 ## Accumulated Context
 
@@ -96,6 +96,9 @@ All v1/v2 decisions logged in PROJECT.md Key Decisions table.
 | 13-02-D2 | event_repo optional (None skips recording) | Backward compat, operations work standalone |
 | 13-02-D3 | Clean break: CherryPick* -> Import* types | No aliases, consistent new API surface |
 | 13-02-D4 | Compression params in params_json dict | Unified OperationEvent schema handles all event types |
+| 13-03-D1 | Compile record created in generate() only, not compile() | Per SC-3: only chat/generate create provenance records |
+| 13-03-D2 | Record saved BEFORE LLM call | Captures what was sent even if LLM call fails |
+| 13-03-D3 | compile_records() returns newest-first with limit | Natural query pattern for recent activity |
 
 ### Pending Todos
 
@@ -114,6 +117,8 @@ All v1/v2 decisions logged in PROJECT.md Key Decisions table.
 - Phase 13 added: Unified Operation Events & Compile Records (replace per-op tables with OperationEvent+OperationCommit, add CompileRecord persistence, rebase-as-reorganize, dissolve cherry-pick, clean break)
 - Phase 13 Plan 01 complete: Unified storage layer (4 new tables, repo ABCs+impls, schema v5->v6 migration)
 - Phase 13 Plan 02 complete: Operation rewiring (event_repo through all operations, cherry-pick dissolved into import_commit)
+- Phase 13 Plan 03 complete: Compile record wiring, tests, codebase sweep
+- Phase 13 COMPLETE: All 8 success criteria met, 1087 tests passing, zero old artifact references
 
 ### Blockers/Concerns
 
@@ -122,5 +127,5 @@ None active.
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Completed 13-02-PLAN.md
+Stopped at: Completed 13-03-PLAN.md (Phase 13 complete)
 Resume file: None
