@@ -616,6 +616,167 @@ class Tract:
             generation_config=generation_config,
         )
 
+    # ------------------------------------------------------------------
+    # Conversation layer (chat/generate)
+    # ------------------------------------------------------------------
+
+    def _build_generation_config(
+        self,
+        response: dict,
+        *,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> dict:
+        """Build generation_config from LLM response and request params.
+
+        The response's model field is authoritative (actual model used may
+        differ from requested model due to aliases/routing).
+        """
+        config: dict = {}
+        # Model: prefer response (authoritative) over request param
+        if "model" in response:
+            config["model"] = response["model"]
+        elif model is not None:
+            config["model"] = model
+        elif self._default_model is not None:
+            config["model"] = self._default_model
+        # Request params
+        if temperature is not None:
+            config["temperature"] = temperature
+        if max_tokens is not None:
+            config["max_tokens"] = max_tokens
+        return config
+
+    def generate(
+        self,
+        *,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        message: str | None = None,
+        metadata: dict | None = None,
+    ) -> ChatResponse:
+        """Compile context, call LLM, commit assistant response, record usage.
+
+        Assumes the conversation context (system prompt, user messages) has
+        already been committed. Use :meth:`chat` for the all-in-one path.
+
+        Args:
+            model: Model override for this call.
+            temperature: Temperature override.
+            max_tokens: Max tokens override.
+            message: Optional commit message for the assistant commit.
+            metadata: Optional metadata for the assistant commit.
+
+        Returns:
+            :class:`ChatResponse` with text, usage, commit_info, generation_config.
+
+        Raises:
+            LLMConfigError: If no LLM client is configured.
+            TraceError: If called inside batch().
+        """
+        if not hasattr(self, "_llm_client"):
+            from tract.llm.errors import LLMConfigError
+
+            raise LLMConfigError(
+                "No LLM client configured. Pass api_key to Tract.open() "
+                "or call configure_llm(client)."
+            )
+
+        if self._in_batch:
+            raise TraceError("chat()/generate() cannot be used inside batch()")
+
+        from tract.llm.client import OpenAIClient
+        from tract.protocols import ChatResponse
+
+        # 1. Compile context
+        compiled = self.compile()
+        messages = compiled.to_dicts()
+
+        # 2. Call LLM
+        llm_kwargs: dict = {}
+        if model is not None:
+            llm_kwargs["model"] = model
+        if temperature is not None:
+            llm_kwargs["temperature"] = temperature
+        if max_tokens is not None:
+            llm_kwargs["max_tokens"] = max_tokens
+
+        response = self._llm_client.chat(messages, **llm_kwargs)
+
+        # 3. Extract content and usage
+        text = OpenAIClient.extract_content(response)
+        usage_dict = OpenAIClient.extract_usage(response)
+
+        # 4. Build generation_config
+        gen_config = self._build_generation_config(
+            response, model=model, temperature=temperature, max_tokens=max_tokens
+        )
+
+        # 5. Commit assistant response
+        commit_info = self.assistant(
+            text, message=message, metadata=metadata, generation_config=gen_config
+        )
+
+        # 6. Record usage
+        usage = None
+        if usage_dict:
+            usage = self._normalize_usage_dict(usage_dict)
+            self.record_usage(usage)
+
+        return ChatResponse(
+            text=text,
+            usage=usage,
+            commit_info=commit_info,
+            generation_config=gen_config,
+        )
+
+    def chat(
+        self,
+        text: str,
+        *,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        message: str | None = None,
+        name: str | None = None,
+        metadata: dict | None = None,
+    ) -> ChatResponse:
+        """Send a user message and get an LLM response in one call.
+
+        Commits the user message, compiles context, calls the LLM,
+        commits the assistant response, and records usage. Equivalent to::
+
+            t.user(text, message=message, name=name, metadata=metadata)
+            response = t.generate(model=model, temperature=temperature, ...)
+
+        Args:
+            text: The user message text.
+            model: Model override for this call.
+            temperature: Temperature override.
+            max_tokens: Max tokens override.
+            message: Optional commit message for the user commit.
+            name: Optional speaker name for the user commit.
+            metadata: Optional metadata for the user commit.
+
+        Returns:
+            :class:`ChatResponse` with text, usage, commit_info, generation_config.
+
+        Raises:
+            LLMConfigError: If no LLM client is configured.
+            DetachedHeadError: If HEAD is detached.
+            TraceError: If called inside batch().
+        """
+        # Commit user message
+        self.user(text, message=message, name=name, metadata=metadata)
+        # Delegate to generate
+        return self.generate(
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
     def compile(
         self,
         *,
