@@ -13,15 +13,15 @@
 
 ### Conversation Layer (CONV)
 
-- [ ] **CONV-01**: t.chat(text) — one call does user commit → compile → LLM call → assistant commit → record usage
-- [ ] **CONV-02**: t.generate() — compile → LLM call → assistant commit → record usage (user msg already committed)
-- [ ] **CONV-03**: Response object from chat/generate with .text, .usage, .commit_info, .generation_config
+- [x] **CONV-01**: t.chat(text) — one call does user commit → compile → LLM call → assistant commit → record usage
+- [x] **CONV-02**: t.generate() — compile → LLM call → assistant commit → record usage (user msg already committed)
+- [x] **CONV-03**: Response object from chat/generate with .text, .usage, .commit_info, .generation_config
 
 ### LLM Integration (LLM)
 
-- [ ] **LLM-01**: LLM configurable on Tract.open() — api_key, model, base_url as params
-- [ ] **LLM-02**: Auto generation_config capture from LLM request parameters
-- [ ] **LLM-03**: Auto usage recording from LLM response
+- [x] **LLM-01**: LLM configurable on Tract.open() — api_key, model, base_url as params
+- [x] **LLM-02**: Auto generation_config capture from LLM request parameters
+- [x] **LLM-03**: Auto usage recording from LLM response
 - [ ] **LLM-04**: Per-operation LLM configuration — each LLM-powered operation (chat, merge, compress, orchestrate, auto-commit-messages) independently configurable with model, params, and custom client kwargs
 
 ### Format & Output (FMT)
@@ -51,12 +51,12 @@
 | CORE-01 | Phase 8 | Complete |
 | CORE-02 | Phase 8 | Complete |
 | CORE-03 | Phase 8 | Complete |
-| CONV-01 | Phase 9 | Pending |
-| CONV-02 | Phase 9 | Pending |
-| CONV-03 | Phase 9 | Pending |
-| LLM-01 | Phase 9 | Pending |
-| LLM-02 | Phase 9 | Pending |
-| LLM-03 | Phase 9 | Pending |
+| CONV-01 | Phase 9 | Complete |
+| CONV-02 | Phase 9 | Complete |
+| CONV-03 | Phase 9 | Complete |
+| LLM-01 | Phase 9 | Complete |
+| LLM-02 | Phase 9 | Complete |
+| LLM-03 | Phase 9 | Complete |
 | LLM-04 | Phase 10 | Pending |
 | FMT-01 | Phase 8 | Complete |
 | FMT-02 | Phase 8 | Complete |
@@ -68,4 +68,4 @@
 
 ---
 *Requirements defined: 2026-02-19*
-*Last updated: 2026-02-19 after Phase 8 completion*
+*Last updated: 2026-02-19 after Phase 9 completion*

@@ -58,7 +58,7 @@
 **Phase Numbering:** Integer phases (8, 9, 10): Planned milestone work. Decimal phases (8.1, 9.1): Urgent insertions.
 
 - [x] **Phase 8: Format & Commit Shorthand** - Eliminate import ceremony and output boilerplate
-- [ ] **Phase 9: Conversation Layer** - One-call chat/generate with integrated LLM
+- [x] **Phase 9: Conversation Layer** - One-call chat/generate with integrated LLM
 - [ ] **Phase 10: Per-Operation LLM Config** - Independent model/params per LLM-powered operation
 
 ## Phase Details
@@ -88,10 +88,10 @@ Plans:
   3. User can call t.user("question") followed by response = t.generate() to have explicit control over when the user message is committed vs when the LLM is called
   4. Response object from chat/generate exposes .text, .usage, .commit_info, and .generation_config
   5. After chat() or generate(), the commit's generation_config is automatically populated from the LLM request parameters (model, temperature, etc.) and record_usage() is automatically called with the API response token counts
-**Plans**: 1 plans
+**Plans**: 1/1 complete
 
 Plans:
-- [ ] 09-01-PLAN.md -- ChatResponse, LLM config on open(), chat()/generate() methods
+- [x] 09-01-PLAN.md -- ChatResponse, LLM config on open(), chat()/generate() methods
 
 ### Phase 10: Per-Operation LLM Config
 **Goal**: Users can configure different models and parameters for each LLM-powered operation independently
@@ -125,5 +125,5 @@ Phases execute in numeric order: 8 -> 9 -> 10 (plus any inserted decimal phases)
 | 6. Policy Engine | v2.0 | 3/3 | Complete | 2026-02-17 |
 | 7. Agent Toolkit | v2.0 | 3/3 | Complete | 2026-02-18 |
 | 8. Format & Shorthand | v3.0 | 1/1 | Complete | 2026-02-19 |
-| 9. Conversation Layer | v3.0 | 0/1 | Planned | - |
+| 9. Conversation Layer | v3.0 | 1/1 | Complete | 2026-02-19 |
 | 10. Per-Op LLM Config | v3.0 | 0/? | Not started | - |

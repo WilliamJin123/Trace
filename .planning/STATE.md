@@ -5,15 +5,15 @@
 See: .planning/PROJECT.md (updated 2026-02-19)
 
 **Core value:** Agents produce better outputs when their context is clean, coherent, and relevant. Trace makes context a managed, version-controlled resource.
-**Current focus:** v3.0 DX & API Overhaul -- Phase 9: Conversation Layer
+**Current focus:** v3.0 DX & API Overhaul -- Phase 10: Per-Operation LLM Config
 
 ## Current Position
 
 Milestone: v3.0 -- DX & API Overhaul
 Phase: 9 of 10 (Conversation Layer)
 Plan: 1 of 1
-Status: Phase 9 Plan 1 complete
-Last activity: 2026-02-20 -- Completed 09-01-PLAN.md
+Status: Phase 9 complete
+Last activity: 2026-02-19 -- Completed Phase 9 (Conversation Layer)
 
 v1 Progress: [######################] 100% (22/22 plans)
 v2 Progress: [######################] 100% (6/6 plans)
@@ -41,8 +41,8 @@ v3 Progress: [####                  ] 14% (2/? plans)
 | 5 | 3/3 | 28m | 9.3m |
 | 6 | 3/3 | 20m | 6.7m |
 | 7 | 3/3 | 23m | 7.7m |
-| 8 | 1/? | 7m | 7m |
-| 9 | 1/? | 5m | 5m |
+| 8 | 1/1 | 7m | 7m |
+| 9 | 1/1 | 5m | 5m |
 
 ## Accumulated Context
 
