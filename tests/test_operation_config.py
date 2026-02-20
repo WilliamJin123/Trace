@@ -15,6 +15,7 @@ from tract import (
     DialogueContent,
     InstructionContent,
     LLMConfig,
+    OperationConfigs,
     Tract,
 )
 from tract.models.commit import CommitOperation
@@ -151,8 +152,8 @@ class TestConfigureOperations:
         t.configure_operations(chat=chat_config)
 
         configs = t.operation_configs
-        assert "chat" in configs
-        assert configs["chat"].model == "gpt-4o"
+        assert configs.chat is not None
+        assert configs.chat.model == "gpt-4o"
         t.close()
 
     def test_configure_multiple_operations(self):
@@ -165,20 +166,22 @@ class TestConfigureOperations:
         )
 
         configs = t.operation_configs
-        assert len(configs) == 3
-        assert configs["chat"].model == "gpt-4o"
-        assert configs["compress"].model == "gpt-3.5-turbo"
-        assert configs["merge"].temperature == 0.3
+        assert configs.chat is not None
+        assert configs.compress is not None
+        assert configs.merge is not None
+        assert configs.chat.model == "gpt-4o"
+        assert configs.compress.model == "gpt-3.5-turbo"
+        assert configs.merge.temperature == 0.3
         t.close()
 
     def test_configure_overwrites_existing(self):
         """Calling configure_operations twice replaces the config for that operation."""
         t = Tract.open()
         t.configure_operations(chat=LLMConfig(model="gpt-4o"))
-        assert t.operation_configs["chat"].model == "gpt-4o"
+        assert t.operation_configs.chat.model == "gpt-4o"
 
         t.configure_operations(chat=LLMConfig(model="gpt-3.5-turbo"))
-        assert t.operation_configs["chat"].model == "gpt-3.5-turbo"
+        assert t.operation_configs.chat.model == "gpt-3.5-turbo"
         t.close()
 
     def test_configure_type_error(self):
@@ -199,7 +202,7 @@ class TestResolveLLMConfig:
     def test_resolve_call_level_wins(self):
         """Call-level model overrides operation and tract defaults."""
         t = Tract.open()
-        t._default_model = "tract-default"
+        t._default_config = LLMConfig(model="tract-default")
         t.configure_operations(chat=LLMConfig(model="op-model"))
 
         resolved = t._resolve_llm_config("chat", model="call-model")
@@ -209,7 +212,7 @@ class TestResolveLLMConfig:
     def test_resolve_operation_level_wins_over_tract(self):
         """Operation-level model overrides tract default."""
         t = Tract.open()
-        t._default_model = "tract-default"
+        t._default_config = LLMConfig(model="tract-default")
         t.configure_operations(chat=LLMConfig(model="op-model"))
 
         resolved = t._resolve_llm_config("chat")
@@ -219,7 +222,7 @@ class TestResolveLLMConfig:
     def test_resolve_tract_default_used(self):
         """Without call or operation config, tract default is used."""
         t = Tract.open()
-        t._default_model = "tract-default"
+        t._default_config = LLMConfig(model="tract-default")
 
         resolved = t._resolve_llm_config("chat")
         assert resolved["model"] == "tract-default"
@@ -285,7 +288,7 @@ class TestOpenWithOperationConfigs:
     """Tests for Tract.open() operation_configs parameter."""
 
     def test_open_with_operation_configs(self):
-        """Pass operation_configs dict to Tract.open(), verify applied."""
+        """Pass operation_configs dict to Tract.open(), verify applied (legacy path)."""
         t = Tract.open(
             operation_configs={
                 "chat": LLMConfig(model="gpt-4o"),
@@ -293,14 +296,30 @@ class TestOpenWithOperationConfigs:
             }
         )
         configs = t.operation_configs
-        assert configs["chat"].model == "gpt-4o"
-        assert configs["compress"].model == "gpt-3.5-turbo"
+        assert configs.chat.model == "gpt-4o"
+        assert configs.compress.model == "gpt-3.5-turbo"
+        t.close()
+
+    def test_open_with_operations_typed(self):
+        """Pass operations=OperationConfigs to Tract.open(), verify applied."""
+        oc = OperationConfigs(
+            chat=LLMConfig(model="gpt-4o"),
+            compress=LLMConfig(model="gpt-3.5-turbo"),
+        )
+        t = Tract.open(operations=oc)
+        configs = t.operation_configs
+        assert configs.chat.model == "gpt-4o"
+        assert configs.compress.model == "gpt-3.5-turbo"
         t.close()
 
     def test_open_without_operation_configs(self):
         """Default behavior: no operation configs set."""
         t = Tract.open()
-        assert t.operation_configs == {}
+        assert isinstance(t.operation_configs, OperationConfigs)
+        assert t.operation_configs.chat is None
+        assert t.operation_configs.merge is None
+        assert t.operation_configs.compress is None
+        assert t.operation_configs.orchestrate is None
         t.close()
 
 
@@ -865,3 +884,192 @@ class TestLLMConfigAdvanced:
         assert config.top_k == 50
         assert config.seed == 42
         assert config.extra["custom"] == "val"
+
+
+# ---------------------------------------------------------------------------
+# OperationConfigs dataclass tests
+# ---------------------------------------------------------------------------
+
+class TestOperationConfigsDataclass:
+    """Tests for the OperationConfigs frozen dataclass."""
+
+    def test_create_with_defaults(self):
+        """All fields default to None."""
+        oc = OperationConfigs()
+        assert oc.chat is None
+        assert oc.merge is None
+        assert oc.compress is None
+        assert oc.orchestrate is None
+
+    def test_create_with_values(self):
+        """Fields can be set at construction."""
+        oc = OperationConfigs(
+            chat=LLMConfig(model="chat-model"),
+            compress=LLMConfig(model="compress-model"),
+        )
+        assert oc.chat.model == "chat-model"
+        assert oc.compress.model == "compress-model"
+        assert oc.merge is None
+        assert oc.orchestrate is None
+
+    def test_frozen(self):
+        """Attempting to modify raises FrozenInstanceError."""
+        oc = OperationConfigs()
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            oc.chat = LLMConfig(model="test")
+
+    def test_typo_caught_at_construction(self):
+        """Misspelled field name raises TypeError at construction."""
+        with pytest.raises(TypeError):
+            OperationConfigs(chatt=LLMConfig(model="test"))
+
+    def test_configure_operations_typed(self):
+        """configure_operations accepts OperationConfigs instance."""
+        t = Tract.open()
+        oc = OperationConfigs(chat=LLMConfig(model="gpt-4o"))
+        t.configure_operations(oc)
+        assert t.operation_configs.chat.model == "gpt-4o"
+        t.close()
+
+    def test_configure_operations_mixed_raises(self):
+        """Passing both OperationConfigs and kwargs raises TypeError."""
+        t = Tract.open()
+        oc = OperationConfigs(chat=LLMConfig(model="gpt-4o"))
+        with pytest.raises(TypeError, match="Cannot mix"):
+            t.configure_operations(oc, merge=LLMConfig(model="gpt-4o"))
+        t.close()
+
+    def test_open_with_operations_param(self):
+        """Tract.open(operations=OperationConfigs(...)) applies config."""
+        oc = OperationConfigs(chat=LLMConfig(model="gpt-4o"))
+        t = Tract.open(operations=oc)
+        assert t.operation_configs.chat.model == "gpt-4o"
+        t.close()
+
+
+# ---------------------------------------------------------------------------
+# from_dict alias and ignore tests
+# ---------------------------------------------------------------------------
+
+class TestFromDictAliases:
+    """Tests for LLMConfig.from_dict() alias and ignore handling."""
+
+    def test_stop_alias(self):
+        """'stop' is aliased to stop_sequences."""
+        config = LLMConfig.from_dict({"stop": ["a", "b"]})
+        assert config.stop_sequences == ("a", "b")
+        assert config.extra is None
+
+    def test_max_completion_tokens_alias(self):
+        """'max_completion_tokens' is aliased to max_tokens."""
+        config = LLMConfig.from_dict({"max_completion_tokens": 500})
+        assert config.max_tokens == 500
+        assert config.extra is None
+
+    def test_canonical_wins_over_alias(self):
+        """If both alias and canonical present, canonical wins."""
+        config = LLMConfig.from_dict({
+            "stop": ["alias"],
+            "stop_sequences": ["canonical"],
+        })
+        assert config.stop_sequences == ("canonical",)
+
+    def test_ignored_keys_dropped(self):
+        """API plumbing keys are silently dropped."""
+        config = LLMConfig.from_dict({
+            "model": "gpt-4o",
+            "messages": [{"role": "user", "content": "hi"}],
+            "tools": [{"type": "function"}],
+            "stream": True,
+            "response_format": {"type": "json"},
+        })
+        assert config.model == "gpt-4o"
+        assert config.extra is None  # all non-model keys were ignored
+
+    def test_input_not_mutated(self):
+        """from_dict does not mutate the input dict."""
+        d = {"stop": ["a"], "messages": [1]}
+        original = dict(d)
+        LLMConfig.from_dict(d)
+        assert d == original
+
+    def test_alias_and_ignore_combined(self):
+        """Aliases applied and ignored keys dropped in same call."""
+        config = LLMConfig.from_dict({
+            "model": "gpt-4o",
+            "stop": ["end"],
+            "max_completion_tokens": 100,
+            "messages": [],
+            "tools": [],
+        })
+        assert config.model == "gpt-4o"
+        assert config.stop_sequences == ("end",)
+        assert config.max_tokens == 100
+        assert config.extra is None
+
+
+# ---------------------------------------------------------------------------
+# from_obj tests
+# ---------------------------------------------------------------------------
+
+class TestFromObj:
+    """Tests for LLMConfig.from_obj()."""
+
+    def test_from_dataclass(self):
+        """Extract LLMConfig from a dataclass instance."""
+        source = LLMConfig(model="gpt-4o", temperature=0.7)
+        result = LLMConfig.from_obj(source)
+        assert result.model == "gpt-4o"
+        assert result.temperature == 0.7
+
+    def test_from_plain_object(self):
+        """Extract from a plain object with __dict__."""
+        class FakeConfig:
+            def __init__(self):
+                self.model = "gpt-4o"
+                self.temperature = 0.5
+                self.unknown_field = "extra"
+        result = LLMConfig.from_obj(FakeConfig())
+        assert result.model == "gpt-4o"
+        assert result.temperature == 0.5
+        assert result.extra is not None
+        assert result.extra["unknown_field"] == "extra"
+
+    def test_from_none(self):
+        """from_obj(None) returns None."""
+        assert LLMConfig.from_obj(None) is None
+
+
+# ---------------------------------------------------------------------------
+# Consolidated _default_config tests
+# ---------------------------------------------------------------------------
+
+class TestDefaultConfig:
+    """Tests for consolidated _default_config."""
+
+    def test_open_model_creates_default_config(self):
+        """Tract.open(api_key=..., model=...) creates _default_config internally."""
+        # We can't test with real api_key, but we can set _default_config manually
+        t = Tract.open()
+        t._default_config = LLMConfig(model="default-model", temperature=0.5)
+        resolved = t._resolve_llm_config("chat")
+        assert resolved["model"] == "default-model"
+        t.close()
+
+    def test_default_config_all_fields_available(self):
+        """All LLMConfig fields from _default_config are accessible (for future Plan 02)."""
+        t = Tract.open()
+        t._default_config = LLMConfig(model="default", temperature=0.3)
+        # Currently only model is resolved from default -- temperature requires Plan 02
+        resolved = t._resolve_llm_config("chat")
+        assert resolved["model"] == "default"
+        t.close()
+
+    def test_open_model_and_default_config_raises(self):
+        """Providing both model= and default_config= raises ValueError."""
+        with pytest.raises(ValueError, match="Cannot specify both"):
+            Tract.open(
+                api_key="fake-key",
+                model="gpt-4o",
+                default_config=LLMConfig(model="gpt-4o"),
+            )

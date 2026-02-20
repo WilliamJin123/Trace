@@ -134,7 +134,8 @@ class TestOpenLLMConfig:
 
         monkeypatch.setattr("tract.llm.client.OpenAIClient", mock_init)
         t = Tract.open(api_key="test-key", model="gpt-4o")
-        assert t._default_model == "gpt-4o"
+        assert t._default_config is not None
+        assert t._default_config.model == "gpt-4o"
         assert captured.get("default_model") == "gpt-4o"
         t.close()
 
@@ -432,7 +433,7 @@ class TestBuildGenerationConfig:
         t.close()
 
     def test_default_model_fallback(self, monkeypatch):
-        """When no response or request model, use _default_model."""
+        """When no response or request model, use _default_config."""
         mock_client = MockLLMClient()
         monkeypatch.setattr(
             "tract.llm.client.OpenAIClient",
