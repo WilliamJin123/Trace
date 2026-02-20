@@ -1,7 +1,7 @@
 """Merge and rebase domain models for Trace.
 
-Defines data models for merge, rebase, and cherry-pick operations:
-conflict information, merge results, rebase warnings, cherry-pick issues,
+Defines data models for merge, rebase, and import operations:
+conflict information, merge results, rebase warnings, import issues,
 and the review/commit flow.
 """
 
@@ -82,7 +82,7 @@ class MergeResult(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Rebase and cherry-pick models
+# Rebase and import models
 # ---------------------------------------------------------------------------
 
 
@@ -100,11 +100,11 @@ class RebaseWarning(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
 
-class CherryPickIssue(BaseModel):
-    """Issue detected during cherry-pick."""
+class ImportIssue(BaseModel):
+    """Issue detected during import-commit (replaces CherryPickIssue)."""
 
     issue_type: Literal["edit_target_missing", "context_dependency"]
-    commit: CommitInfo  # The commit being cherry-picked
+    commit: CommitInfo  # The commit being imported
     target_branch_head: Optional[CommitInfo] = None
     missing_target: Optional[str] = None  # The response_to hash that doesn't exist on target
     description: str = ""
@@ -124,12 +124,12 @@ class RebaseResult(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
 
-class CherryPickResult(BaseModel):
-    """Result of a cherry-pick operation."""
+class ImportResult(BaseModel):
+    """Result of an import-commit operation (replaces CherryPickResult)."""
 
     original_commit: Optional[CommitInfo] = None
     new_commit: Optional[CommitInfo] = None
-    issues: list[CherryPickIssue] = []
+    issues: list[ImportIssue] = []
     resolutions: dict[str, str] = {}
 
     model_config = {"arbitrary_types_allowed": True}

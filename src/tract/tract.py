@@ -52,7 +52,7 @@ if TYPE_CHECKING:
 
     from tract.models.branch import BranchInfo
     from tract.models.compression import CompressResult, GCResult, PendingCompression
-    from tract.models.merge import CherryPickResult, MergeResult, RebaseResult
+    from tract.models.merge import ImportResult, MergeResult, RebaseResult
     from tract.models.policy import PolicyProposal
     from tract.models.session import SpawnInfo
     from tract.operations.diff import DiffResult

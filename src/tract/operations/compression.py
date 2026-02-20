@@ -38,7 +38,7 @@ if TYPE_CHECKING:
         BlobRepository,
         CommitParentRepository,
         CommitRepository,
-        CompressionRepository,
+        OperationEventRepository,
         RefRepository,
     )
     from tract.storage.schema import CommitRow
@@ -372,7 +372,7 @@ def compress_range(
     ref_repo: RefRepository,
     commit_engine: CommitEngine,
     token_counter: TokenCounter,
-    compression_repo: CompressionRepository,
+    event_repo: OperationEventRepository,
     parent_repo: CommitParentRepository,
     *,
     commits: list[str] | None = None,
@@ -405,7 +405,7 @@ def compress_range(
         ref_repo: Ref repository.
         commit_engine: Commit engine for creating commits.
         token_counter: Token counter.
-        compression_repo: Compression provenance repository.
+        event_repo: Operation event repository for provenance tracking.
         parent_repo: Commit parent repository.
         commits: Optional explicit list of commit hashes.
         from_commit: Optional range start (inclusive).
@@ -521,7 +521,7 @@ def compress_range(
         ref_repo=ref_repo,
         commit_engine=commit_engine,
         token_counter=token_counter,
-        compression_repo=compression_repo,
+        event_repo=event_repo,
         summaries=summaries,
         range_commits=range_commits,
         pinned_commits=pinned_commits,
@@ -546,7 +546,7 @@ def _commit_compression(
     ref_repo: RefRepository,
     commit_engine: CommitEngine,
     token_counter: TokenCounter,
-    compression_repo: CompressionRepository,
+    event_repo: OperationEventRepository,
     summaries: list[str],
     range_commits: list[CommitRow],
     pinned_commits: list[CommitRow],
@@ -689,25 +689,25 @@ def _commit_compression(
     for pc in pinned_commits:
         compressed_tokens += pc.token_count
 
-    # f. Save CompressionRecord
-    compression_repo.save_record(
-        compression_id=compression_id,
+    # f. Save OperationEvent
+    event_repo.save_event(
+        event_id=compression_id,
         tract_id=tract_id,
+        event_type="compress",
         branch_name=branch_name,
         created_at=datetime.now(timezone.utc),
         original_tokens=original_tokens,
         compressed_tokens=compressed_tokens,
-        target_tokens=target_tokens,
-        instructions=instructions,
+        params_json={"target_tokens": target_tokens, "instructions": instructions},
     )
 
     # Record sources (normal commits that were compressed)
     for pos, nc in enumerate(normal_commits):
-        compression_repo.add_source(compression_id, nc.commit_hash, pos)
+        event_repo.add_commit(compression_id, nc.commit_hash, "source", pos)
 
     # Record results (summary commits produced)
     for pos, sc_hash in enumerate(summary_commit_hashes):
-        compression_repo.add_result(compression_id, sc_hash, pos)
+        event_repo.add_commit(compression_id, sc_hash, "result", pos)
 
     # g. Return CompressResult
     ratio = compressed_tokens / original_tokens if original_tokens > 0 else 0.0
@@ -876,7 +876,7 @@ def gc(
     ref_repo: RefRepository,
     parent_repo: CommitParentRepository,
     blob_repo: BlobRepository,
-    compression_repo: CompressionRepository,
+    event_repo: OperationEventRepository,
     *,
     orphan_retention_days: int = 7,
     archive_retention_days: int | None = None,
@@ -899,7 +899,7 @@ def gc(
         ref_repo: Ref repository.
         parent_repo: Commit parent repository.
         blob_repo: Blob repository.
-        compression_repo: Compression provenance repository.
+        event_repo: Operation event repository for provenance tracking.
         orphan_retention_days: Days before orphans become eligible for removal.
         archive_retention_days: If set, days before archived commits become
             eligible for removal. None means archives are never removed.
@@ -931,10 +931,10 @@ def gc(
     # d. Classify and apply retention
     now = _normalize_dt(datetime.now(timezone.utc))
     commits_to_remove = []
-    archives_removed = 0
+    source_commits_removed = 0
 
     for commit in unreachable:
-        is_archive = compression_repo.is_source_of(commit.commit_hash)
+        is_archive = event_repo.is_source_of(commit.commit_hash)
         created = _normalize_dt(commit.created_at)
         age_days = (now - created).total_seconds() / 86400
 
@@ -942,7 +942,7 @@ def gc(
             # Archive: only remove if archive_retention_days is set and old enough
             if archive_retention_days is not None and age_days >= archive_retention_days:
                 commits_to_remove.append(commit)
-                archives_removed += 1
+                source_commits_removed += 1
             # Otherwise: preserve (skip)
         else:
             # Orphan: remove if old enough
@@ -957,9 +957,8 @@ def gc(
         content_hash = commit.content_hash
         tokens_freed += commit.token_count
 
-        # Clean up compression provenance
-        compression_repo.delete_source(commit.commit_hash)
-        compression_repo.delete_result(commit.commit_hash)
+        # Clean up operation event provenance
+        event_repo.delete_commit(commit.commit_hash)
 
         # Delete the commit
         commit_repo.delete(commit.commit_hash)
@@ -968,11 +967,11 @@ def gc(
         if blob_repo.delete_if_orphaned(content_hash):
             blobs_removed += 1
 
-    # f. Clean up orphaned CompressionRow records (no sources AND no results left)
-    all_compression_ids = compression_repo.get_all_ids(tract_id)
-    for cid in all_compression_ids:
-        if not compression_repo.get_sources(cid) and not compression_repo.get_results(cid):
-            compression_repo.delete_record(cid)
+    # f. Clean up orphaned OperationEvent records (no sources AND no results left)
+    all_event_ids = event_repo.get_all_ids(tract_id)
+    for eid in all_event_ids:
+        if not event_repo.get_commits(eid, "source") and not event_repo.get_commits(eid, "result"):
+            event_repo.delete_event(eid)
 
     duration = time.monotonic() - start
 
@@ -980,6 +979,6 @@ def gc(
         commits_removed=len(commits_to_remove),
         blobs_removed=blobs_removed,
         tokens_freed=tokens_freed,
-        archives_removed=archives_removed,
+        source_commits_removed=source_commits_removed,
         duration_seconds=duration,
     )

@@ -9,11 +9,11 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from tract.exceptions import CherryPickError, RebaseError, SemanticSafetyError
+from tract.exceptions import ImportCommitError, RebaseError, SemanticSafetyError
 from tract.models.commit import CommitInfo, CommitOperation
 from tract.models.merge import (
-    CherryPickIssue,
-    CherryPickResult,
+    ImportIssue,
+    ImportResult,
     RebaseResult,
     RebaseWarning,
 )
@@ -26,6 +26,7 @@ if TYPE_CHECKING:
         BlobRepository,
         CommitParentRepository,
         CommitRepository,
+        OperationEventRepository,
         RefRepository,
     )
     from tract.storage.schema import CommitRow
@@ -105,7 +106,7 @@ def replay_commit(
     )
 
 
-def cherry_pick(
+def import_commit(
     commit_hash: str,
     tract_id: str,
     commit_repo: CommitRepository,
@@ -115,13 +116,15 @@ def cherry_pick(
     parent_repo: CommitParentRepository | None = None,
     *,
     resolver: ResolverCallable | None = None,
-) -> CherryPickResult:
-    """Cherry-pick a commit onto the current branch.
+    event_repo: OperationEventRepository | None = None,
+) -> ImportResult:
+    """Import a commit onto the current branch (replaces cherry-pick).
 
     Creates a new commit with the same content but new parentage (current HEAD).
+    Optionally records an "import" event for provenance tracking.
 
     Args:
-        commit_hash: Hash of the commit to cherry-pick.
+        commit_hash: Hash of the commit to import.
         tract_id: The tract identifier.
         commit_repo: Commit repository.
         ref_repo: Ref repository.
@@ -129,17 +132,18 @@ def cherry_pick(
         commit_engine: Commit engine for creating the new commit.
         parent_repo: Optional parent repository for multi-parent traversal.
         resolver: Optional resolver for handling issues.
+        event_repo: Optional operation event repository for provenance.
 
     Returns:
-        CherryPickResult describing the outcome.
+        ImportResult describing the outcome.
 
     Raises:
-        CherryPickError: If issues detected and no resolver, or resolver aborts.
+        ImportCommitError: If issues detected and no resolver, or resolver aborts.
     """
-    # Get the commit to cherry-pick
+    # Get the commit to import
     original_row = commit_repo.get(commit_hash)
     if original_row is None:
-        raise CherryPickError(f"Commit not found: {commit_hash}")
+        raise ImportCommitError(f"Commit not found: {commit_hash}")
 
     original_info = _row_to_info(original_row)
 
@@ -154,7 +158,7 @@ def cherry_pick(
             target_head_info = _row_to_info(target_row)
 
     # Check for issues
-    issues: list[CherryPickIssue] = []
+    issues: list[ImportIssue] = []
 
     if original_row.operation == CommitOperation.EDIT and original_row.response_to is not None:
         # Check if the response_to target exists in current branch's history
@@ -162,7 +166,7 @@ def cherry_pick(
             ancestors = get_all_ancestors(current_head, commit_repo, parent_repo)
             if original_row.response_to not in ancestors:
                 issues.append(
-                    CherryPickIssue(
+                    ImportIssue(
                         issue_type="edit_target_missing",
                         commit=original_info,
                         target_branch_head=target_head_info,
@@ -176,7 +180,7 @@ def cherry_pick(
         else:
             # No commits on current branch, EDIT target definitely missing
             issues.append(
-                CherryPickIssue(
+                ImportIssue(
                     issue_type="edit_target_missing",
                     commit=original_info,
                     target_branch_head=None,
@@ -192,8 +196,8 @@ def cherry_pick(
     resolved_content = None
     if issues:
         if resolver is None:
-            raise CherryPickError(
-                f"Cherry-pick has {len(issues)} issue(s): "
+            raise ImportCommitError(
+                f"Import has {len(issues)} issue(s): "
                 + "; ".join(i.description for i in issues)
             )
 
@@ -201,11 +205,11 @@ def cherry_pick(
         for issue in issues:
             resolution = resolver(issue)
             if resolution.action == "abort":
-                raise CherryPickError(
-                    f"Resolver aborted cherry-pick: {resolution.reasoning}"
+                raise ImportCommitError(
+                    f"Resolver aborted import: {resolution.reasoning}"
                 )
             if resolution.action == "skip":
-                return CherryPickResult(
+                return ImportResult(
                     original_commit=original_info,
                     new_commit=None,
                     issues=issues,
@@ -243,11 +247,32 @@ def cherry_pick(
             blob_repo=blob_repo,
         )
 
-    return CherryPickResult(
+    result = ImportResult(
         original_commit=original_info,
         new_commit=new_info,
         issues=issues,
     )
+
+    # Record import event for provenance
+    if event_repo is not None:
+        import uuid as _uuid
+        from datetime import datetime, timezone
+        event_id = _uuid.uuid4().hex
+        event_repo.save_event(
+            event_id=event_id,
+            tract_id=tract_id,
+            event_type="import",
+            branch_name=None,
+            created_at=datetime.now(timezone.utc),
+            original_tokens=0,
+            compressed_tokens=0,
+            params_json={"original_commit": commit_hash},
+        )
+        event_repo.add_commit(event_id, commit_hash, "source", 0)
+        if result.new_commit is not None:
+            event_repo.add_commit(event_id, result.new_commit.commit_hash, "result", 0)
+
+    return result
 
 
 def rebase(
@@ -260,6 +285,7 @@ def rebase(
     commit_engine: CommitEngine,
     *,
     resolver: ResolverCallable | None = None,
+    event_repo: OperationEventRepository | None = None,
 ) -> RebaseResult:
     """Rebase the current branch onto a target branch.
 
@@ -403,6 +429,26 @@ def rebase(
         ref_repo.set_branch(tract_id, current_branch, current_tip)
         ref_repo.attach_head(tract_id, current_branch)
         raise
+
+    # Record reorganize event for provenance
+    if event_repo is not None:
+        import uuid as _uuid
+        from datetime import datetime, timezone
+        event_id = _uuid.uuid4().hex
+        event_repo.save_event(
+            event_id=event_id,
+            tract_id=tract_id,
+            event_type="reorganize",
+            branch_name=current_branch,
+            created_at=datetime.now(timezone.utc),
+            original_tokens=0,
+            compressed_tokens=0,
+            params_json={"target_branch": target_branch},
+        )
+        for pos, orig in enumerate(commits_to_replay):
+            event_repo.add_commit(event_id, orig.commit_hash, "source", pos)
+        for pos, replayed in enumerate(replayed_infos):
+            event_repo.add_commit(event_id, replayed.commit_hash, "result", pos)
 
     return RebaseResult(
         replayed_commits=replayed_infos,

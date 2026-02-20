@@ -106,7 +106,7 @@ class GCResult:
     commits_removed: int
     blobs_removed: int
     tokens_freed: int
-    archives_removed: int
+    source_commits_removed: int
     duration_seconds: float
 
 

@@ -47,8 +47,8 @@ from tract.models.branch import BranchInfo
 
 # Merge models
 from tract.models.merge import (
-    CherryPickIssue,
-    CherryPickResult,
+    ImportIssue,
+    ImportResult,
     ConflictInfo,
     MergeResult,
     RebaseResult,
@@ -115,7 +115,7 @@ from tract.exceptions import (
     MergeConflictError,
     NothingToMergeError,
     RebaseError,
-    CherryPickError,
+    ImportCommitError,
     SemanticSafetyError,
     CompressionError,
     GCError,
@@ -167,9 +167,9 @@ __all__ = [
     "ConflictInfo",
     "MergeResult",
     "RebaseWarning",
-    "CherryPickIssue",
+    "ImportIssue",
     "RebaseResult",
-    "CherryPickResult",
+    "ImportResult",
     # Operations
     "StatusInfo",
     "DiffResult",
@@ -192,7 +192,7 @@ __all__ = [
     "MergeConflictError",
     "NothingToMergeError",
     "RebaseError",
-    "CherryPickError",
+    "ImportCommitError",
     "SemanticSafetyError",
     "CompressionError",
     "GCError",
