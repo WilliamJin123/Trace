@@ -10,21 +10,21 @@ See: .planning/PROJECT.md (updated 2026-02-19)
 ## Current Position
 
 Milestone: v3.0 -- DX & API Overhaul
-Phase: 9 of 10 (Conversation Layer)
+Phase: 10 of 10 (Per-Operation LLM Config)
 Plan: 1 of 1
-Status: Phase 9 complete
-Last activity: 2026-02-19 -- Completed Phase 9 (Conversation Layer)
+Status: Phase 10 complete
+Last activity: 2026-02-20 -- Completed Phase 10 (Per-Operation LLM Config)
 
 v1 Progress: [######################] 100% (22/22 plans)
 v2 Progress: [######################] 100% (6/6 plans)
-v3 Progress: [####                  ] 14% (2/? plans)
+v3 Progress: [######################] 100% (3/3 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 30
-- Average duration: 6.0m
-- Total execution time: 3.16 hours
+- Total plans completed: 31
+- Average duration: 6.1m
+- Total execution time: 3.29 hours
 
 **By Phase:**
 
@@ -43,6 +43,7 @@ v3 Progress: [####                  ] 14% (2/? plans)
 | 7 | 3/3 | 23m | 7.7m |
 | 8 | 1/1 | 7m | 7m |
 | 9 | 1/1 | 5m | 5m |
+| 10 | 1/1 | 8m | 8m |
 
 ## Accumulated Context
 
@@ -61,6 +62,11 @@ All v1/v2 decisions logged in PROJECT.md Key Decisions table.
 | 09-01-D2 | Tract.open() auto-configures LLM only when api_key explicitly provided | No env var auto-detection; explicit is better than implicit |
 | 09-01-D3 | Tract owns (and closes) internally-created LLM clients, not external | Follows resource ownership principle |
 | 09-01-D4 | chat()/generate() raise TraceError inside batch() | LLM calls are side-effects that cannot be rolled back atomically |
+| 10-01-D1 | LLMOperationConfig is a frozen dataclass (not Pydantic) | Runtime-only config, not persisted; avoids Pydantic overhead |
+| 10-01-D2 | Three-level resolution: call > operation > tract default | Most specific wins; matches CSS specificity mental model |
+| 10-01-D3 | dataclasses.replace() for mutation-safe OrchestratorConfig updates | Avoids mutating caller-supplied objects |
+| 10-01-D4 | auto_message excluded from per-operation config | Pure-string function, no LLM call |
+| 10-01-D5 | Orchestrate resolution before three-way branch | All code paths benefit from operation config |
 
 ### Pending Todos
 
@@ -73,5 +79,5 @@ None active.
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Completed 09-01-PLAN.md
+Stopped at: Completed 10-01-PLAN.md
 Resume file: None
