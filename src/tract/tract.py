@@ -659,90 +659,105 @@ class Tract:
         model: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        llm_config: LLMConfig | None = None,
         **kwargs: object,
     ) -> dict:
-        """Resolve effective LLM config: call-level > operation-level > tract-level.
+        """Resolve effective LLM config: sugar > llm_config > operation > tract default.
+
+        Four-level resolution chain for each field:
+        1. Sugar params (model=, temperature=, max_tokens=) -- highest priority
+        2. llm_config fields (if provided and field is not None)
+        3. Operation-level config (from configure_operations)
+        4. Tract-level default config (_default_config)
 
         Returns a dict of kwargs to pass to llm_client.chat(). Only includes
         keys that have a non-None value at some level in the chain.
 
         Args:
             operation: Operation name ("chat", "merge", "compress", "orchestrate").
-            model: Call-level model override.
-            temperature: Call-level temperature override.
-            max_tokens: Call-level max_tokens override.
+            model: Call-level model override (sugar).
+            temperature: Call-level temperature override (sugar).
+            max_tokens: Call-level max_tokens override (sugar).
+            llm_config: Full LLMConfig override for this call.
             **kwargs: Additional call-level kwargs (highest priority).
-
-        Returns:
-            Dict of resolved kwargs for llm_client.chat().
         """
         op_config = getattr(self._operation_configs, operation, None)
+        default = self._default_config
+
+        # Sugar params dict (only the 3 convenience overrides)
+        sugar: dict = {}
+        if model is not None:
+            sugar["model"] = model
+        if temperature is not None:
+            sugar["temperature"] = temperature
+        if max_tokens is not None:
+            sugar["max_tokens"] = max_tokens
 
         resolved: dict = {}
 
-        # Model: call > operation > tract default
-        if model is not None:
-            resolved["model"] = model
-        elif op_config is not None and op_config.model is not None:
-            resolved["model"] = op_config.model
-        elif self._default_config is not None and self._default_config.model is not None:
-            resolved["model"] = self._default_config.model
-
-        # Temperature: call > operation
-        if temperature is not None:
-            resolved["temperature"] = temperature
-        elif op_config is not None and op_config.temperature is not None:
-            resolved["temperature"] = op_config.temperature
-
-        # Max tokens: call > operation
-        if max_tokens is not None:
-            resolved["max_tokens"] = max_tokens
-        elif op_config is not None and op_config.max_tokens is not None:
-            resolved["max_tokens"] = op_config.max_tokens
-
-        # New typed fields from LLMConfig: top_p, frequency_penalty, etc.
-        if op_config is not None:
-            for field_name in ("top_p", "frequency_penalty", "presence_penalty", "top_k", "seed", "stop_sequences"):
+        # Resolve each typed field through 4-level chain
+        _TYPED_FIELDS = (
+            "model", "temperature", "max_tokens", "top_p",
+            "frequency_penalty", "presence_penalty", "top_k",
+            "seed", "stop_sequences",
+        )
+        for field_name in _TYPED_FIELDS:
+            # Level 1: Sugar param
+            val = sugar.get(field_name)
+            if val is not None:
+                resolved[field_name] = val
+                continue
+            # Level 2: llm_config
+            if llm_config is not None:
+                val = getattr(llm_config, field_name, None)
+                if val is not None:
+                    resolved[field_name] = val
+                    continue
+            # Level 3: Operation config
+            if op_config is not None:
                 val = getattr(op_config, field_name, None)
-                if val is not None and field_name not in kwargs:
-                    if isinstance(val, tuple):
-                        resolved[field_name] = list(val)  # LLM clients expect list
-                    else:
-                        resolved[field_name] = val
+                if val is not None:
+                    resolved[field_name] = val
+                    continue
+            # Level 4: Tract default
+            if default is not None:
+                val = getattr(default, field_name, None)
+                if val is not None:
+                    resolved[field_name] = val
 
-        # Extra kwargs from operation config (call kwargs override)
+        # Convert tuples to lists for LLM client compatibility
+        if "stop_sequences" in resolved and isinstance(resolved["stop_sequences"], tuple):
+            resolved["stop_sequences"] = list(resolved["stop_sequences"])
+
+        # Merge extra kwargs: tract default < operation < llm_config < call kwargs
+        # (each level's extra overrides the previous)
+        if default is not None and default.extra:
+            resolved.update(dict(default.extra))
         if op_config is not None and op_config.extra:
             resolved.update(dict(op_config.extra))
+        if llm_config is not None and llm_config.extra:
+            resolved.update(dict(llm_config.extra))
         resolved.update(kwargs)
 
         return resolved
 
-    def _build_generation_config(
-        self,
-        response: dict,
-        *,
-        model: str | None = None,
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-    ) -> dict:
-        """Build generation_config from LLM response and request params.
+    def _build_generation_config(self, response: dict, *, resolved: dict) -> dict:
+        """Build generation_config from the full resolved LLM kwargs.
+
+        Captures ALL fields that were sent to the LLM (model, temperature,
+        top_p, seed, etc.) so they can be queried via query_by_config().
 
         The response's model field is authoritative (actual model used may
         differ from requested model due to aliases/routing).
+
+        Args:
+            response: Raw LLM response dict.
+            resolved: The full resolved kwargs dict from _resolve_llm_config().
         """
-        config: dict = {}
-        # Model: prefer response (authoritative) over request param
+        config = dict(resolved)
+        # Response model is authoritative
         if "model" in response:
             config["model"] = response["model"]
-        elif model is not None:
-            config["model"] = model
-        elif self._default_config is not None and self._default_config.model is not None:
-            config["model"] = self._default_config.model
-        # Request params
-        if temperature is not None:
-            config["temperature"] = temperature
-        if max_tokens is not None:
-            config["max_tokens"] = max_tokens
         return config
 
     def generate(
@@ -751,6 +766,7 @@ class Tract:
         model: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        llm_config: LLMConfig | None = None,
         message: str | None = None,
         metadata: dict | None = None,
     ) -> ChatResponse:
@@ -763,6 +779,7 @@ class Tract:
             model: Model override for this call.
             temperature: Temperature override.
             max_tokens: Max tokens override.
+            llm_config: Full LLMConfig override for this call.
             message: Optional commit message for the assistant commit.
             metadata: Optional metadata for the assistant commit.
 
@@ -793,7 +810,8 @@ class Tract:
 
         # 2. Call LLM (resolve per-operation config)
         llm_kwargs = self._resolve_llm_config(
-            "chat", model=model, temperature=temperature, max_tokens=max_tokens,
+            "chat", model=model, temperature=temperature,
+            max_tokens=max_tokens, llm_config=llm_config,
         )
         response = self._llm_client.chat(messages, **llm_kwargs)
 
@@ -802,12 +820,7 @@ class Tract:
         usage_dict = OpenAIClient.extract_usage(response)
 
         # 4. Build generation_config (use resolved kwargs for accurate tracking)
-        gen_config = self._build_generation_config(
-            response,
-            model=llm_kwargs.get("model"),
-            temperature=llm_kwargs.get("temperature"),
-            max_tokens=llm_kwargs.get("max_tokens"),
-        )
+        gen_config = self._build_generation_config(response, resolved=llm_kwargs)
 
         # 5. Commit assistant response
         commit_info = self.assistant(
@@ -834,6 +847,7 @@ class Tract:
         model: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        llm_config: LLMConfig | None = None,
         message: str | None = None,
         name: str | None = None,
         metadata: dict | None = None,
@@ -851,6 +865,7 @@ class Tract:
             model: Model override for this call.
             temperature: Temperature override.
             max_tokens: Max tokens override.
+            llm_config: Full LLMConfig override for this call.
             message: Optional commit message for the user commit.
             name: Optional speaker name for the user commit.
             metadata: Optional metadata for the user commit.
@@ -870,6 +885,7 @@ class Tract:
             model=model,
             temperature=temperature,
             max_tokens=max_tokens,
+            llm_config=llm_config,
         )
 
     def compile(
@@ -1647,6 +1663,7 @@ class Tract:
         model: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        llm_config: LLMConfig | None = None,
         delete_branch: bool = False,
         message: str | None = None,
     ) -> MergeResult:
@@ -1662,6 +1679,7 @@ class Tract:
             model: Override model for the default resolver.
             temperature: Override temperature for the default resolver.
             max_tokens: Override max_tokens for the default resolver.
+            llm_config: Full LLMConfig override for this call.
             delete_branch: If True, delete the source branch after merge.
             message: Optional merge commit message. If not provided, a
                 default message is generated.
@@ -1679,7 +1697,8 @@ class Tract:
 
         # Resolve per-operation config for merge
         merge_config = self._resolve_llm_config(
-            "merge", model=model, temperature=temperature, max_tokens=max_tokens,
+            "merge", model=model, temperature=temperature,
+            max_tokens=max_tokens, llm_config=llm_config,
         )
 
         # If using default resolver AND config differs from default, create tailored resolver
@@ -1937,6 +1956,7 @@ class Tract:
         model: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        llm_config: LLMConfig | None = None,
     ) -> CompressResult | PendingCompression:
         """Compress commit chains into summaries.
 
@@ -1962,6 +1982,7 @@ class Tract:
             model: Override model for LLM summarization.
             temperature: Override temperature for LLM summarization.
             max_tokens: Override max_tokens for LLM summarization.
+            llm_config: Full LLMConfig override for this call.
 
         Returns:
             :class:`CompressResult` or :class:`PendingCompression`.
@@ -1969,6 +1990,7 @@ class Tract:
         Raises:
             DetachedHeadError: If HEAD is detached.
             CompressionError: On various error conditions.
+            LLMConfigError: If explicit LLM params given without client.
         """
         from tract.models.compression import PendingCompression as _PendingCompression
         from tract.operations.compression import compress_range
@@ -1983,9 +2005,26 @@ class Tract:
 
         llm_client = getattr(self, "_llm_client", None)
 
+        # Guard: explicit LLM config without LLM client
+        has_explicit_llm = (
+            model is not None
+            or temperature is not None
+            or max_tokens is not None
+            or llm_config is not None
+        )
+        if has_explicit_llm and llm_client is None and content is None:
+            from tract.llm.errors import LLMConfigError
+            raise LLMConfigError(
+                "LLM parameters provided (model, temperature, max_tokens, or "
+                "llm_config) but no LLM client is configured. Call "
+                "configure_llm() or pass api_key to Tract.open(), or provide "
+                "content= for manual compression."
+            )
+
         # Resolve per-operation LLM config for compress
         llm_kwargs = self._resolve_llm_config(
-            "compress", model=model, temperature=temperature, max_tokens=max_tokens,
+            "compress", model=model, temperature=temperature,
+            max_tokens=max_tokens, llm_config=llm_config,
         ) if llm_client is not None else {}
 
         # Use savepoint for atomic rollback on partial failure
@@ -2077,6 +2116,7 @@ class Tract:
                 branch_name=pending._branch_name,
                 type_registry=self._custom_type_registry,
                 expected_head=pending._head_hash,
+                generation_config=getattr(pending, '_generation_config', None),
             )
         except Exception:
             nested.rollback()
