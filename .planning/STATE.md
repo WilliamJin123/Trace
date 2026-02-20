@@ -11,21 +11,21 @@ See: .planning/PROJECT.md (updated 2026-02-19)
 
 Milestone: v3.0 -- DX & API Overhaul
 Phase: 13 (Unified Operation Events & Compile Records)
-Plan: 1 of 3
+Plan: 2 of 3
 Status: In progress
-Last activity: 2026-02-20 -- Completed 13-01-PLAN.md
+Last activity: 2026-02-20 -- Completed 13-02-PLAN.md
 
 v1 Progress: [######################] 100% (22/22 plans)
 v2 Progress: [######################] 100% (6/6 plans)
 v3 Progress: [######################] 100% (35/35 plans)
-Phase 13: [########..............] 33% (1/3 plans)
+Phase 13: [################......] 67% (2/3 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 36
-- Average duration: 6.1m
-- Total execution time: 3.85 hours
+- Total plans completed: 37
+- Average duration: 6.2m
+- Total execution time: 3.87 hours
 
 **By Phase:**
 
@@ -47,7 +47,7 @@ Phase 13: [########..............] 33% (1/3 plans)
 | 10 | 1/1 | 8m | 8m |
 | 11 | 2/2 | 13m | 6.5m |
 | 12 | 2/2 | 13m | 6.5m |
-| 13 | 1/3 | 7m | 7m |
+| 13 | 2/3 | 17m | 8.5m |
 
 ## Accumulated Context
 
@@ -92,6 +92,10 @@ All v1/v2 decisions logged in PROJECT.md Key Decisions table.
 | 13-01-D1 | v2->v3 migration rewritten with raw SQL | ORM classes removed; raw SQL ensures migration chain works |
 | 13-01-D2 | Consumer imports updated to unblock import chain | tract.py/session.py/spawn.py use new repo type |
 | 13-01-D3 | OperationCommitRow 3-column composite PK | event_id + commit_hash + role allows same commit in multiple roles |
+| 13-02-D1 | GCResult.archives_removed -> source_commits_removed | Clarity with unified event model |
+| 13-02-D2 | event_repo optional (None skips recording) | Backward compat, operations work standalone |
+| 13-02-D3 | Clean break: CherryPick* -> Import* types | No aliases, consistent new API surface |
+| 13-02-D4 | Compression params in params_json dict | Unified OperationEvent schema handles all event types |
 
 ### Pending Todos
 
@@ -108,6 +112,8 @@ All v1/v2 decisions logged in PROJECT.md Key Decisions table.
 - Phase 12 COMPLETE: All LLMConfig cleanup and tightening delivered
 - v3.0 MILESTONE COMPLETE: All 21 DX requirements delivered across Phases 8-12
 - Phase 13 added: Unified Operation Events & Compile Records (replace per-op tables with OperationEvent+OperationCommit, add CompileRecord persistence, rebase-as-reorganize, dissolve cherry-pick, clean break)
+- Phase 13 Plan 01 complete: Unified storage layer (4 new tables, repo ABCs+impls, schema v5->v6 migration)
+- Phase 13 Plan 02 complete: Operation rewiring (event_repo through all operations, cherry-pick dissolved into import_commit)
 
 ### Blockers/Concerns
 
@@ -116,5 +122,5 @@ None active.
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Completed 13-01-PLAN.md
+Stopped at: Completed 13-02-PLAN.md
 Resume file: None
