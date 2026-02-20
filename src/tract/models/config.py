@@ -34,6 +34,19 @@ class TokenBudgetConfig(BaseModel):
     callback: Optional[Callable[[int, int], None]] = None  # (current, max) -> None
 
 
+_ALIASES: dict[str, str] = {
+    "stop": "stop_sequences",
+    "max_completion_tokens": "max_tokens",
+}
+
+_IGNORED: frozenset[str] = frozenset({
+    "messages", "tools", "tool_choice", "stream",
+    "response_format", "n", "logprobs", "top_logprobs",
+    "functions", "function_call",
+    "system", "metadata",
+})
+
+
 class TractConfig(BaseModel):
     """Per-tract configuration."""
 
@@ -88,10 +101,26 @@ class LLMConfig:
     def from_dict(cls, d: dict | None) -> LLMConfig | None:
         """Create LLMConfig from a dict, routing unknown keys to extra.
 
+        Applies cross-framework aliases (e.g. ``stop`` -> ``stop_sequences``)
+        and drops API plumbing keys (e.g. ``messages``, ``tools``) before
+        routing known/unknown fields.
+
         Returns None if d is None.
         """
         if d is None:
             return None
+        # Copy to avoid mutating caller's dict
+        d = dict(d)
+        # Apply aliases: alias -> canonical (canonical wins if both present)
+        for alias, canonical in _ALIASES.items():
+            if alias in d:
+                if canonical not in d:
+                    d[canonical] = d.pop(alias)
+                else:
+                    del d[alias]  # canonical wins, drop alias
+        # Drop API plumbing keys
+        for key in _IGNORED:
+            d.pop(key, None)
         known = {f.name for f in dc_fields(cls)} - {"extra"}
         known_kwargs: dict = {}
         extra_kwargs: dict = {}
@@ -133,3 +162,39 @@ class LLMConfig:
             if val is not None:
                 result[f.name] = val
         return result
+
+    @classmethod
+    def from_obj(cls, obj: object) -> LLMConfig | None:
+        """Extract LLMConfig from an arbitrary object.
+
+        Handles dataclasses (via fields), Pydantic models (via model_dump),
+        and plain objects (via vars). Pipes through from_dict() for alias
+        handling and field routing.
+
+        Returns None if obj is None.
+        """
+        if obj is None:
+            return None
+        import dataclasses as _dc
+        if _dc.is_dataclass(obj) and not isinstance(obj, type):
+            d = {f.name: getattr(obj, f.name) for f in _dc.fields(obj)}
+        elif hasattr(obj, "model_dump"):
+            d = obj.model_dump()
+        else:
+            d = vars(obj)
+        return cls.from_dict(d)
+
+
+@dataclass(frozen=True)
+class OperationConfigs:
+    """Per-operation LLM configuration defaults.
+
+    Each field corresponds to an LLM-powered operation on Tract.
+    None means 'no operation-level override -- use tract default.'
+    Frozen for safety -- use dataclasses.replace() to create modified copies.
+    """
+
+    chat: LLMConfig | None = None
+    merge: LLMConfig | None = None
+    compress: LLMConfig | None = None
+    orchestrate: LLMConfig | None = None
