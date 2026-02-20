@@ -759,24 +759,22 @@ class Tract:
         compiled = self.compile()
         messages = compiled.to_dicts()
 
-        # 2. Call LLM
-        llm_kwargs: dict = {}
-        if model is not None:
-            llm_kwargs["model"] = model
-        if temperature is not None:
-            llm_kwargs["temperature"] = temperature
-        if max_tokens is not None:
-            llm_kwargs["max_tokens"] = max_tokens
-
+        # 2. Call LLM (resolve per-operation config)
+        llm_kwargs = self._resolve_llm_config(
+            "chat", model=model, temperature=temperature, max_tokens=max_tokens,
+        )
         response = self._llm_client.chat(messages, **llm_kwargs)
 
         # 3. Extract content and usage
         text = OpenAIClient.extract_content(response)
         usage_dict = OpenAIClient.extract_usage(response)
 
-        # 4. Build generation_config
+        # 4. Build generation_config (use resolved kwargs for accurate tracking)
         gen_config = self._build_generation_config(
-            response, model=model, temperature=temperature, max_tokens=max_tokens
+            response,
+            model=llm_kwargs.get("model"),
+            temperature=llm_kwargs.get("temperature"),
+            max_tokens=llm_kwargs.get("max_tokens"),
         )
 
         # 5. Commit assistant response
@@ -1537,6 +1535,8 @@ class Tract:
         no_ff: bool = False,
         auto_commit: bool = False,
         model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
         delete_branch: bool = False,
         message: str | None = None,
     ) -> MergeResult:
@@ -1550,6 +1550,8 @@ class Tract:
             no_ff: If True, always create a merge commit (no fast-forward).
             auto_commit: If True, auto-commit even with resolved conflicts.
             model: Override model for the default resolver.
+            temperature: Override temperature for the default resolver.
+            max_tokens: Override max_tokens for the default resolver.
             delete_branch: If True, delete the source branch after merge.
             message: Optional merge commit message. If not provided, a
                 default message is generated.
@@ -1565,12 +1567,22 @@ class Tract:
         if effective_resolver is None:
             effective_resolver = getattr(self, "_default_resolver", None)
 
-        # If model override and using default resolver, create new one with that model
-        if model is not None and effective_resolver is getattr(self, "_default_resolver", None):
+        # Resolve per-operation config for merge
+        merge_config = self._resolve_llm_config(
+            "merge", model=model, temperature=temperature, max_tokens=max_tokens,
+        )
+
+        # If using default resolver AND config differs from default, create tailored resolver
+        if effective_resolver is getattr(self, "_default_resolver", None) and merge_config:
             if hasattr(self, "_llm_client"):
                 from tract.llm.resolver import OpenAIResolver
 
-                effective_resolver = OpenAIResolver(self._llm_client, model=model)
+                effective_resolver = OpenAIResolver(
+                    self._llm_client,
+                    model=merge_config.get("model"),
+                    temperature=merge_config.get("temperature", 0.3),
+                    max_tokens=merge_config.get("max_tokens", 2048),
+                )
 
         result = merge_branches(
             tract_id=self._tract_id,
@@ -1812,6 +1824,9 @@ class Tract:
         content: str | None = None,
         instructions: str | None = None,
         system_prompt: str | None = None,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> CompressResult | PendingCompression:
         """Compress commit chains into summaries.
 
@@ -1834,6 +1849,9 @@ class Tract:
             content: Manual summary text (bypasses LLM).
             instructions: Additional LLM instructions.
             system_prompt: Custom system prompt for LLM.
+            model: Override model for LLM summarization.
+            temperature: Override temperature for LLM summarization.
+            max_tokens: Override max_tokens for LLM summarization.
 
         Returns:
             :class:`CompressResult` or :class:`PendingCompression`.
@@ -1855,6 +1873,11 @@ class Tract:
 
         llm_client = getattr(self, "_llm_client", None)
 
+        # Resolve per-operation LLM config for compress
+        llm_kwargs = self._resolve_llm_config(
+            "compress", model=model, temperature=temperature, max_tokens=max_tokens,
+        ) if llm_client is not None else {}
+
         # Use savepoint for atomic rollback on partial failure
         nested = self._session.begin_nested()
         try:
@@ -1875,6 +1898,7 @@ class Tract:
                 preserve=preserve,
                 auto_commit=auto_commit,
                 llm_client=llm_client,
+                llm_kwargs=llm_kwargs,
                 content=content,
                 instructions=instructions,
                 system_prompt=system_prompt,
@@ -2519,6 +2543,30 @@ class Tract:
         """
         from tract.orchestrator import Orchestrator as _Orchestrator
 
+        # Step 1: Resolve per-operation config BEFORE the three-way branch
+        orch_resolved = self._resolve_llm_config("orchestrate")
+
+        # Step 2: If operation-level config found, apply to config (mutation-safe)
+        if orch_resolved:
+            if config is not None:
+                # Caller provided config -- only fill in None/default fields
+                # Use dataclasses.replace() to avoid mutating the caller's object
+                overrides: dict = {}
+                if config.model is None and "model" in orch_resolved:
+                    overrides["model"] = orch_resolved["model"]
+                if config.temperature == 0.0 and "temperature" in orch_resolved:
+                    overrides["temperature"] = orch_resolved["temperature"]
+                if overrides:
+                    config = replace(config, **overrides)
+            else:
+                # No caller config -- create one from operation defaults
+                from tract.orchestrator.config import OrchestratorConfig as _OrchestratorConfig
+                config = _OrchestratorConfig(
+                    model=orch_resolved.get("model"),
+                    temperature=orch_resolved.get("temperature", 0.0),
+                )
+
+        # Step 3: Three-way branch (now with resolved config)
         # If overrides provided, create a new orchestrator
         if config is not None or llm_callable is not None:
             orch = _Orchestrator(

@@ -321,6 +321,7 @@ def _summarize_group(
     target_tokens: int | None = None,
     instructions: str | None = None,
     system_prompt: str | None = None,
+    llm_kwargs: dict | None = None,
 ) -> str:
     """Summarize a group of messages using the LLM client.
 
@@ -350,7 +351,7 @@ def _summarize_group(
         {"role": "user", "content": user_prompt},
     ]
 
-    response = llm_client.chat(messages)
+    response = llm_client.chat(messages, **(llm_kwargs or {}))
 
     try:
         content = response["choices"][0]["message"]["content"]
@@ -384,6 +385,7 @@ def compress_range(
     content: str | None = None,
     instructions: str | None = None,
     system_prompt: str | None = None,
+    llm_kwargs: dict | None = None,
     type_registry: dict[str, type] | None = None,
 ) -> CompressResult | PendingCompression:
     """Core compression operation.
@@ -414,6 +416,7 @@ def compress_range(
         content: Optional manual summary text (bypasses LLM).
         instructions: Optional LLM instructions.
         system_prompt: Optional custom system prompt for LLM.
+        llm_kwargs: Optional per-operation LLM config (model, temperature, etc.).
         type_registry: Optional custom content type registry.
 
     Returns:
@@ -472,6 +475,7 @@ def compress_range(
                 target_tokens=target_tokens,
                 instructions=instructions,
                 system_prompt=system_prompt,
+                llm_kwargs=llm_kwargs,
             )
             summaries.append(summary)
     else:
