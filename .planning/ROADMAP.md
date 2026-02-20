@@ -101,10 +101,10 @@ Plans:
   1. User can configure chat/generate to use one model while merge uses a different model, without reconfiguring the Tract instance between operations
   2. User can set per-operation defaults (e.g., compress always uses a cheap model, chat uses a powerful model) that persist across calls
   3. User can override per-operation config on individual calls (e.g., t.chat("complex question", model="gpt-4o") even when default chat model is gpt-4o-mini)
-**Plans**: TBD
+**Plans**: 1 plans
 
 Plans:
-- [ ] 10-01: TBD
+- [ ] 10-01-PLAN.md -- LLMOperationConfig, configure_operations(), wire all operations through resolution chain
 
 ## Progress
 
@@ -126,4 +126,4 @@ Phases execute in numeric order: 8 -> 9 -> 10 (plus any inserted decimal phases)
 | 7. Agent Toolkit | v2.0 | 3/3 | Complete | 2026-02-18 |
 | 8. Format & Shorthand | v3.0 | 1/1 | Complete | 2026-02-19 |
 | 9. Conversation Layer | v3.0 | 1/1 | Complete | 2026-02-19 |
-| 10. Per-Op LLM Config | v3.0 | 0/? | Not started | - |
+| 10. Per-Op LLM Config | v3.0 | 0/1 | Not started | - |
