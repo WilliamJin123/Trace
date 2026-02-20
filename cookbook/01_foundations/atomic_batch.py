@@ -87,7 +87,7 @@ def main():
         for entry in reversed(history):
             config_str = ""
             if entry.generation_config:
-                config_str = f" | config: {entry.generation_config}"
+                config_str = f" | config: {entry.generation_config.to_dict()}"
             print(
                 f"  {entry.commit_hash[:8]} "
                 f"[{entry.content_type:12s}] "
@@ -99,7 +99,7 @@ def main():
         print(f"\n=== Commits using model {CEREBRAS_MODEL} ===\n")
         model_commits = t.query_by_config("model", "=", CEREBRAS_MODEL)
         for entry in model_commits:
-            print(f"  {entry.commit_hash[:8]} | {entry.message} | model={entry.generation_config.get('model')}")
+            print(f"  {entry.commit_hash[:8]} | {entry.message} | model={entry.generation_config.model if entry.generation_config else None}")
 
         # Final status
         status = t.status()

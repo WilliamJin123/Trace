@@ -51,7 +51,7 @@ def main():
         response = t.chat("What's the difference between a list and a tuple in Python?")
 
         print(f"Assistant: {response.text[:200]}...")
-        print(f"Model used: {response.generation_config.get('model')}")
+        print(f"Model used: {response.generation_config.model}")
         if response.usage:
             print(f"Tokens: {response.usage.prompt_tokens} prompt + "
                   f"{response.usage.completion_tokens} completion\n")

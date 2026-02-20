@@ -656,3 +656,212 @@ class TestBackwardCompatibility:
         assert "model" not in mock.last_kwargs
         assert "temperature" not in mock.last_kwargs
         t.close()
+
+
+# ---------------------------------------------------------------------------
+# Multi-field query_by_config tests
+# ---------------------------------------------------------------------------
+
+class TestQueryByConfigMultiField:
+    """Tests for enhanced query_by_config with multi-field AND and IN support."""
+
+    def _setup_tract_with_configs(self):
+        """Create a tract with commits using different generation configs."""
+        t = Tract.open()
+        t.commit(
+            DialogueContent(role="user", text="q1"),
+            generation_config={"model": "gpt-4o", "temperature": 0.5},
+        )
+        t.commit(
+            DialogueContent(role="assistant", text="a1"),
+            generation_config={"model": "gpt-4o", "temperature": 0.9},
+        )
+        t.commit(
+            DialogueContent(role="user", text="q2"),
+            generation_config={"model": "gpt-3.5-turbo", "temperature": 0.5},
+        )
+        t.commit(
+            DialogueContent(role="assistant", text="a2"),
+            generation_config={"model": "gpt-4o-mini", "temperature": 0.7},
+        )
+        return t
+
+    def test_single_field_backward_compat(self):
+        """Original (field, op, value) signature still works."""
+        t = self._setup_tract_with_configs()
+        results = t.query_by_config("model", "=", "gpt-4o")
+        assert len(results) == 2
+        assert all(r.generation_config.model == "gpt-4o" for r in results)
+        t.close()
+
+    def test_multi_field_and(self):
+        """Multiple conditions combined with AND."""
+        t = self._setup_tract_with_configs()
+        results = t.query_by_config(conditions=[
+            ("model", "=", "gpt-4o"),
+            ("temperature", ">", 0.7),
+        ])
+        assert len(results) == 1
+        assert results[0].generation_config.model == "gpt-4o"
+        assert results[0].generation_config.temperature == 0.9
+        t.close()
+
+    def test_in_operator(self):
+        """IN operator for set membership."""
+        t = self._setup_tract_with_configs()
+        results = t.query_by_config(conditions=[
+            ("model", "in", ["gpt-4o", "gpt-3.5-turbo"]),
+        ])
+        assert len(results) == 3
+        t.close()
+
+    def test_in_operator_combined_with_field(self):
+        """IN operator combined with other conditions."""
+        t = self._setup_tract_with_configs()
+        results = t.query_by_config(conditions=[
+            ("model", "in", ["gpt-4o", "gpt-4o-mini"]),
+            ("temperature", ">=", 0.7),
+        ])
+        assert len(results) == 2  # gpt-4o@0.9 and gpt-4o-mini@0.7
+        t.close()
+
+    def test_whole_config_match(self):
+        """LLMConfig object matches all non-None fields."""
+        t = self._setup_tract_with_configs()
+        results = t.query_by_config(LLMConfig(model="gpt-4o", temperature=0.5))
+        assert len(results) == 1
+        assert results[0].generation_config.model == "gpt-4o"
+        assert results[0].generation_config.temperature == 0.5
+        t.close()
+
+    def test_whole_config_single_field(self):
+        """LLMConfig with only one field set matches like single-field query."""
+        t = self._setup_tract_with_configs()
+        results = t.query_by_config(LLMConfig(model="gpt-4o"))
+        assert len(results) == 2
+        t.close()
+
+    def test_whole_config_empty_returns_empty(self):
+        """LLMConfig with all None fields returns empty list."""
+        t = self._setup_tract_with_configs()
+        results = t.query_by_config(LLMConfig())
+        assert len(results) == 0
+        t.close()
+
+    def test_no_matches(self):
+        """Query returns empty list when nothing matches."""
+        t = self._setup_tract_with_configs()
+        results = t.query_by_config("model", "=", "nonexistent-model")
+        assert len(results) == 0
+        t.close()
+
+    def test_invalid_operator(self):
+        """Unsupported operator raises ValueError."""
+        t = self._setup_tract_with_configs()
+        with pytest.raises(ValueError, match="Unsupported operator"):
+            t.query_by_config("model", "LIKE", "gpt%")
+        t.close()
+
+    def test_invalid_usage_raises_type_error(self):
+        """Calling with wrong argument combination raises TypeError."""
+        t = self._setup_tract_with_configs()
+        with pytest.raises(TypeError, match="query_by_config requires"):
+            t.query_by_config()
+        t.close()
+
+
+# ---------------------------------------------------------------------------
+# Advanced LLMConfig tests
+# ---------------------------------------------------------------------------
+
+class TestLLMConfigAdvanced:
+    """Tests for LLMConfig from_dict/to_dict, round-trip, and edge cases."""
+
+    def test_from_dict_round_trip(self):
+        """from_dict(to_dict()) produces equal config."""
+        config = LLMConfig(model="gpt-4o", temperature=0.7, top_p=0.9, seed=42)
+        assert LLMConfig.from_dict(config.to_dict()) == config
+
+    def test_from_dict_with_extra_keys(self):
+        """Unknown keys go to extra field."""
+        d = {"model": "gpt-4o", "custom_key": "custom_value", "another": 123}
+        config = LLMConfig.from_dict(d)
+        assert config.model == "gpt-4o"
+        assert config.extra is not None
+        assert config.extra["custom_key"] == "custom_value"
+        assert config.extra["another"] == 123
+
+    def test_round_trip_with_extra(self):
+        """Extra keys survive round-trip."""
+        d = {"model": "gpt-4o", "provider_specific": "abc"}
+        config = LLMConfig.from_dict(d)
+        result = config.to_dict()
+        assert result == d
+
+    def test_from_dict_none_returns_none(self):
+        """from_dict(None) returns None."""
+        assert LLMConfig.from_dict(None) is None
+
+    def test_stop_sequences_as_tuple(self):
+        """stop_sequences stored as tuple even when created with list."""
+        config = LLMConfig(stop_sequences=["stop1", "stop2"])
+        assert isinstance(config.stop_sequences, tuple)
+        assert config.stop_sequences == ("stop1", "stop2")
+
+    def test_stop_sequences_json_round_trip(self):
+        """stop_sequences survives JSON round-trip (list -> tuple -> list -> tuple)."""
+        config = LLMConfig(stop_sequences=("stop1", "stop2"))
+        d = config.to_dict()
+        assert isinstance(d["stop_sequences"], list)
+        restored = LLMConfig.from_dict(d)
+        assert restored.stop_sequences == ("stop1", "stop2")
+
+    def test_extra_is_immutable(self):
+        """extra field is MappingProxyType (immutable)."""
+        import types
+        config = LLMConfig(extra={"key": "value"})
+        assert isinstance(config.extra, types.MappingProxyType)
+        with pytest.raises(TypeError):
+            config.extra["new_key"] = "new_value"
+
+    def test_hashable(self):
+        """LLMConfig can be used as dict key or set member."""
+        c1 = LLMConfig(model="gpt-4o", temperature=0.7)
+        c2 = LLMConfig(model="gpt-4o", temperature=0.7)
+        assert hash(c1) == hash(c2)
+        assert {c1, c2} == {c1}
+
+    def test_non_none_fields(self):
+        """non_none_fields returns only set fields."""
+        config = LLMConfig(model="gpt-4o", temperature=0.7)
+        assert config.non_none_fields() == {"model": "gpt-4o", "temperature": 0.7}
+
+    def test_non_none_fields_empty(self):
+        """non_none_fields on default config returns empty dict."""
+        config = LLMConfig()
+        assert config.non_none_fields() == {}
+
+    def test_all_fields(self):
+        """All 9 typed fields can be set and retrieved."""
+        config = LLMConfig(
+            model="gpt-4o",
+            temperature=0.7,
+            top_p=0.9,
+            max_tokens=1000,
+            stop_sequences=("stop",),
+            frequency_penalty=0.5,
+            presence_penalty=0.3,
+            top_k=50,
+            seed=42,
+            extra={"custom": "val"},
+        )
+        assert config.model == "gpt-4o"
+        assert config.temperature == 0.7
+        assert config.top_p == 0.9
+        assert config.max_tokens == 1000
+        assert config.stop_sequences == ("stop",)
+        assert config.frequency_penalty == 0.5
+        assert config.presence_penalty == 0.3
+        assert config.top_k == 50
+        assert config.seed == 42
+        assert config.extra["custom"] == "val"
