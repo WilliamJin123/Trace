@@ -32,7 +32,7 @@ from tract.exceptions import (
     DetachedHeadError,
     TraceError,
 )
-from tract.protocols import CompiledContext, ContextCompiler, TokenCounter, TokenUsage
+from tract.protocols import ChatResponse, CompiledContext, ContextCompiler, TokenCounter, TokenUsage
 from tract.storage.engine import create_session_factory, create_trace_engine, init_db
 from tract.storage.sqlite import (
     SqliteAnnotationRepository,
