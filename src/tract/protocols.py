@@ -96,6 +96,18 @@ class CompiledContext:
             "messages": messages,
         }
 
+    def __str__(self) -> str:
+        return (
+            f"CompiledContext(messages={self.commit_count},"
+            f" tokens={self.token_count}, source={self.token_source})"
+        )
+
+    def pprint(self) -> None:
+        """Pretty-print this compiled context using rich formatting."""
+        from tract.formatting import pprint_compiled_context
+
+        pprint_compiled_context(self)
+
 
 @dataclass(frozen=True)
 class CompileSnapshot:
@@ -144,6 +156,15 @@ class ChatResponse:
     usage: TokenUsage | None
     commit_info: CommitInfo
     generation_config: LLMConfig
+
+    def __str__(self) -> str:
+        return self.text
+
+    def pprint(self) -> None:
+        """Pretty-print this response using rich formatting."""
+        from tract.formatting import pprint_chat_response
+
+        pprint_chat_response(self)
 
 
 @runtime_checkable
