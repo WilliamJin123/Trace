@@ -25,7 +25,7 @@ from tract.models.session import SessionContent
 
 
 class InstructionContent(BaseModel):
-    """System-level instructions for the LLM."""
+    """System-level instructions for the LLM. Pinned by default."""
 
     content_type: Literal["instruction"] = "instruction"
     text: str

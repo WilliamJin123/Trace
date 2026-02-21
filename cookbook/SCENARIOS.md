@@ -1,269 +1,435 @@
 # Tract Usage Scenarios
 
-A hierarchical guide from basic context management to fully autonomous agent orchestration. Each scenario is grounded in a real-world use case.
+10 workflow stories covering every fundamental operation, then compositions that combine them. Each story has 2-3 standalone sub-scenarios that build incrementally within the story. Stories are independent — jump to any one without reading the others.
+
+## File Tree
+
+```
+cookbook/
+├── SCENARIOS.md
+├── 01_conversation/
+│   ├── 01_manual_commit_compile.py
+│   ├── 02_shorthand_and_format.py
+│   └── 03_chat_and_persist.py
+├── 02_token_awareness/
+│   ├── 01_status_and_budget.py
+│   └── 02_budget_guardrail_loop.py
+├── 03_llm_config/
+│   ├── 01_per_call_config.py
+│   ├── 02_defaults_and_operations.py
+│   └── 03_resolution_chain.py
+├── 04_curation/
+│   ├── 01_edit_in_place.py
+│   ├── 02_pin_skip_annotate.py
+│   └── 03_atomic_batch.py
+├── 05_tracing/
+│   ├── 01_log_and_diff.py
+│   ├── 02_time_travel.py
+│   └── 03_config_provenance.py
+├── 06_branching/
+│   ├── 01_branch_switch_delete.py
+│   ├── 02_merge_strategies.py
+│   └── 03_cherry_pick_rebase.py
+├── 07_compression/
+│   ├── 01_manual_compression.py
+│   ├── 02_llm_compression.py
+│   └── 03_gc.py
+├── 08_multi_agent/
+│   ├── 01_parent_child.py
+│   └── 02_delegation.py
+├── 09_policies/
+│   ├── 01_builtin_policies.py
+│   ├── 02_custom_policy.py
+│   └── 03_autonomy_spectrum.py
+├── 10_orchestrator/
+│   ├── 01_toolkit.py
+│   ├── 02_trigger_orchestration.py
+│   └── 03_hitl_orchestration.py
+└── compositions/
+    ├── ab_testing.py
+    ├── context_forensics.py
+    ├── drift_steering.py
+    ├── full_autonomous.py
+    ├── human_interjection.py
+    ├── long_running_session.py
+    ├── streaming_integration.py
+    └── undo_redo.py
+```
 
 ---
 
-## Tier 1: Foundations
+# Part 1: Workflow Stories
 
-Core operations every tract user needs on day one.
+## 01 — Having a Conversation
 
-### 1.1 — First Conversation
+The core loop: record messages, compile context, talk to an LLM, persist.
 
-**Use case:** A coding assistant that remembers its system prompt, takes a user question, and replies.
+### 01/01 — Manual Commit and Compile
 
-Open a tract, commit a system prompt, commit a user message, get the assistant response from your LLM, commit it, then compile everything into the message list your next LLM call needs. Persist to disk so the conversation survives a server restart. Reopen the same tract tomorrow and pick up where you left off.
+**Use case:** You want to understand what tract is actually doing under the hood.
 
-> `Tract.open()`, `commit()`, `compile()`, `close()`, `Tract.open(path=...)`
+Open a tract, `commit()` a system prompt, a user message, and an assistant response manually (specifying role and content_type). Call `compile()` to see the resulting message list. Inspect `CompiledContext.messages` — each has role, content_type, and content.
 
-### 1.2 — Token Budget Guardrail
+> `Tract.open()`, `commit(role=, content_type=, content=)`, `compile()`, `CompiledContext.messages`
 
-**Use case:** A chatbot with a 128k context window that needs to know when it's running hot before each API call.
+### 01/02 — Shorthand and Format Methods
 
-Check `status()` before every LLM call to see current token count vs budget. After the call returns, feed the API's actual usage numbers back with `record_usage()` so your tracking reflects reality, not just tiktoken estimates.
+**Use case:** You know how commit/compile works and want the convenience layer.
 
-> `status()`, `TractConfig(token_budget=128000)`, `record_usage()`
+Replace manual commits with `system()`, `user()`, `assistant()` — same result, less boilerplate. Then format the compiled context for your LLM provider: `to_openai()`, `to_anthropic()`, or `to_dicts()` for raw output.
 
-### 1.3 — Atomic Multi-Turn Exchange
+> `system()`, `user()`, `assistant()`, `to_openai()`, `to_anthropic()`, `to_dicts()`
 
-**Use case:** A RAG pipeline that retrieves documents, asks the user a clarifying question, and gets a response — all of which should land as one atomic unit or not at all.
+### 01/03 — Chat and Persist
 
-Wrap the retrieval commit, user commit, and assistant commit inside `batch()` so either all three land or none do. Use `llm_config=LLMConfig(temperature=0.7, top_p=0.9, seed=42)` for a typed, full-featured call-level override. The full generation config — all resolved fields including top_p, seed, frequency_penalty, etc. — is auto-captured on every assistant commit.
+**Use case:** A coding assistant that chats, persists to disk, and resumes the next day.
 
-> `batch()`, `generate(llm_config=LLMConfig(...))`, `query_by_config()`
+`chat()` does everything in one call: commits the user message, compiles context, calls the LLM, commits the response, records token usage. Close the tract, reopen from the same path — the full conversation is restored. Walk the log to confirm.
 
-### 1.4 — LLM Configuration Hierarchy
+> `chat()`, `ChatResponse`, persistence, `log()`
 
-**Use case:** A multi-purpose agent that needs different LLM settings for different operations — creative responses for chat, deterministic output for compression, and the ability to override any setting on a per-call basis.
-
-Set a tract-level default with `default_config=LLMConfig(model="gpt-4o", temperature=0.5)`. Override per-operation with `configure_operations(chat=LLMConfig(temperature=0.8), compress=LLMConfig(temperature=0.1, seed=42))`. Override per-call with `llm_config=LLMConfig(...)` or sugar params like `temperature=0.9`. The 4-level chain resolves each field independently: sugar > llm_config > operation > default. Use `LLMConfig.from_dict()` to parse configs from OpenAI-style dicts with cross-framework alias handling (`stop` → `stop_sequences`, `max_completion_tokens` → `max_tokens`).
-
-> `LLMConfig`, `OperationConfigs`, `configure_operations()`, `default_config=`, `llm_config=`, `LLMConfig.from_dict()`
+**Existing example:** `first_conversation.py` (moves here)
 
 ---
 
-## Tier 2: Context Curation
+## 02 — Token Awareness
 
-Surgical control over what the LLM sees in its context window.
+Knowing what you're spending and staying within limits.
 
-### 2.1 — Correcting a Hallucination
+### 02/01 — Status and Budget
 
-**Use case:** Your customer support agent told a user the return policy is 60 days, but it's actually 30 days. You need to fix the record without appending a correction that clutters the conversation.
+**Use case:** You want to know how many tokens are in the context and how close you are to the limit.
 
-EDIT the original assistant commit in-place. The next `compile()` serves the corrected content as if the mistake never happened. The original is still in history for audit purposes.
+Set a token budget via `TractConfig(token_budget=...)`. Call `status()` to see commit count, estimated token count, budget max, and budget percentage. The budget is a tracking tool — it doesn't block commits.
+
+> `TractConfig(token_budget=)`, `status()`, `budget_pct`
+
+### 02/02 — Budget Guardrail Loop
+
+**Use case:** A chatbot that checks budget before every LLM call and stops when it's running hot.
+
+In a multi-turn loop, check `status()` before each `chat()` call. After the call, usage is auto-recorded from the API response. When budget exceeds a threshold, stop or take action (compress, branch, etc.).
+
+> `status()` in a loop, `chat()` auto-records usage, `record_usage()` for manual calls
+
+**Existing example:** `token_budget_guardrail.py` (moves here)
+
+---
+
+## 03 — Tuning LLM Behavior
+
+Controlling model, temperature, and other settings at every granularity.
+
+### 03/01 — Per-Call Config
+
+**Use case:** You want this specific call to use temperature 0.9, just this once.
+
+Pass an `LLMConfig` or use sugar params (`temperature=`, `model=`) directly on `chat()` or `generate()`. Use `generate()` for two-step control where you inspect the response before committing.
+
+> `LLMConfig(temperature=0.9)`, `chat(temperature=0.9)`, `generate(llm_config=...)`
+
+### 03/02 — Defaults and Per-Operation Config
+
+**Use case:** Chat should be creative, compression should be deterministic, and everything else uses a sane default.
+
+Set tract-level defaults with `default_config=LLMConfig(...)` on open. Override per-operation with `configure_operations(chat=LLMConfig(...), compress=LLMConfig(...))`. Each operation inherits the default and applies its own overrides.
+
+> `default_config=`, `configure_operations()`, `OperationConfigs`
+
+### 03/03 — Resolution Chain and Cross-Framework Config
+
+**Use case:** You need to understand which setting wins, and your config comes from an OpenAI-style JSON dict.
+
+The 4-level chain resolves each field independently: sugar > llm_config > operation > default. `LLMConfig.from_dict()` handles cross-framework aliases (`stop` -> `stop_sequences`, `max_completion_tokens` -> `max_tokens`). Every resolved config is auto-captured on assistant commits for provenance.
+
+> 4-level resolution, `LLMConfig.from_dict()`, auto-captured `generation_config`
+
+**Existing example:** `config_hierarchy.py` (moves here)
+
+---
+
+## 04 — Curating Context
+
+Shaping what the LLM sees without losing history.
+
+### 04/01 — Edit in Place
+
+**Use case:** The assistant said "60 day return policy" but it's 30 days. Fix it without cluttering the conversation.
+
+Commit with `operation=EDIT` and `response_to=original_hash`. The next `compile()` serves the corrected content as if the original never existed. The original commit is still in history for audit.
 
 > `commit(operation=EDIT, response_to=original_hash)`
 
-### 2.2 — Protecting Key Instructions, Hiding Noise
+### 04/02 — Pin, Skip, and Reset Annotations
 
-**Use case:** A legal document review agent has a detailed system prompt with formatting rules that must never be lost, but also produces verbose tool outputs (API calls, database queries) that bloat the context.
+**Use case:** Pin your system prompt so it survives compression. Skip noisy tool outputs so they don't bloat context. Un-skip something when you realize you need it.
 
-Pin the system prompt so it survives any future compression. Skip the noisy tool outputs so they're excluded from compiled context but preserved in history if you ever need to audit them.
+`annotate(hash, PINNED)` protects a message from compression and guarantees inclusion. `annotate(hash, SKIP)` hides it from compiled context while keeping it in history. `annotate(hash, NORMAL)` removes any annotation.
 
-> `annotate(system_hash, PINNED)`, `annotate(tool_hash, SKIP)`
+> `annotate(hash, PINNED)`, `annotate(hash, SKIP)`, `annotate(hash, NORMAL)`
 
-### 2.3 — Debugging a Bad Response
+### 04/03 — Atomic Batch
 
-**Use case:** Your agent gave a terrible answer 15 turns ago and you want to understand exactly what it was seeing at that point to figure out why.
+**Use case:** A RAG retrieval + user question + assistant response should land as one unit or not at all.
 
-Checkout the commit right before the bad response. Compile at that point to reconstruct the exact message list the LLM received. Diff it against the current state to see what's changed since.
+Wrap multiple commits in `batch()`. If any commit fails or an exception is raised, all commits in the batch roll back. Useful for multi-step pipelines where partial state is worse than no state.
 
-> `checkout(past_hash)`, `compile(at_commit=...)`, `diff(then, now)`
+> `with t.batch(): ...`
 
----
-
-## Tier 3: Branching & Exploration
-
-When one timeline isn't enough and you need to explore in parallel.
-
-### 3.1 — Try Two Approaches, Keep the Winner
-
-**Use case:** A writing assistant is drafting an email. The user wants to see a formal version and a casual version before choosing.
-
-Branch from the current state. Write the formal draft on `main`, switch to the branch and write the casual draft. Diff the two compiled contexts. The user picks formal — merge it back (fast-forward) and delete the experiment branch.
-
-> `branch("casual")`, `switch()`, `diff()`, `merge()`, `delete_branch()`
-
-### 3.2 — A/B Testing Model Configurations
-
-**Use case:** You're evaluating whether gpt-4o at temperature 0.3 produces better code reviews than gpt-4o-mini at temperature 0.7.
-
-Branch from the same conversation state. Run identical prompts on each branch with different `generation_config` values. Compare the compiled outputs. The generation configs are stored with each commit so you can query later which model produced what.
-
-> `branch()`, `commit(generation_config={...})`, `query_by_config()`, `diff()`
-
-### 3.3 — Moving Work Across Branches
-
-**Use case:** An agent explored a tangent on a feature branch and produced one genuinely useful insight buried in 20 commits. Separately, main has moved forward and your subtask branch is stale.
-
-Cherry-pick the single useful commit onto main. Then rebase your subtask branch onto the updated main so it has the latest context — with semantic safety checks that warn if the rebase would break response_to chains.
-
-> `cherry_pick(useful_hash)`, `rebase("main")`
+**Existing example:** batch portion of `atomic_batch.py` (moves here, config/provenance parts split to 03 and 05)
 
 ---
 
-## Tier 4: Compression & Memory
+## 05 — Tracing and Audit
 
-Keeping conversations alive long past the context window limit.
+Understanding what happened, when, why, and with what settings.
 
-### 4.1 — Three Ways to Compress
+### 05/01 — Log and Diff
 
-**Use case:** A therapy chatbot has been running for 200 turns. The early turns are stale but contain important emotional context that shouldn't be lost entirely.
+**Use case:** You want to see the conversation history and understand what changed between two points.
 
-- **Manual:** You write the summary yourself — deterministic, no LLM needed.
-- **LLM:** Configure an LLM client and let it summarize the first 150 turns down to 2000 tokens.
-- **Collaborative:** The LLM drafts a summary, you review it for accuracy and emotional nuance, then approve.
+`log()` returns every commit with hash, role, content type, message, and timestamp. `diff()` compares two commits and shows added, removed, and modified messages.
 
-> `compress(content="...")`, `compress(target_tokens=2000)`, `compress(auto_commit=False)` + `approve_compression()`
+> `log()`, `diff(earlier_hash, later_hash)`
 
-### 4.2 — Pinned Content Survives Compression
+### 05/02 — Time Travel
 
-**Use case:** A financial advisor agent has compliance disclaimers in its system prompt and regulatory citations pinned throughout the conversation. When compression runs, these must survive verbatim — no paraphrasing allowed.
+**Use case:** An agent gave a bad answer 15 turns ago. Reconstruct exactly what it was seeing.
 
-Pin the critical commits. When compression runs over a range, pinned commits pass through untouched. Skipped commits are excluded entirely (they were noise anyway). Everything else gets summarized.
+`compile(at_commit=hash)` rebuilds the message list as of any past commit. `compile(at_time=datetime)` does the same by timestamp. `checkout(hash)` moves HEAD there for interactive inspection. `reset(hash)` moves HEAD backward permanently (orphaned commits survive until GC).
 
-> `annotate(PINNED)` + `compress(from_commit=..., to_commit=...)`
+> `compile(at_commit=)`, `compile(at_time=)`, `checkout()`, `reset()`
 
-### 4.3 — Reclaiming Storage
+### 05/03 — Config Provenance
 
-**Use case:** A production deployment has thousands of tracts, each with compression history. Original pre-compression commits are kept for audit but eventually need cleanup.
+**Use case:** "Which model produced this output? What temperature was used?"
 
-Run GC to remove orphaned commits older than N days. Archived (pre-compression) commits can have a separate retention window. This is non-destructive to any reachable commit chain.
+Every assistant commit stores the fully-resolved `generation_config`. Query it with `query_by_config()` — single-field, multi-field AND, or whole-config matching. Also supports the IN operator for multi-value queries.
+
+> `commit_info.generation_config`, `query_by_config(model="gpt-4o")`, `query_by_config(temperature=0.7, model="gpt-4o")`
+
+---
+
+## 06 — Branching and Exploration
+
+Parallel timelines for experimentation, merging results back.
+
+### 06/01 — Branch, Switch, Delete
+
+**Use case:** Try an experimental approach without affecting main. Clean up when done.
+
+`branch("experiment")` creates a new timeline from current HEAD. `switch("experiment")` moves to it. Work there, then `switch("main")` to come back. `delete_branch("experiment")` removes the pointer when you're done.
+
+> `branch()`, `switch()`, `delete_branch()`
+
+### 06/02 — Merge Strategies
+
+**Use case:** The experiment worked. Bring it back to main.
+
+Three merge modes: **fast-forward** (branch is ahead of main, just advance the pointer), **clean** (branches diverged but no conflicts, auto-merge), **conflict** (branches have overlapping edits, LLM resolves). All via `merge()`.
+
+> `merge("experiment")` — FF / clean / conflict
+
+### 06/03 — Cherry-Pick and Rebase
+
+**Use case:** Grab one useful commit from an experiment, and update a stale branch to include the latest main.
+
+`cherry_pick(hash)` copies a single commit onto the current branch. `rebase("main")` replays the current branch's commits on top of main's tip — with safety checks warning if response_to chains would break.
+
+> `cherry_pick(hash)`, `rebase("main")`
+
+---
+
+## 07 — Compression and Memory
+
+Keeping conversations alive past the context window limit.
+
+### 07/01 — Manual Compression
+
+**Use case:** You know exactly what the summary should say. No LLM needed.
+
+Pass your own text to `compress(content="...")`. The original commits in the range are archived and replaced with a single summary commit. Deterministic — same input always produces same output.
+
+> `compress(from_commit=a, to_commit=b, content="...")`
+
+### 07/02 — LLM and Collaborative Compression
+
+**Use case:** Let the LLM summarize, with optional human review.
+
+`compress(target_tokens=2000)` auto-summarizes using the configured LLM. PINNED commits pass through untouched; SKIP commits are excluded. For human review, use `auto_commit=False` — the LLM drafts a summary, you inspect and `approve_compression()`.
+
+> `compress(target_tokens=)`, `compress(auto_commit=False)`, `approve_compression()`, pinned survives
+
+### 07/03 — Garbage Collection
+
+**Use case:** Archived pre-compression commits are piling up. Reclaim storage.
+
+`gc()` removes orphaned commits older than N days. Archived commits can have a separate retention window. Non-destructive to any reachable commit chain.
 
 > `gc(orphan_retention_days=7, archive_retention_days=30)`
 
 ---
 
-## Tier 5: Multi-Agent
+## 08 — Multi-Agent
 
 Coordinating context across parent and child agents.
 
-### 5.1 — Sub-Agent Delegation
+### 08/01 — Parent-Child Relationship
 
-**Use case:** A research agent spawns a sub-agent to deep-dive on a specific topic. The sub-agent produces 40 turns of research. The parent only needs a 3-paragraph summary.
+**Use case:** A main agent needs to spawn a sub-agent with its own isolated context.
 
-Spawn a child tract. The sub-agent does its work there. When finished, compress the child's entire history into a summary. The parent commits that summary as a single message on its own timeline — 40 turns collapsed into one.
+Create a child tract linked to the parent. The child has independent commit history but the relationship is tracked for provenance — you can always trace which parent spawned which child.
 
-> `parent()`, `children()`, `compress()`, `commit()`
+> `parent()`, `children()`
 
-### 5.2 — Parallel Agents, Supervisor Merge
+### 08/02 — Sub-Agent Delegation
 
-**Use case:** A project planning agent assigns three sub-agents to research competitors, market size, and technical feasibility simultaneously.
+**Use case:** Spawn a research sub-agent, let it work for 40 turns, ingest just the summary.
 
-Each agent works on its own branch. When all three finish, a supervisor agent reviews each branch, resolves any overlapping findings with a merge, and produces a unified context on main.
+The sub-agent works in its child tract. When finished, compress its history into a summary. The parent commits that summary as a single message — 40 turns collapsed into one commit on the parent's timeline.
 
-> `branch("competitor-research")`, `branch("market-size")`, `branch("tech-feasibility")`, `merge()`
+> Child work -> `compress()` -> parent `commit()` with summary
 
 ---
 
-## Tier 6: Automated Policies
+## 09 — Policies
 
-Context that manages itself without manual intervention.
+Automated rules that fire on events without manual intervention.
 
-### 6.1 — Built-In Policy Suite
+### 09/01 — Built-In Policies
 
-**Use case:** A 24/7 customer service agent that runs unattended. It needs to auto-compress when context gets large, protect its instruction set, branch when conversations go off-topic, and clean up dead-end branches.
+**Use case:** Auto-compress at 80% budget, auto-pin system prompts, detect topic drift, archive stale branches.
 
-Configure all four built-in policies at once: CompressPolicy fires at 80% budget, PinPolicy auto-pins instruction-type commits, BranchPolicy detects rapid content-type switching (topic drift), ArchivePolicy archives branches inactive for 7+ days.
+Four built-in policies cover common needs: `CompressPolicy(threshold=0.8)`, `PinPolicy()`, `BranchPolicy()`, `ArchivePolicy(inactive_days=7)`. Configure one or all at once.
 
 > `configure_policies([CompressPolicy(0.8), PinPolicy(), BranchPolicy(), ArchivePolicy()])`
 
-### 6.2 — Autonomy Spectrum
+### 09/02 — Custom Policy
 
-**Use case:** During development you want to approve every policy action. In staging, you want to review but auto-approve safe ones. In production, full auto.
+**Use case:** Auto-skip any commit containing PII, or auto-skip tool outputs older than 10 turns.
 
-The same policies work at any autonomy level. In manual mode, every action becomes a proposal you approve/reject. In collaborative mode, low-risk actions (pin, skip) auto-execute while high-risk ones (compress, branch) need approval. In autonomous mode, everything fires immediately.
+Implement the `Policy` protocol: define `name`, `trigger`, and `evaluate(tract) -> PolicyAction | None`. Your policy inspects commits, proposes annotations or operations, and the evaluator executes them.
 
-> `configure_policies(on_proposal=cli_prompt)`, `approve_proposal()`, `reject_proposal()`
+> `Policy` protocol: `name`, `priority`, `trigger`, `evaluate()`
 
-### 6.3 — Custom Policy
+### 09/03 — Autonomy Spectrum
 
-**Use case:** A healthcare agent must never have PII in its compiled context, and tool outputs older than 10 turns should be auto-skipped to save tokens.
+**Use case:** In dev, approve everything. In staging, auto-approve safe ops. In prod, full auto.
 
-Write a custom policy implementing the `Policy` protocol. It triggers on each commit, inspects the content for PII patterns, and proposes a SKIP annotation if found. A second policy triggers on compile and auto-skips tool outputs beyond a turn threshold.
+Same policies, three modes. **Manual:** every action is a proposal. **Collaborative:** low-risk (pin, skip) auto-executes, high-risk (compress, branch) needs approval. **Autonomous:** everything fires immediately.
 
-> Implement `Policy` protocol: `name`, `priority`, `trigger`, `evaluate(tract) -> PolicyAction | None`
+> `autonomy="manual"`, `"collaborative"`, `"autonomous"`
 
 ---
 
-## Tier 7: Agent Toolkit & Orchestrator
+## 10 — Toolkit and Orchestrator
 
 The agent manages its own context window end-to-end.
 
-### 7.1 — Agent Self-Management via Tool Calls
+### 10/01 — Toolkit: Expose Operations as LLM Tools
 
-**Use case:** You're building an agent framework and want the LLM to decide when to compress, branch, or annotate — without your application code making those decisions.
+**Use case:** Let the LLM decide when to compress, branch, or annotate via function calling.
 
-Call `as_tools()` to get tract operations formatted as OpenAI or Anthropic function-call definitions. Include them in your LLM's tool list. The agent can now commit, compile, annotate, compress, branch, and merge by calling tools — your framework just dispatches.
+`as_tools()` returns tract operations formatted for OpenAI or Anthropic tool schemas. Three profiles control scope: **self** (full CRUD), **supervisor** (read + high-level), **observer** (read-only).
 
-> `as_tools(profile="self", format="openai")`, `as_tools(profile="supervisor", format="anthropic")`
+> `as_tools(format="openai", profile="self")`, `as_tools(format="anthropic", profile="supervisor")`
 
-### 7.2 — Trigger-Based Orchestration
+### 10/02 — Trigger-Based Orchestration
 
-**Use case:** A long-running coding agent should automatically assess and manage its context every 20 commits or when token usage crosses 70% — without the application polling.
+**Use case:** Auto-assess context health every 20 commits or at 70% token usage.
 
-Configure the orchestrator with triggers. When a trigger fires, the orchestrator assesses context health (fragmentation, budget pressure, stale branches), then executes the appropriate tools — compress, GC, branch cleanup — in an autonomous loop.
+Configure triggers on the orchestrator. When a trigger fires, it assesses context (fragmentation, budget pressure, stale branches) and executes tools (compress, GC, cleanup) in an autonomous loop.
 
-> `configure_orchestrator(config=OrchestratorConfig(triggers=TriggerConfig(on_commit_count=20, on_token_threshold=0.7)))`, `orchestrate()`
+> `OrchestratorConfig(triggers=TriggerConfig(on_commit_count=20, on_token_threshold=0.7))`
 
-### 7.3 — Human-in-the-Loop Orchestration
+### 10/03 — Human-in-the-Loop Orchestration
 
-**Use case:** The orchestrator is managing context for a medical documentation agent. Compression and branch merges need human sign-off for regulatory compliance.
+**Use case:** Compression and merges need human sign-off for compliance.
 
-Configure the orchestrator with a callback. It proposes actions with reasoning ("Context at 85%, recommend compressing turns 1-50"). The human approves, rejects, or modifies ("Compress 1-40, keep 41-50 they contain the diagnosis"). The orchestrator executes the modified action and continues.
+Configure a callback. The orchestrator proposes actions with reasoning. The human approves, rejects, or modifies. The orchestrator executes the approved action and continues.
 
-> `OrchestratorConfig(callbacks=cli_prompt)`, `pause_orchestrator()`, `approve_proposal()`
+> `OrchestratorConfig(callbacks=callback_fn)`
 
 ---
 
-## Cross-Cutting Compositions
+# Part 2: Compositions
 
-Real-world scenarios that combine multiple tiers. These represent the kind of integrated workflows tract was designed for.
+Real-world scenarios that combine features across multiple stories. Each references the stories it builds on.
 
-### X.1 — Drift Steering
+### X.1 — First Full Conversation
 
-**Use case:** A project management agent starts discussing technical architecture but gradually drifts into bikeshedding about naming conventions for 30 turns.
+**Combines:** 01 (conversation) + 02 (token awareness)
 
-BranchPolicy detects the content-type switching pattern and auto-branches the tangent. The orchestrator notices the tangent branch has stalled, compresses it into a one-paragraph summary, and merges that summary back to main. The agent is back on track with full context of what was discussed but none of the noise.
+A coding assistant chats across multiple turns, checks budget before each call, persists overnight, and resumes the next day.
 
-> Combines: Policies (6) + Orchestrator (7) + Compression (4)
+### X.2 — Correcting and Protecting
 
-### X.2 — Human Interjection Mid-Conversation
+**Combines:** 04 (curation) + 01 (conversation)
 
-**Use case:** A sales agent is in the middle of a customer conversation when a supervisor notices it's quoting an outdated price. The conversation can't be restarted.
+A support agent's hallucination is edited in-place, the correction is pinned, and the next compile serves clean context.
 
-Pause the orchestrator. EDIT the commit containing the wrong price with the correct one. Pin the correction so it's never compressed away. Resume the orchestrator. The agent's next compile sees the corrected price as if it was always there.
+### X.3 — Debugging a Bad Response
 
-> Combines: Orchestrator (7) + Curation (2) + Policies (6)
+**Combines:** 05 (tracing) + 04 (curation)
 
-### X.3 — Context Forensics
+Walk the log, time-travel to the bad response, reconstruct what the LLM saw, diff against current state.
 
-**Use case:** An agent produced a terrible quarterly report. Somewhere in its 80-turn history, it ingested bad data and every subsequent turn built on that mistake.
+### X.4 — A/B Testing Model Configs
 
-Walk the log backwards. Checkout suspect commits and compile at each point to see exactly what the agent was working with. Diff adjacent commits to find where the bad data entered. Once found, create a branch from just before the bad commit, cherry-pick the good subsequent work, and rebase to produce a clean history without the contamination.
+**Combines:** 06 (branching) + 03 (config) + 05 (tracing)
 
-> Combines: Curation (2) + Branching (3)
+Branch from the same state, run identical prompts with different configs, diff results, query by config to compare.
 
-### X.4 — Long-Running Autonomous Session
+### X.5 — RAG Pipeline
 
-**Use case:** A monitoring agent runs for 8 hours processing alerts. It can't stop for maintenance. Context must stay fresh and storage can't grow unbounded.
+**Combines:** 04 (curation — batch) + 03 (config) + 05 (tracing — provenance)
 
-CompressPolicy fires every time the budget hits 80%. Pinned alerts (severity: critical) survive every compression pass. After each compression, GC reclaims the archived originals older than 1 hour. Over 8 hours, the agent has compressed 4 times, its context is tight, and disk usage stayed flat.
-
-> Combines: Compression (4) + Policies (6) + Orchestrator (7)
-
-### X.5 — Streaming Integration
-
-**Use case:** A real-time coding assistant streams responses token-by-token. You need to compile context before the stream starts, track the partial response as it arrives, and commit the final result cleanly.
-
-Compile context and send to the LLM. As chunks stream back, accumulate them. On stream completion, commit the full response with the actual token usage from the API. If the stream is interrupted, commit what you have as a partial response and EDIT it later when you retry.
-
-> Combines: Foundations (1) + Curation (2)
+Batch retrieval + question atomically, call LLM with specific config, verify provenance on the response.
 
 ### X.6 — Undo / Redo
 
-**Use case:** An agent committed a response the user didn't like. You want to undo it, try a different approach, and if that's worse, redo the original.
+**Combines:** 05 (tracing — reset) + 06 (branching — cherry-pick)
 
-Soft reset to the commit before the bad response (the bad commit is now unreachable but not deleted). Try the new approach and commit it. If it's worse, `reset` back again and cherry-pick the original response from the orphaned commit before GC claims it. Alternatively, hard reset to fully discard everything after a checkpoint.
+Soft reset to undo, try a new approach, cherry-pick the original back if the new one is worse.
 
-> Combines: Curation (2) + Branching (3)
+### X.7 — Drift Steering
+
+**Combines:** 09 (policies) + 10 (orchestrator) + 07 (compression)
+
+BranchPolicy detects drift, orchestrator compresses the tangent, merges summary back to main.
+
+### X.8 — Human Interjection Mid-Conversation
+
+**Combines:** 10 (orchestrator) + 04 (curation) + 09 (policies)
+
+Pause orchestrator, edit the wrong commit, pin the correction, resume.
+
+### X.9 — Context Forensics
+
+**Combines:** 05 (tracing) + 06 (branching)
+
+Walk log to find bad data entry point, branch from before contamination, cherry-pick good work, rebase clean.
+
+### X.10 — Long-Running Autonomous Session
+
+**Combines:** 07 (compression) + 09 (policies) + 10 (orchestrator)
+
+CompressPolicy fires at 80%, pinned alerts survive, GC reclaims archives. Runs for 8 hours unattended.
+
+### X.11 — Streaming Integration
+
+**Combines:** 01 (conversation) + 04 (curation — edit)
+
+Compile and stream from LLM, commit full response on completion, EDIT if interrupted and retried.
+
+### X.12 — Sub-Agent Research Team
+
+**Combines:** 08 (multi-agent) + 06 (branching) + 07 (compression)
+
+Three sub-agents research in parallel, compress their findings, supervisor merges summaries on main.
+
+### X.13 — Fully Autonomous Agent
+
+**Combines:** 09 (policies) + 10 (orchestrator) + 07 (compression) + 06 (branching)
+
+All policies active, orchestrator on triggers, agent self-manages via toolkit, GC runs periodically. Full autopilot.
