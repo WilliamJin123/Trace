@@ -16,13 +16,36 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+from rich.theme import Theme
+
+# Brighter markdown theme for dark terminals — replaces Rich's default
+# magenta/cyan with white/bright_white tones.
+_MARKDOWN_THEME = Theme({
+    "markdown.h1": "bold bright_white underline",
+    "markdown.h2": "bold bright_white",
+    "markdown.h3": "bold bright_white",
+    "markdown.h4": "bright_white italic",
+    "markdown.h5": "bright_white",
+    "markdown.code": "bold white on grey11",
+    "markdown.code_block": "white on grey11",
+    "markdown.block_quote": "bright_white italic",
+    "markdown.list": "bright_white",
+    "markdown.item.bullet": "bold bright_white",
+    "markdown.item.number": "bold bright_white",
+    "markdown.link": "bright_cyan underline",
+    "markdown.link_url": "dim bright_cyan",
+    "markdown.strong": "bold bright_white",
+    "markdown.em": "italic bright_white",
+    "markdown.table.border": "dim white",
+    "markdown.table.header": "bold bright_white",
+})
 
 
 def _make_console(file: Any = None) -> Console:
     """Create a Console, optionally writing to a file-like object."""
     if file is not None:
-        return Console(file=file, force_terminal=True, width=100)
-    return Console()
+        return Console(file=file, force_terminal=True, width=100, theme=_MARKDOWN_THEME)
+    return Console(theme=_MARKDOWN_THEME)
 
 
 def pprint_chat_response(response: Any, *, abbreviate: bool = False, file: Any = None) -> None:
