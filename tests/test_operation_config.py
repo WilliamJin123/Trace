@@ -1138,7 +1138,7 @@ class TestFourLevelResolution:
         assert resolved["temperature"] == 0.1
         assert resolved["top_p"] == 0.2
         assert resolved["max_tokens"] == 100
-        assert resolved["stop_sequences"] == ["s"]  # tuple -> list for LLM compat
+        assert resolved["stop"] == ["s"]  # canonical stop_sequences -> API "stop"
         assert resolved["frequency_penalty"] == 0.3
         assert resolved["presence_penalty"] == 0.4
         assert resolved["top_k"] == 10

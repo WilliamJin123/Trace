@@ -798,9 +798,10 @@ class Tract:
                 if val is not None:
                     resolved[field_name] = val
 
-        # Convert tuples to lists for LLM client compatibility
-        if "stop_sequences" in resolved and isinstance(resolved["stop_sequences"], tuple):
-            resolved["stop_sequences"] = list(resolved["stop_sequences"])
+        # Translate canonical names to OpenAI-compatible API names
+        if "stop_sequences" in resolved:
+            val = resolved.pop("stop_sequences")
+            resolved["stop"] = list(val) if isinstance(val, tuple) else val
 
         # Merge extra kwargs: tract default < operation < llm_config < call kwargs
         # (each level's extra overrides the previous)

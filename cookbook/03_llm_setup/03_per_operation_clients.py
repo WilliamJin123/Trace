@@ -13,6 +13,7 @@ Demonstrates: configure_clients(), OperationClients, per-operation routing,
 """
 
 import os
+import sys
 
 from dotenv import load_dotenv
 
@@ -36,6 +37,8 @@ PRIMARY_MODEL = "gpt-oss-120b"
 
 
 def main():
+    sys.stdout.reconfigure(encoding="utf-8")
+
     # --- Create clients manually ---
     # Each client is an independent HTTP transport with its own auth + base_url.
 
@@ -52,7 +55,9 @@ def main():
     )
 
     try:
-        t = Tract.open(model=PRIMARY_MODEL)
+        # Note: use default_config= (not model=) when not providing api_key,
+        # because model= on open() only takes effect with api_key=.
+        t = Tract.open(default_config=LLMConfig(model=PRIMARY_MODEL))
 
         # --- Assign clients per operation ---
         # No default client needed — each operation routes to its own.

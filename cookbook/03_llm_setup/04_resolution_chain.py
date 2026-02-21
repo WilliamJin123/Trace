@@ -19,6 +19,7 @@ Demonstrates: 4-level resolution, LLMConfig.from_dict(), cross-framework
 """
 
 import os
+import sys
 
 from dotenv import load_dotenv
 
@@ -31,6 +32,10 @@ CEREBRAS_BASE_URL = os.environ["TRACT_OPENAI_BASE_URL"]
 
 
 def main():
+    # Ensure Unicode output works on Windows consoles (cp1252 can't encode
+    # characters like \u2011 that LLMs may return).
+    sys.stdout.reconfigure(encoding="utf-8")
+
     # --- Set up all 4 levels ---
     tract_default = LLMConfig(
         model="gpt-oss-120b",
