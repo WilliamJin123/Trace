@@ -59,8 +59,8 @@ class CommitInfo(BaseModel):
             msg = msg[:57] + "..."
         return f"{short_hash} {msg}"
 
-    def pprint(self) -> None:
+    def pprint(self, *, abbreviate: bool = False) -> None:
         """Pretty-print this commit using rich formatting."""
         from tract.formatting import pprint_commit_info
 
-        pprint_commit_info(self)
+        pprint_commit_info(self, abbreviate=abbreviate)

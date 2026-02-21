@@ -24,11 +24,12 @@ def _make_console(file: Any = None) -> Console:
     return Console()
 
 
-def pprint_chat_response(response: Any, *, file: Any = None) -> None:
+def pprint_chat_response(response: Any, *, abbreviate: bool = False, file: Any = None) -> None:
     """Pretty-print a ChatResponse.
 
     Args:
         response: A ChatResponse instance.
+        abbreviate: If True, truncate long text. Default False (show full).
         file: Optional file-like object for output (used in tests).
     """
     console = _make_console(file)
@@ -36,7 +37,10 @@ def pprint_chat_response(response: Any, *, file: Any = None) -> None:
     body_parts: list[str] = []
 
     # Main text
-    body_parts.append(response.text)
+    text = response.text
+    if abbreviate and len(text) > 200:
+        text = text[:197] + "..."
+    body_parts.append(text)
 
     # Usage line
     if response.usage is not None:
@@ -61,11 +65,12 @@ def pprint_chat_response(response: Any, *, file: Any = None) -> None:
     console.print(panel)
 
 
-def pprint_compiled_context(ctx: Any, *, file: Any = None) -> None:
+def pprint_compiled_context(ctx: Any, *, abbreviate: bool = False, file: Any = None) -> None:
     """Pretty-print a CompiledContext.
 
     Args:
         ctx: A CompiledContext instance.
+        abbreviate: If True, truncate long content. Default False (show full).
         file: Optional file-like object for output (used in tests).
     """
     console = _make_console(file)
@@ -78,7 +83,7 @@ def pprint_compiled_context(ctx: Any, *, file: Any = None) -> None:
 
     for i, msg in enumerate(ctx.messages):
         content = msg.content
-        if len(content) > 80:
+        if abbreviate and len(content) > 80:
             content = content[:77] + "..."
         # Try to get per-message token info if available
         table.add_row(str(i + 1), msg.role, content, "")
@@ -95,11 +100,12 @@ def pprint_compiled_context(ctx: Any, *, file: Any = None) -> None:
     console.print(summary)
 
 
-def pprint_commit_info(info: Any, *, file: Any = None) -> None:
+def pprint_commit_info(info: Any, *, abbreviate: bool = False, file: Any = None) -> None:
     """Pretty-print a CommitInfo.
 
     Args:
         info: A CommitInfo instance.
+        abbreviate: If True, truncate long messages. Default False (show full).
         file: Optional file-like object for output (used in tests).
     """
     console = _make_console(file)
@@ -118,7 +124,7 @@ def pprint_commit_info(info: Any, *, file: Any = None) -> None:
     # Message/content
     if info.message:
         msg = info.message
-        if len(msg) > 120:
+        if abbreviate and len(msg) > 120:
             msg = msg[:117] + "..."
         body_parts.append(f"[bold]Message:[/bold]   {msg}")
 
@@ -142,11 +148,12 @@ def pprint_commit_info(info: Any, *, file: Any = None) -> None:
     console.print(panel)
 
 
-def pprint_status_info(status: Any, *, file: Any = None) -> None:
+def pprint_status_info(status: Any, *, abbreviate: bool = False, file: Any = None) -> None:
     """Pretty-print a StatusInfo.
 
     Args:
         status: A StatusInfo instance.
+        abbreviate: If True, truncate long content. Default False (show full).
         file: Optional file-like object for output (used in tests).
     """
     console = _make_console(file)

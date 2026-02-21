@@ -102,11 +102,11 @@ class CompiledContext:
             f" tokens={self.token_count}, source={self.token_source})"
         )
 
-    def pprint(self) -> None:
+    def pprint(self, *, abbreviate: bool = False) -> None:
         """Pretty-print this compiled context using rich formatting."""
         from tract.formatting import pprint_compiled_context
 
-        pprint_compiled_context(self)
+        pprint_compiled_context(self, abbreviate=abbreviate)
 
 
 @dataclass(frozen=True)
@@ -160,11 +160,11 @@ class ChatResponse:
     def __str__(self) -> str:
         return self.text
 
-    def pprint(self) -> None:
+    def pprint(self, *, abbreviate: bool = False) -> None:
         """Pretty-print this response using rich formatting."""
         from tract.formatting import pprint_chat_response
 
-        pprint_chat_response(self)
+        pprint_chat_response(self, abbreviate=abbreviate)
 
 
 @runtime_checkable
