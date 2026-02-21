@@ -51,3 +51,16 @@ class CommitInfo(BaseModel):
         if isinstance(v, dict):
             return LLMConfig.from_dict(v)
         return v
+
+    def __str__(self) -> str:
+        short_hash = self.commit_hash[:8]
+        msg = self.message or ""
+        if len(msg) > 60:
+            msg = msg[:57] + "..."
+        return f"{short_hash} {msg}"
+
+    def pprint(self) -> None:
+        """Pretty-print this commit using rich formatting."""
+        from tract.formatting import pprint_commit_info
+
+        pprint_commit_info(self)
