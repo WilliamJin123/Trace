@@ -31,3 +31,18 @@ class StatusInfo:
     token_budget_max: int | None  # None if no budget configured
     token_source: str
     recent_commits: list[CommitInfo] = field(default_factory=list)  # last 3 commits
+
+    def __str__(self) -> str:
+        head = self.head_hash[:8] if self.head_hash else "None"
+        branch = self.branch_name or "detached"
+        budget_str = ""
+        if self.token_budget_max:
+            pct = self.token_count / self.token_budget_max * 100
+            budget_str = f"/{self.token_budget_max} ({pct:.0f}%)"
+        return f"{branch} @ {head} | {self.commit_count} commits | {self.token_count}{budget_str} tokens"
+
+    def pprint(self) -> None:
+        """Pretty-print this status using rich formatting."""
+        from tract.formatting import pprint_status_info
+
+        pprint_status_info(self)
