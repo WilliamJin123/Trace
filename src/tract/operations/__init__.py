@@ -22,7 +22,7 @@ def row_to_info(row: CommitRow) -> CommitInfo:
         content_hash=row.content_hash,
         content_type=row.content_type,
         operation=row.operation,
-        response_to=row.response_to,
+        edit_target=row.edit_target,
         message=row.message,
         token_count=row.token_count,
         metadata=row.metadata_json,

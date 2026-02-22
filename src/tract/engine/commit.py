@@ -97,7 +97,7 @@ class CommitEngine:
         content: BaseModel,
         operation: CommitOperation = CommitOperation.APPEND,
         message: str | None = None,
-        response_to: str | None = None,
+        edit_target: str | None = None,
         metadata: dict | None = None,
         generation_config: dict | None = None,
     ) -> CommitInfo:
@@ -108,7 +108,7 @@ class CommitEngine:
                 or a custom registered type).
             operation: APPEND (new content) or EDIT (replace existing).
             message: Optional human-readable commit message.
-            response_to: For EDIT operations, the hash of the commit being edited.
+            edit_target: For EDIT operations, the hash of the commit being edited.
             metadata: Optional arbitrary metadata dict.
 
         Returns:
@@ -170,21 +170,21 @@ class CommitEngine:
             content_type=content_type,
             operation=operation_value,
             timestamp_iso=timestamp_iso,
-            response_to=response_to,
+            edit_target=edit_target,
         )
 
         # 9. Validate edit constraints
         if operation == CommitOperation.EDIT:
-            if response_to is None:
-                raise EditTargetError("EDIT operation requires response_to to be set")
-            target_commit = self._commit_repo.get(response_to)
+            if edit_target is None:
+                raise EditTargetError("EDIT operation requires edit_target to be set")
+            target_commit = self._commit_repo.get(edit_target)
             if target_commit is None:
                 raise EditTargetError(
-                    f"EDIT target commit not found: {response_to}"
+                    f"EDIT target commit not found: {edit_target}"
                 )
             if target_commit.operation == CommitOperation.EDIT:
                 raise EditTargetError(
-                    f"Cannot edit an EDIT commit: {response_to}"
+                    f"Cannot edit an EDIT commit: {edit_target}"
                 )
 
         # 10. Create CommitRow and save
@@ -195,7 +195,7 @@ class CommitEngine:
             content_hash=c_hash,
             content_type=content_type,
             operation=operation,
-            response_to=response_to,
+            edit_target=edit_target,
             message=message,
             token_count=token_count,
             metadata_json=metadata,
@@ -227,7 +227,7 @@ class CommitEngine:
             content_hash=c_hash,
             content_type=content_type,
             operation=operation,
-            response_to=response_to,
+            edit_target=edit_target,
             message=message,
             token_count=token_count,
             metadata=metadata,
@@ -313,7 +313,7 @@ class CommitEngine:
             content_hash=c_hash,
             content_type=content_type,
             operation=CommitOperation.APPEND,
-            response_to=None,
+            edit_target=None,
             message=message,
             token_count=token_count,
             metadata_json=metadata,
@@ -336,7 +336,7 @@ class CommitEngine:
             content_hash=c_hash,
             content_type=content_type,
             operation=CommitOperation.APPEND,
-            response_to=None,
+            edit_target=None,
             message=message,
             token_count=token_count,
             metadata=metadata,
@@ -432,7 +432,7 @@ class CommitEngine:
             content_hash=row.content_hash,
             content_type=row.content_type,
             operation=row.operation,
-            response_to=row.response_to,
+            edit_target=row.edit_target,
             message=row.message,
             token_count=row.token_count,
             metadata=row.metadata_json,

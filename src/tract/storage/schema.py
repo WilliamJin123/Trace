@@ -63,7 +63,7 @@ class CommitRow(Base):
     )
     content_type: Mapped[str] = mapped_column(String(50), nullable=False)
     operation: Mapped[CommitOperation] = mapped_column(nullable=False)
-    response_to: Mapped[Optional[str]] = mapped_column(
+    edit_target: Mapped[Optional[str]] = mapped_column(
         String(64),
         ForeignKey("commits.commit_hash", ondelete="SET NULL"),
         nullable=True,
@@ -85,7 +85,7 @@ class CommitRow(Base):
     __table_args__ = (
         Index("ix_commits_tract_time", "tract_id", "created_at"),
         Index("ix_commits_tract_type", "tract_id", "content_type"),
-        Index("ix_commits_response_to", "response_to"),
+        Index("ix_commits_edit_target", "edit_target"),
     )
 
 

@@ -298,14 +298,14 @@ class TestConflictDetection:
         t.commit(
             DialogueContent(role="assistant", text="feature edit"),
             operation=CommitOperation.EDIT,
-            response_to=base_hash,
+            edit_target=base_hash,
         )
 
         t.switch("main")
         t.commit(
             DialogueContent(role="assistant", text="main edit"),
             operation=CommitOperation.EDIT,
-            response_to=base_hash,
+            edit_target=base_hash,
         )
 
         result = t.merge("feature")
@@ -328,7 +328,7 @@ class TestConflictDetection:
         t.commit(
             DialogueContent(role="assistant", text="feature edit"),
             operation=CommitOperation.EDIT,
-            response_to=base_hash,
+            edit_target=base_hash,
         )
 
         # Main branch: SKIP the base commit and add something
@@ -353,7 +353,7 @@ class TestConflictDetection:
         t.commit(
             DialogueContent(role="assistant", text="feature edit"),
             operation=CommitOperation.EDIT,
-            response_to=base_hash,
+            edit_target=base_hash,
         )
 
         # Main branch: just APPEND
@@ -377,7 +377,7 @@ class TestConflictDetection:
         t.commit(
             DialogueContent(role="user", text="feature edited"),
             operation=CommitOperation.EDIT,
-            response_to=feat_commit.commit_hash,
+            edit_target=feat_commit.commit_hash,
         )
 
         # Main branch: just APPEND
@@ -400,14 +400,14 @@ class TestConflictDetection:
         t.commit(
             DialogueContent(role="assistant", text="feature version"),
             operation=CommitOperation.EDIT,
-            response_to=base_hash,
+            edit_target=base_hash,
         )
 
         t.switch("main")
         t.commit(
             DialogueContent(role="assistant", text="main version"),
             operation=CommitOperation.EDIT,
-            response_to=base_hash,
+            edit_target=base_hash,
         )
 
         result = t.merge("feature")
@@ -436,14 +436,14 @@ class TestConflictResolution:
         t.commit(
             DialogueContent(role="assistant", text="feature edit"),
             operation=CommitOperation.EDIT,
-            response_to=base.commit_hash,
+            edit_target=base.commit_hash,
         )
 
         t.switch("main")
         t.commit(
             DialogueContent(role="assistant", text="main edit"),
             operation=CommitOperation.EDIT,
-            response_to=base.commit_hash,
+            edit_target=base.commit_hash,
         )
 
         result = t.merge("feature")
@@ -463,14 +463,14 @@ class TestConflictResolution:
         t.commit(
             DialogueContent(role="assistant", text="feature edit"),
             operation=CommitOperation.EDIT,
-            response_to=base.commit_hash,
+            edit_target=base.commit_hash,
         )
 
         t.switch("main")
         t.commit(
             DialogueContent(role="assistant", text="main edit"),
             operation=CommitOperation.EDIT,
-            response_to=base.commit_hash,
+            edit_target=base.commit_hash,
         )
 
         resolver = make_mock_resolver(content_text="resolved text")
@@ -490,14 +490,14 @@ class TestConflictResolution:
         t.commit(
             DialogueContent(role="assistant", text="feature edit"),
             operation=CommitOperation.EDIT,
-            response_to=base.commit_hash,
+            edit_target=base.commit_hash,
         )
 
         t.switch("main")
         t.commit(
             DialogueContent(role="assistant", text="main edit"),
             operation=CommitOperation.EDIT,
-            response_to=base.commit_hash,
+            edit_target=base.commit_hash,
         )
 
         # Get conflicts without resolver
@@ -528,14 +528,14 @@ class TestConflictResolution:
         t.commit(
             DialogueContent(role="assistant", text="feature edit"),
             operation=CommitOperation.EDIT,
-            response_to=base.commit_hash,
+            edit_target=base.commit_hash,
         )
 
         t.switch("main")
         t.commit(
             DialogueContent(role="assistant", text="main edit"),
             operation=CommitOperation.EDIT,
-            response_to=base.commit_hash,
+            edit_target=base.commit_hash,
         )
 
         result = t.merge("feature")
@@ -555,14 +555,14 @@ class TestConflictResolution:
         t.commit(
             DialogueContent(role="assistant", text="feature edit"),
             operation=CommitOperation.EDIT,
-            response_to=base.commit_hash,
+            edit_target=base.commit_hash,
         )
 
         t.switch("main")
         t.commit(
             DialogueContent(role="assistant", text="main edit"),
             operation=CommitOperation.EDIT,
-            response_to=base.commit_hash,
+            edit_target=base.commit_hash,
         )
 
         resolver = make_mock_resolver(content_text="auto resolved")
@@ -598,14 +598,14 @@ class TestConflictResolution:
         t.commit(
             DialogueContent(role="assistant", text="feature edit"),
             operation=CommitOperation.EDIT,
-            response_to=base.commit_hash,
+            edit_target=base.commit_hash,
         )
 
         t.switch("main")
         t.commit(
             DialogueContent(role="assistant", text="main edit"),
             operation=CommitOperation.EDIT,
-            response_to=base.commit_hash,
+            edit_target=base.commit_hash,
         )
 
         result = t.merge("feature", delete_branch=True)
@@ -625,14 +625,14 @@ class TestConflictResolution:
         t.commit(
             DialogueContent(role="assistant", text="feature edit"),
             operation=CommitOperation.EDIT,
-            response_to=base.commit_hash,
+            edit_target=base.commit_hash,
         )
 
         t.switch("main")
         t.commit(
             DialogueContent(role="assistant", text="main edit"),
             operation=CommitOperation.EDIT,
-            response_to=base.commit_hash,
+            edit_target=base.commit_hash,
         )
 
         resolver = make_mock_resolver(action="abort", reasoning="cannot resolve")
@@ -683,14 +683,14 @@ class TestMergeIntegration:
         t.commit(
             DialogueContent(role="assistant", text="feature edit"),
             operation=CommitOperation.EDIT,
-            response_to=base.commit_hash,
+            edit_target=base.commit_hash,
         )
 
         t.switch("main")
         t.commit(
             DialogueContent(role="assistant", text="main edit"),
             operation=CommitOperation.EDIT,
-            response_to=base.commit_hash,
+            edit_target=base.commit_hash,
         )
 
         resolver = make_mock_resolver(

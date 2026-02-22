@@ -134,14 +134,14 @@ def detect_conflicts(
 
     # Classify commits by operation
     a_edits = {
-        r.response_to: (r, info)
+        r.edit_target: (r, info)
         for r, info in zip(branch_a_commits, a_infos)
-        if r.operation == CommitOperation.EDIT and r.response_to is not None
+        if r.operation == CommitOperation.EDIT and r.edit_target is not None
     }
     b_edits = {
-        r.response_to: (r, info)
+        r.edit_target: (r, info)
         for r, info in zip(branch_b_commits, b_infos)
-        if r.operation == CommitOperation.EDIT and r.response_to is not None
+        if r.operation == CommitOperation.EDIT and r.edit_target is not None
     }
 
     a_commit_hashes = {r.commit_hash for r in branch_a_commits}

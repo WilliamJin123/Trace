@@ -682,7 +682,7 @@ class Tract:
         *,
         operation: CommitOperation = CommitOperation.APPEND,
         message: str | None = None,
-        response_to: str | None = None,
+        edit_target: str | None = None,
         metadata: dict | None = None,
         generation_config: dict | None = None,
         tools: list[dict] | None = None,
@@ -693,7 +693,7 @@ class Tract:
             content: A Pydantic content model *or* a dict (auto-validated).
             operation: ``APPEND`` (default) or ``EDIT``.
             message: Optional human-readable message.
-            response_to: For ``EDIT``, the hash of the commit being replaced.
+            edit_target: For ``EDIT``, the hash of the commit being replaced.
             metadata: Optional arbitrary metadata.
             generation_config: Optional LLM generation config (temperature,
                 model, top_p, etc.).  Immutable once committed.
@@ -727,7 +727,7 @@ class Tract:
             content=content,
             operation=operation,
             message=message,
-            response_to=response_to,
+            edit_target=edit_target,
             metadata=metadata,
             generation_config=generation_config,
         )
@@ -1732,7 +1732,7 @@ class Tract:
 
         Args:
             commit_a: First commit (hash or prefix).  If None and commit_b is
-                an EDIT commit, auto-resolves to the edit target (response_to).
+                an EDIT commit, auto-resolves to the edit target (edit_target).
                 If None and commit_b is not EDIT, uses commit_b's parent.
             commit_b: Second commit (hash or prefix).  Defaults to HEAD.
 
@@ -1762,8 +1762,8 @@ class Tract:
 
         # Auto-resolve commit_a
         if commit_a is None:
-            if row_b.operation == CommitOperation.EDIT and row_b.response_to:
-                commit_a = row_b.response_to
+            if row_b.operation == CommitOperation.EDIT and row_b.edit_target:
+                commit_a = row_b.edit_target
             elif row_b.parent_hash:
                 commit_a = row_b.parent_hash
             else:

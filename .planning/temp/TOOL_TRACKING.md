@@ -268,7 +268,7 @@ def commit(
     *,
     operation: CommitOperation = CommitOperation.APPEND,
     message: str | None = None,
-    response_to: str | None = None,
+    edit_target: str | None = None,
     metadata: dict | None = None,
     generation_config: dict | None = None,
     tools: list[dict] | None = None,  # <-- NEW

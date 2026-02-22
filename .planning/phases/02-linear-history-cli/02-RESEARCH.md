@@ -279,7 +279,7 @@ Problems that look simple but have existing solutions:
 ### Pitfall 3: Diff on EDIT Commits Without Auto-Resolution
 **What goes wrong:** User does `tract diff <edit-commit-hash>` and gets confused because the EDIT commit's content doesn't make sense in isolation.
 **Why it happens:** EDIT commits replace another commit's content; diffing an EDIT against its parent shows the new content vs the previous commit, not the edit delta.
-**How to avoid:** CONTEXT.md decision: "EDIT commits auto-resolve: tract diff <edit-commit> automatically finds and diffs against the original target." Implement this by checking if commit is an EDIT, then using `response_to` to find the target, and diffing target's original content vs edit's new content.
+**How to avoid:** CONTEXT.md decision: "EDIT commits auto-resolve: tract diff <edit-commit> automatically finds and diffs against the original target." Implement this by checking if commit is an EDIT, then using `edit_target` to find the target, and diffing target's original content vs edit's new content.
 **Warning signs:** Diff output that doesn't show what the edit actually changed.
 
 ### Pitfall 4: Token Count Ambiguity in Log vs Status

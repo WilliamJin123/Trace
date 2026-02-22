@@ -186,7 +186,7 @@ class TestImportCommitEdit:
     """Import-commit EDIT commit tests."""
 
     def test_import_commit_edit_with_target_on_branch(self):
-        """Import-commit EDIT commit where response_to exists on current branch."""
+        """Import-commit EDIT commit where edit_target exists on current branch."""
         t = Tract.open()
         base = t.commit(InstructionContent(text="base instruction"))
 
@@ -195,7 +195,7 @@ class TestImportCommitEdit:
         edit = t.commit(
             InstructionContent(text="edited instruction"),
             operation=CommitOperation.EDIT,
-            response_to=base.commit_hash,
+            edit_target=base.commit_hash,
         )
 
         t.switch("main")
@@ -207,7 +207,7 @@ class TestImportCommitEdit:
         assert result.new_commit is not None
         assert len(result.issues) == 0
         assert result.new_commit.operation == CommitOperation.EDIT
-        assert result.new_commit.response_to == base.commit_hash
+        assert result.new_commit.edit_target == base.commit_hash
         t.close()
 
     def test_import_commit_edit_missing_target(self):
@@ -222,7 +222,7 @@ class TestImportCommitEdit:
         edit = t.commit(
             DialogueContent(role="user", text="edited feature only"),
             operation=CommitOperation.EDIT,
-            response_to=feature_only.commit_hash,
+            edit_target=feature_only.commit_hash,
         )
 
         t.switch("main")
@@ -243,7 +243,7 @@ class TestImportCommitEdit:
         edit = t.commit(
             DialogueContent(role="user", text="edited feature only"),
             operation=CommitOperation.EDIT,
-            response_to=feature_only.commit_hash,
+            edit_target=feature_only.commit_hash,
         )
 
         t.switch("main")
@@ -266,7 +266,7 @@ class TestImportCommitEdit:
         edit = t.commit(
             DialogueContent(role="user", text="edited feature only"),
             operation=CommitOperation.EDIT,
-            response_to=feature_only.commit_hash,
+            edit_target=feature_only.commit_hash,
         )
 
         t.switch("main")
@@ -383,7 +383,7 @@ class TestRebaseSafetyChecks:
         t.commit(
             DialogueContent(role="user", text="edited feature only"),
             operation=CommitOperation.EDIT,
-            response_to=feature_only.commit_hash,
+            edit_target=feature_only.commit_hash,
         )
 
         t.switch("main")
@@ -404,7 +404,7 @@ class TestRebaseSafetyChecks:
         t.commit(
             DialogueContent(role="user", text="edited feature only"),
             operation=CommitOperation.EDIT,
-            response_to=feature_only.commit_hash,
+            edit_target=feature_only.commit_hash,
         )
 
         t.switch("main")
@@ -428,7 +428,7 @@ class TestRebaseSafetyChecks:
         t.commit(
             DialogueContent(role="user", text="edited feature only"),
             operation=CommitOperation.EDIT,
-            response_to=feature_only.commit_hash,
+            edit_target=feature_only.commit_hash,
         )
 
         t.switch("main")
@@ -449,7 +449,7 @@ class TestRebaseSafetyChecks:
         t.commit(
             DialogueContent(role="user", text="edited"),
             operation=CommitOperation.EDIT,
-            response_to=feature_only.commit_hash,
+            edit_target=feature_only.commit_hash,
         )
 
         t.switch("main")
@@ -471,7 +471,7 @@ class TestRebaseSafetyChecks:
         t.commit(
             DialogueContent(role="user", text="edited"),
             operation=CommitOperation.EDIT,
-            response_to=feature_only.commit_hash,
+            edit_target=feature_only.commit_hash,
         )
 
         t.switch("main")
@@ -583,7 +583,7 @@ class TestIntegration:
         t.commit(
             InstructionContent(text="edited base"),
             operation=CommitOperation.EDIT,
-            response_to=base.commit_hash,
+            edit_target=base.commit_hash,
         )
 
         t.switch("main")

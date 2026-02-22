@@ -285,9 +285,9 @@ def _full_clone(
     if not all_commits:
         return None
 
-    # Note: response_to relationships are not preserved during clone.
-    # Cloned commits get new hashes, so old response_to values become invalid.
-    # A hash remapping could be added here if response_to fidelity is needed.
+    # Note: edit_target relationships are not preserved during clone.
+    # Cloned commits get new hashes, so old edit_target values become invalid.
+    # A hash remapping could be added here if edit_target fidelity is needed.
     last_hash = None
     for commit_row in all_commits:
         # Read blob content

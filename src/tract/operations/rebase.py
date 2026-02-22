@@ -58,7 +58,7 @@ def replay_commit(
     commit_engine: CommitEngine,
     blob_repo: BlobRepository,
     *,
-    response_to_remap: str | None = None,
+    edit_target_remap: str | None = None,
 ) -> CommitInfo:
     """Replay a single commit with a new parent, creating a new commit.
 
@@ -70,7 +70,7 @@ def replay_commit(
         new_parent_hash: The new parent hash (for documentation; HEAD must be here).
         commit_engine: Commit engine for creating the new commit.
         blob_repo: Blob repository for loading original content.
-        response_to_remap: If provided, override the response_to field.
+        edit_target_remap: If provided, override the edit_target field.
 
     Returns:
         CommitInfo for the newly created replayed commit.
@@ -86,17 +86,17 @@ def replay_commit(
             f"blob {original_row.content_hash} not found or invalid"
         )
 
-    # Determine response_to
-    response_to = response_to_remap
-    if response_to is None and original_row.response_to is not None:
-        response_to = original_row.response_to
+    # Determine edit_target
+    edit_target = edit_target_remap
+    if edit_target is None and original_row.edit_target is not None:
+        edit_target = original_row.edit_target
 
     # Create the new commit via the engine (engine reads HEAD for parent)
     return commit_engine.create_commit(
         content=content,  # type: ignore[arg-type]
         operation=original_row.operation,
         message=original_row.message,
-        response_to=response_to if original_row.operation == CommitOperation.EDIT else None,
+        edit_target=edit_target if original_row.operation == CommitOperation.EDIT else None,
         metadata=dict(original_row.metadata_json) if original_row.metadata_json else None,
         generation_config=(
             dict(original_row.generation_config_json)
@@ -160,19 +160,19 @@ def import_commit(
     # Check for issues
     issues: list[ImportIssue] = []
 
-    if original_row.operation == CommitOperation.EDIT and original_row.response_to is not None:
-        # Check if the response_to target exists in current branch's history
+    if original_row.operation == CommitOperation.EDIT and original_row.edit_target is not None:
+        # Check if the edit_target exists in current branch's history
         if current_head is not None:
             ancestors = get_all_ancestors(current_head, commit_repo, parent_repo)
-            if original_row.response_to not in ancestors:
+            if original_row.edit_target not in ancestors:
                 issues.append(
                     ImportIssue(
                         issue_type="edit_target_missing",
                         commit=original_info,
                         target_branch_head=target_head_info,
-                        missing_target=original_row.response_to,
+                        missing_target=original_row.edit_target,
                         description=(
-                            f"EDIT commit targets {original_row.response_to[:12]}... "
+                            f"EDIT commit targets {original_row.edit_target[:12]}... "
                             f"which does not exist on the current branch"
                         ),
                     )
@@ -184,9 +184,9 @@ def import_commit(
                     issue_type="edit_target_missing",
                     commit=original_info,
                     target_branch_head=None,
-                    missing_target=original_row.response_to,
+                    missing_target=original_row.edit_target,
                     description=(
-                        f"EDIT commit targets {original_row.response_to[:12]}... "
+                        f"EDIT commit targets {original_row.edit_target[:12]}... "
                         f"but current branch has no commits"
                     ),
                 )
@@ -226,7 +226,7 @@ def import_commit(
         new_content = FreeformContent(payload={"text": resolved_content})
         meta = dict(original_row.metadata_json) if original_row.metadata_json else {}
         meta["original_operation"] = "EDIT"
-        meta["original_response_to"] = original_row.response_to
+        meta["original_edit_target"] = original_row.edit_target
         new_info = commit_engine.create_commit(
             content=new_content,
             operation=CommitOperation.APPEND,
@@ -366,16 +366,16 @@ def rebase(
     target_tip_info = _row_to_info(target_tip_row) if target_tip_row else None
 
     for original_row, original_info in zip(commits_to_replay, original_infos):
-        if original_row.operation == CommitOperation.EDIT and original_row.response_to is not None:
+        if original_row.operation == CommitOperation.EDIT and original_row.edit_target is not None:
             # Check if EDIT target exists in target branch history
-            if original_row.response_to not in target_ancestors:
+            if original_row.edit_target not in target_ancestors:
                 warnings.append(
                     RebaseWarning(
                         warning_type="edit_target_missing",
                         commit=original_info,
                         new_base=target_tip_info,
                         description=(
-                            f"EDIT commit targets {original_row.response_to[:12]}... "
+                            f"EDIT commit targets {original_row.edit_target[:12]}... "
                             f"which does not exist on target branch '{target_branch}'"
                         ),
                     )

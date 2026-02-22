@@ -239,7 +239,7 @@ class SqliteCommitRepository(CommitRepository):
         """Delete a commit by hash. Also cleans up related rows.
 
         Removes CommitParentRow, AnnotationRow, RefRow pointing to this
-        commit, and nullifies parent_hash/response_to references from
+        commit, and nullifies parent_hash/edit_target references from
         other commits before deleting the commit itself.
         """
         # Delete CommitParentRow entries where this commit is child or parent
@@ -271,12 +271,12 @@ class SqliteCommitRepository(CommitRepository):
         for child in self._session.execute(child_stmts).scalars().all():
             child.parent_hash = None
 
-        # Nullify response_to references (SET NULL semantics)
+        # Nullify edit_target references (SET NULL semantics)
         resp_stmts = select(CommitRow).where(
-            CommitRow.response_to == commit_hash
+            CommitRow.edit_target == commit_hash
         )
         for resp in self._session.execute(resp_stmts).scalars().all():
-            resp.response_to = None
+            resp.edit_target = None
 
         # Flush all modifications BEFORE deleting the commit itself
         self._session.flush()

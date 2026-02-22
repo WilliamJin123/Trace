@@ -52,7 +52,7 @@ compile(order=[...]) reorders messages without mutating DAG; gc() removes unreac
 - Partial ordering supported: commits not in `order` are appended at their original relative positions
 - Added `check_reorder_safety()` in `operations/compression.py` that detects:
   - `edit_before_target`: EDIT commit appears before its target in reordered sequence
-  - `response_chain_break`: commit references response_to that's not in the reordered set
+  - `response_chain_break`: commit references edit_target that's not in the reordered set
 - 13 tests covering basic reordering, safety checks (direct + integrated), and edge cases
 
 ### Task 2: Garbage collection operation + Tract facade
@@ -75,7 +75,7 @@ compile(order=[...]) reorders messages without mutating DAG; gc() removes unreac
 **1. [Rule 1 - Bug] FK constraint violations during commit deletion**
 - **Found during:** Task 2 implementation
 - **Issue:** SQLite FK enforcement prevents deleting commits that are referenced by annotations, refs (ORIG_HEAD), and other commits
-- **Fix:** Extended `CommitRepository.delete()` to clean up all FK references: AnnotationRow entries, RefRow entries (e.g., ORIG_HEAD), child parent_hash nullification, and response_to nullification before the actual delete
+- **Fix:** Extended `CommitRepository.delete()` to clean up all FK references: AnnotationRow entries, RefRow entries (e.g., ORIG_HEAD), child parent_hash nullification, and edit_target nullification before the actual delete
 - **Files modified:** src/tract/storage/sqlite.py
 - **Commit:** 9fa68b8
 

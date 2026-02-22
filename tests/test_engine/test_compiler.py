@@ -143,13 +143,13 @@ class TestUniqueEdgeCases:
         commit_engine.create_commit(
             DialogueContent(role="user", text="Version 2"),
             operation=CommitOperation.EDIT,
-            response_to=original.commit_hash,
+            edit_target=original.commit_hash,
         )
         # Second edit (latest)
         commit_engine.create_commit(
             DialogueContent(role="user", text="Version 3"),
             operation=CommitOperation.EDIT,
-            response_to=original.commit_hash,
+            edit_target=original.commit_hash,
         )
 
         head = commit_engine._ref_repo.get_head(TRACT_ID)
@@ -164,7 +164,7 @@ class TestUniqueEdgeCases:
         commit_engine.create_commit(
             DialogueContent(role="user", text="new content"),
             operation=CommitOperation.EDIT,
-            response_to=original.commit_hash,
+            edit_target=original.commit_hash,
         )
 
         head = commit_engine._ref_repo.get_head(TRACT_ID)

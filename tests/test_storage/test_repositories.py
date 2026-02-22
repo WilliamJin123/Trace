@@ -43,7 +43,7 @@ def _make_commit(
     parent_hash: str | None = None,
     content_type: str = "instruction",
     operation: CommitOperation = CommitOperation.APPEND,
-    response_to: str | None = None,
+    edit_target: str | None = None,
     created_at: datetime | None = None,
 ):
     """Create a CommitRow instance."""
@@ -54,7 +54,7 @@ def _make_commit(
         content_hash=content_hash,
         content_type=content_type,
         operation=operation,
-        response_to=response_to,
+        edit_target=edit_target,
         token_count=4,
         created_at=created_at or datetime.now(timezone.utc),
     )

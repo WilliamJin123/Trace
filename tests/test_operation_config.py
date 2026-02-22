@@ -412,7 +412,7 @@ class TestMergeIntegration:
         t.commit(
             DialogueContent(role="assistant", text="feature edit"),
             operation=CommitOperation.EDIT,
-            response_to=base.commit_hash,
+            edit_target=base.commit_hash,
         )
 
         # Back to main with edit
@@ -420,7 +420,7 @@ class TestMergeIntegration:
         t.commit(
             DialogueContent(role="assistant", text="main edit"),
             operation=CommitOperation.EDIT,
-            response_to=base.commit_hash,
+            edit_target=base.commit_hash,
         )
 
         return t, mock

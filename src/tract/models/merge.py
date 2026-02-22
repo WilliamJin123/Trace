@@ -106,7 +106,7 @@ class ImportIssue(BaseModel):
     issue_type: Literal["edit_target_missing", "context_dependency"]
     commit: CommitInfo  # The commit being imported
     target_branch_head: Optional[CommitInfo] = None
-    missing_target: Optional[str] = None  # The response_to hash that doesn't exist on target
+    missing_target: Optional[str] = None  # The edit_target hash that doesn't exist on target
     description: str = ""
 
     model_config = {"arbitrary_types_allowed": True}

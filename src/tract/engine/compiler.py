@@ -249,7 +249,7 @@ class DefaultContextCompiler:
         *,
         at_time: datetime | None = None,
     ) -> dict[str, CommitRow]:
-        """Build map of response_to -> latest edit commit.
+        """Build map of edit_target -> latest edit commit.
 
         If multiple edits target the same commit, the latest one (by created_at) wins.
         """
@@ -257,13 +257,13 @@ class DefaultContextCompiler:
 
         edit_map: dict[str, CommitRow] = {}
         for c in commits:
-            if c.operation == CommitOperation.EDIT and c.response_to is not None:
+            if c.operation == CommitOperation.EDIT and c.edit_target is not None:
                 # Only include edits within the at_time boundary
                 if at_time is not None and _normalize_dt(c.created_at) > _normalize_dt(at_time):
                     continue
-                existing = edit_map.get(c.response_to)
+                existing = edit_map.get(c.edit_target)
                 if existing is None or c.created_at > existing.created_at:
-                    edit_map[c.response_to] = c
+                    edit_map[c.edit_target] = c
         return edit_map
 
     def _build_priority_map(

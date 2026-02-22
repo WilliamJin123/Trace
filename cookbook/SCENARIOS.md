@@ -173,9 +173,9 @@ Shaping what the LLM sees without losing history.
 
 **Use case:** The assistant said "60 day return policy" but it's 30 days. Fix it without cluttering the conversation.
 
-Commit with `operation=EDIT` and `response_to=original_hash`. The next `compile()` serves the corrected content as if the original never existed. The original commit is still in history for audit.
+Commit with `operation=EDIT` and `edit_target=original_hash`. The next `compile()` serves the corrected content as if the original never existed. The original commit is still in history for audit.
 
-> `commit(operation=EDIT, response_to=original_hash)`
+> `commit(operation=EDIT, edit_target=original_hash)`
 
 ### 04/02 — Pin, Skip, and Reset Annotations
 
@@ -267,7 +267,7 @@ Three merge modes: **fast-forward** (branch is ahead of main, just advance the p
 
 **Use case:** Grab one useful commit from an experiment, and update a stale branch to include the latest main.
 
-`cherry_pick(hash)` copies a single commit onto the current branch. `rebase("main")` replays the current branch's commits on top of main's tip — with safety checks warning if response_to chains would break.
+`cherry_pick(hash)` copies a single commit onto the current branch. `rebase("main")` replays the current branch's commits on top of main's tip — with safety checks warning if edit_target chains would break.
 
 > `cherry_pick(hash)`, `rebase("main")`
 

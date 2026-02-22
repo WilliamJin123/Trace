@@ -169,7 +169,7 @@ Problems that look simple but have existing solutions:
 ### Pitfall 5: Shorthand Methods and EDIT Operations
 **What goes wrong:** `t.system("text")` always creates APPEND commits. Users might expect to be able to edit via shorthand.
 **Why it happens:** Shorthand methods intentionally only support the common case (APPEND).
-**How to avoid:** Document that for EDIT operations, users should use `t.commit()` directly. The shorthand methods should not accept `operation` or `response_to` parameters -- that would defeat the purpose of being simple.
+**How to avoid:** Document that for EDIT operations, users should use `t.commit()` directly. The shorthand methods should not accept `operation` or `edit_target` parameters -- that would defeat the purpose of being simple.
 
 ### Pitfall 6: Cache Invalidation with New CompiledContext Methods
 **What goes wrong:** Nothing, actually. `to_dicts()`, `to_openai()`, `to_anthropic()` are pure read-only transformations on the already-compiled result. They don't interact with the cache at all.

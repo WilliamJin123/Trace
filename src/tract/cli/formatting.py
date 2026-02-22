@@ -76,8 +76,8 @@ def format_log_verbose(entries: list[CommitInfo], console: Console) -> None:
 
         if entry.parent_hash:
             console.print(f"  Parent:    {entry.parent_hash[:8]}")
-        if entry.response_to:
-            console.print(f"  Edits:     {entry.response_to[:8]}")
+        if entry.edit_target:
+            console.print(f"  Edits:     {entry.edit_target[:8]}")
         if entry.message:
             console.print(f"  Message:   {escape(entry.message)}")
         if entry.generation_config:

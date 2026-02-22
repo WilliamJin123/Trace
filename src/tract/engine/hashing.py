@@ -54,13 +54,13 @@ def commit_hash(
     content_type: str,
     operation: str,
     timestamp_iso: str,
-    response_to: str | None = None,
+    edit_target: str | None = None,
     extra_parents: list[str] | None = None,
 ) -> str:
     """Compute SHA-256 hash of structured commit data.
 
     The commit hash is computed from a canonical JSON dict containing
-    all identity-relevant fields. response_to is only included when not None.
+    all identity-relevant fields. edit_target is only included when not None.
 
     For merge commits, extra_parents contains additional parent hashes
     beyond the primary parent_hash. When present, all parent hashes
@@ -73,7 +73,7 @@ def commit_hash(
         content_type: Content type discriminator string.
         operation: Commit operation ("append" or "edit").
         timestamp_iso: ISO 8601 timestamp string.
-        response_to: Hash of the commit being edited, or None.
+        edit_target: Hash of the commit being edited, or None.
         extra_parents: Additional parent hashes for merge commits.
 
     Returns:
@@ -86,8 +86,8 @@ def commit_hash(
         "operation": operation,
         "timestamp_iso": timestamp_iso,
     }
-    if response_to is not None:
-        data["response_to"] = response_to
+    if edit_target is not None:
+        data["edit_target"] = edit_target
     if extra_parents:
         data["parent_hashes"] = sorted([parent_hash or ""] + extra_parents)
 

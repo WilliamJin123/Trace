@@ -119,7 +119,7 @@ class TestSafetyChecks:
         c2 = t.commit(
             DialogueContent(role="user", text="Edited"),
             operation=CommitOperation.EDIT,
-            response_to=c1.commit_hash,
+            edit_target=c1.commit_hash,
         )
 
         # Call check_reorder_safety directly with EDIT before target
@@ -135,13 +135,13 @@ class TestSafetyChecks:
         assert edit_warnings[0].severity == "structural"
 
     def test_safety_response_chain_break_direct(self):
-        """Direct: response_to target not in order produces chain_break warning."""
+        """Direct: edit_target target not in order produces chain_break warning."""
         t = Tract.open()
         c1 = t.commit(DialogueContent(role="user", text="Original"))
         c2 = t.commit(
             DialogueContent(role="user", text="Edited"),
             operation=CommitOperation.EDIT,
-            response_to=c1.commit_hash,
+            edit_target=c1.commit_hash,
         )
 
         # Only include c2 (edit), not c1 (target) -- chain break

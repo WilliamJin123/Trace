@@ -26,7 +26,7 @@ score: 17/17 must-haves verified
 | 6 | View log with token counts and op_filter | VERIFIED | Tract.log(limit=20, op_filter). 5 tests. |
 | 7 | Status with HEAD, branch, tokens, budget | VERIFIED | StatusInfo dataclass. 8 tests. |
 | 8 | Diff with textual differences and token deltas | VERIFIED | SequenceMatcher + DiffResult. 14 tests. |
-| 9 | EDIT auto-resolve in diff | VERIFIED | Checks response_to. 1 test. |
+| 9 | EDIT auto-resolve in diff | VERIFIED | Checks edit_target. 1 test. |
 | 10 | Structured DiffResult with MessageDiff | VERIFIED | Dataclasses exported. Tests pass. |
 | 11 | CLI: tract log | VERIFIED | Calls t.log(), Rich format. 5 CLI tests. |
 | 12 | CLI: tract status | VERIFIED | Calls t.status(), progress bar. 5 CLI tests. |

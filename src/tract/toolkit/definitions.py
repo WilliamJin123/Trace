@@ -63,7 +63,7 @@ def get_all_tools(tract: Tract) -> list[ToolDefinition]:
                         "type": "string",
                         "description": "Optional human-readable commit message.",
                     },
-                    "response_to": {
+                    "edit_target": {
                         "type": "string",
                         "description": "For edit operations, the hash of the commit being replaced.",
                     },
@@ -78,8 +78,8 @@ def get_all_tools(tract: Tract) -> list[ToolDefinition]:
                 },
                 "required": ["content"],
             },
-            handler=lambda content, operation="append", message=None, response_to=None, metadata=None, generation_config=None: _handle_commit(
-                tract, content, operation, message, response_to, metadata, generation_config
+            handler=lambda content, operation="append", message=None, edit_target=None, metadata=None, generation_config=None: _handle_commit(
+                tract, content, operation, message, edit_target, metadata, generation_config
             ),
         ),
         # 2. compile
@@ -420,7 +420,7 @@ def _handle_commit(
     content: dict,
     operation: str,
     message: str | None,
-    response_to: str | None,
+    edit_target: str | None,
     metadata: dict | None,
     generation_config: dict | None,
 ) -> str:
@@ -431,7 +431,7 @@ def _handle_commit(
         content,
         operation=op,
         message=message,
-        response_to=response_to,
+        edit_target=edit_target,
         metadata=metadata,
         generation_config=generation_config,
     )

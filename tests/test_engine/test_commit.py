@@ -130,7 +130,7 @@ class TestCreateCommit:
         assert blob is not None
 
     def test_edit_operation(self, commit_engine) -> None:
-        """Edit operation creates commit with response_to pointing to original."""
+        """Edit operation creates commit with edit_target pointing to original."""
         original = commit_engine.create_commit(
             DialogueContent(role="user", text="Hello"),
             message="original",
@@ -138,15 +138,15 @@ class TestCreateCommit:
         edited = commit_engine.create_commit(
             DialogueContent(role="user", text="Hello, world!"),
             operation=CommitOperation.EDIT,
-            response_to=original.commit_hash,
+            edit_target=original.commit_hash,
             message="edit",
         )
 
         assert edited.operation == CommitOperation.EDIT
-        assert edited.response_to == original.commit_hash
+        assert edited.edit_target == original.commit_hash
 
-    def test_edit_without_response_to_raises(self, commit_engine) -> None:
-        """Edit without response_to raises EditTargetError."""
+    def test_edit_without_edit_target_raises(self, commit_engine) -> None:
+        """Edit without edit_target raises EditTargetError."""
         with pytest.raises(EditTargetError):
             commit_engine.create_commit(
                 DialogueContent(role="user", text="Hello"),
@@ -159,7 +159,7 @@ class TestCreateCommit:
             commit_engine.create_commit(
                 DialogueContent(role="user", text="Hello"),
                 operation=CommitOperation.EDIT,
-                response_to="nonexistent_hash_1234567890abcdef",
+                edit_target="nonexistent_hash_1234567890abcdef",
             )
 
     def test_edit_targeting_edit_raises(self, commit_engine) -> None:
@@ -170,13 +170,13 @@ class TestCreateCommit:
         edit = commit_engine.create_commit(
             DialogueContent(role="user", text="Hello edited"),
             operation=CommitOperation.EDIT,
-            response_to=original.commit_hash,
+            edit_target=original.commit_hash,
         )
         with pytest.raises(EditTargetError):
             commit_engine.create_commit(
                 DialogueContent(role="user", text="Hello re-edited"),
                 operation=CommitOperation.EDIT,
-                response_to=edit.commit_hash,
+                edit_target=edit.commit_hash,
             )
 
     def test_metadata_stored(self, commit_engine) -> None:

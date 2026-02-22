@@ -228,7 +228,7 @@ class CacheManager:
     ) -> CompileSnapshot | None:
         """Patch a cached snapshot for an EDIT commit in-memory.
 
-        Finds the message corresponding to the edited target (via response_to),
+        Finds the message corresponding to the edited target (via edit_target),
         replaces it with the new message, and computes the token delta in O(1)
         using per-message counts.
 
@@ -239,7 +239,7 @@ class CacheManager:
         if not parent_snapshot.commit_hashes:
             return None
 
-        target_hash = edit_row.response_to
+        target_hash = edit_row.edit_target
         if target_hash is None:
             return None
 

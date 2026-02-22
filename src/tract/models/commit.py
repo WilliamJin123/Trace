@@ -35,7 +35,7 @@ class CommitInfo(BaseModel):
     content_hash: str
     content_type: str
     operation: CommitOperation
-    response_to: Optional[str] = None
+    edit_target: Optional[str] = None
     message: Optional[str] = None
     token_count: int
     metadata: Optional[dict] = None

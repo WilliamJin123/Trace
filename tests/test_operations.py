@@ -54,7 +54,7 @@ class TestLogEnhanced:
         t.commit(
             DialogueContent(role="user", text="Hello edited"),
             operation=CommitOperation.EDIT,
-            response_to=h1,
+            edit_target=h1,
         )
         result = t.log(op_filter=op)
         assert len(result) == expected_count
@@ -193,7 +193,7 @@ class TestDiff:
         edit_info = t.commit(
             DialogueContent(role="user", text="Hello edited"),
             operation=CommitOperation.EDIT,
-            response_to=h1,
+            edit_target=h1,
         )
         # diff with commit_b=edit commit should auto-resolve commit_a to h1's content
         result = t.diff(commit_b=edit_info.commit_hash)
@@ -230,7 +230,7 @@ class TestDiff:
         edit_info = t.commit(
             DialogueContent(role="user", text="Hello universe"),
             operation=CommitOperation.EDIT,
-            response_to=h1,
+            edit_target=h1,
         )
         # Diff the original content vs the edit
         # compile at h1 gives original; compile at edit gives the edited version
@@ -246,7 +246,7 @@ class TestDiff:
         edit_info = t.commit(
             DialogueContent(role="assistant", text="Hello"),
             operation=CommitOperation.EDIT,
-            response_to=h1,
+            edit_target=h1,
         )
         result = t.diff(h1, edit_info.commit_hash)
         modified = [d for d in result.message_diffs if d.status == "modified"]

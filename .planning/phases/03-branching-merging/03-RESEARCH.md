@@ -189,7 +189,7 @@ def find_merge_base(
 3. Collect commits on branch B (merge_base..tip_b)
 4. Classify each commit by operation type (APPEND or EDIT)
 5. Detect conflicts:
-   - **Both EDIT same target:** Two EDIT commits with the same `response_to` -- structural conflict
+   - **Both EDIT same target:** Two EDIT commits with the same `edit_target` -- structural conflict
    - **SKIP vs EDIT:** One branch has SKIP annotation on a commit, the other has EDIT targeting it
    - **EDIT + other branch has appends:** One branch has ANY EDIT, the other branch has appends -- per CONTEXT.md, EDITs are high-stakes and warrant conflict resolution
 
@@ -345,7 +345,7 @@ class Resolution:
 Cherry-pick and rebase both fundamentally do the same thing: take a commit's content and create a new commit with that content but different parentage. In git, this means computing a diff against the original parent and applying it to the new parent. In Tract, since commits store complete content (not diffs), the process is simpler:
 
 1. **APPEND commits:** Copy the content blob, create new commit with new parent_hash. The content is self-contained, so no re-diffing is needed.
-2. **EDIT commits:** More complex. The EDIT's `response_to` target may not exist on the target branch. This is a "cherry-pick issue" that should be flagged to the resolver.
+2. **EDIT commits:** More complex. The EDIT's `edit_target` target may not exist on the target branch. This is a "cherry-pick issue" that should be flagged to the resolver.
 
 ```python
 def replay_commit(
@@ -365,13 +365,13 @@ def replay_commit(
         content=content,
         operation=original.operation,
         message=original.message,
-        response_to=original.response_to,  # May need remapping for EDITs
+        edit_target=original.edit_target,  # May need remapping for EDITs
         metadata=original.metadata,
         generation_config=original.generation_config,
     )
 ```
 
-**Confidence:** MEDIUM -- the general pattern is clear, but EDIT commit replay with response_to remapping needs careful design during planning.
+**Confidence:** MEDIUM -- the general pattern is clear, but EDIT commit replay with edit_target remapping needs careful design during planning.
 
 ### Anti-Patterns to Avoid
 

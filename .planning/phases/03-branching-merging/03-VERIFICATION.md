@@ -145,7 +145,7 @@ All 34 must-haves across 5 plans are VERIFIED. Phase 3 goal achieved.
 |---|---|---|---|
 | 1 | User can cherry-pick a specific commit from one branch into the current branch | ✓ VERIFIED | Tract.cherry_pick() exists, tested with commit replay |
 | 2 | Cherry-picked commit is a new commit with same content but different parentage and hash | ✓ VERIFIED | replay_commit() creates new commit with new parent, tests verify hash difference |
-| 3 | Cherry-pick detects when an EDIT commit's response_to target doesn't exist on the target branch | ✓ VERIFIED | cherry_pick() checks response_to in target_ancestors, raises CherryPickError |
+| 3 | Cherry-pick detects when an EDIT commit's edit_target target doesn't exist on the target branch | ✓ VERIFIED | cherry_pick() checks edit_target in target_ancestors, raises CherryPickError |
 | 4 | User can rebase the current branch onto a target branch | ✓ VERIFIED | Tract.rebase() exists in tract.py, calls operations.rebase.rebase() |
 | 5 | Rebase replays commits with new parents, producing new hashes | ✓ VERIFIED | rebase() iterates commits, calls replay_commit() for each, tests verify new hashes |
 | 6 | Rebase semantic safety checks detect when reordering changes meaning and block until resolved | ✓ VERIFIED | rebase() builds RebaseWarning list, raises SemanticSafetyError if resolver not provided |

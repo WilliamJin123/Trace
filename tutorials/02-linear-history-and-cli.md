@@ -236,7 +236,7 @@ This structured output means the CLI can format it with colors, but SDK users ca
 
 ### EDIT Auto-Resolution
 
-A key usability feature in `Tract.diff()`: when you diff an EDIT commit without specifying what to compare against, the diff automatically resolves to the original target. EDIT commits store a `response_to` field pointing at the commit they're editing. So `tract.diff(commit_b=edit_hash)` automatically sets `commit_a` to the original commit, showing you exactly what the edit changed.
+A key usability feature in `Tract.diff()`: when you diff an EDIT commit without specifying what to compare against, the diff automatically resolves to the original target. EDIT commits store a `edit_target` field pointing at the commit they're editing. So `tract.diff(commit_b=edit_hash)` automatically sets `commit_a` to the original commit, showing you exactly what the edit changed.
 
 This is implemented in the Tract facade, not in `compute_diff()` itself:
 
@@ -246,8 +246,8 @@ def diff(self, commit_a=None, commit_b=None):
     row_b = self._commit_repo.get(commit_b)
 
     if commit_a is None:
-        if row_b.operation == CommitOperation.EDIT and row_b.response_to:
-            commit_a = row_b.response_to  # auto-resolve to edit target
+        if row_b.operation == CommitOperation.EDIT and row_b.edit_target:
+            commit_a = row_b.edit_target  # auto-resolve to edit target
         elif row_b.parent_hash:
             commit_a = row_b.parent_hash  # default to parent
 ```

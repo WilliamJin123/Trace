@@ -53,7 +53,7 @@
 
 ## Decisions Made
 
-1. **Cherry-pick resolved content as APPEND**: When resolver provides content_text for an EDIT with missing target, the cherry-picked commit is created as APPEND (since there is no valid response_to on the target branch).
+1. **Cherry-pick resolved content as APPEND**: When resolver provides content_text for an EDIT with missing target, the cherry-picked commit is created as APPEND (since there is no valid edit_target on the target branch).
 2. **Rebase blocks on merge commits**: Pre-flight check prevents rebase of branches containing merge commits. Merge commits have multiple parents that cannot be meaningfully replayed as single-parent commits.
 3. **Noop rebase when already ahead**: If current branch tip's merge base with target equals the target tip (current is already ahead), rebase returns empty result rather than erroring.
 4. **Replay via CommitEngine.create_commit()**: Replayed commits go through the standard commit engine, which reads HEAD internally. The rebase operation moves HEAD before each replay to ensure correct parentage.

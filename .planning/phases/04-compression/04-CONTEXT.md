@@ -64,7 +64,7 @@ Token-budget-aware compression of context history. Users can shrink commit chain
   - Heuristic: built-in strategies (e.g., group by role, important last)
   - LLM-suggested: Trace asks LLM for optimal ordering
 - Two-tier semantic safety checks:
-  - Structural (free/fast): EDIT before its target, broken response_to chains
+  - Structural (free/fast): EDIT before its target, broken edit_target chains
   - LLM-powered (optional): "does this reordering change semantic meaning?"
 - Satisfies roadmap success criteria #3 without a standalone reorder() operation
 

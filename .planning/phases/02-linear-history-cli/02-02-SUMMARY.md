@@ -48,7 +48,7 @@ key-decisions:
   - "StatusInfo is a frozen dataclass (not Pydantic) -- lightweight, no validation overhead"
   - "compute_diff() uses SequenceMatcher on serialized message strings for alignment"
   - "op_filter implemented at chain walk level (continues through non-matching commits)"
-  - "EDIT auto-resolve in diff: when commit_b is EDIT, commit_a defaults to response_to target"
+  - "EDIT auto-resolve in diff: when commit_b is EDIT, commit_a defaults to edit_target target"
   - "Generation config changes computed from last non-empty config in each chain"
 
 patterns-established:

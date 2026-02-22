@@ -186,11 +186,11 @@ class TestSC2CommitsAndAnnotations:
         edit = tract.commit(
             InstructionContent(text="Updated system prompt"),
             operation=CommitOperation.EDIT,
-            response_to=c1.commit_hash,
+            edit_target=c1.commit_hash,
             message="edit system",
         )
         assert edit.operation == CommitOperation.EDIT
-        assert edit.response_to == c1.commit_hash
+        assert edit.edit_target == c1.commit_hash
 
         # Verify edit is reflected in compilation
         result = tract.compile()
@@ -471,13 +471,13 @@ class TestHistory:
 class TestEdgeCases:
     """Edge cases and error paths."""
 
-    def test_edit_requires_response_to(self, tract: Tract):
+    def test_edit_requires_edit_target(self, tract: Tract):
         tract.commit(InstructionContent(text="original"))
         with pytest.raises(EditTargetError):
             tract.commit(
                 InstructionContent(text="edited"),
                 operation=CommitOperation.EDIT,
-                # response_to intentionally omitted
+                # edit_target intentionally omitted
             )
 
     def test_edit_cannot_target_edit(self, tract: Tract):
@@ -485,13 +485,13 @@ class TestEdgeCases:
         c2 = tract.commit(
             InstructionContent(text="first edit"),
             operation=CommitOperation.EDIT,
-            response_to=c1.commit_hash,
+            edit_target=c1.commit_hash,
         )
         with pytest.raises(EditTargetError):
             tract.commit(
                 InstructionContent(text="edit of edit"),
                 operation=CommitOperation.EDIT,
-                response_to=c2.commit_hash,
+                edit_target=c2.commit_hash,
             )
 
     def test_annotation_history(self, tract: Tract):
@@ -594,7 +594,7 @@ class TestIncrementalCompileCache:
             t.commit(
                 InstructionContent(text="Updated instruction"),
                 operation=CommitOperation.EDIT,
-                response_to=c1.commit_hash,
+                edit_target=c1.commit_hash,
             )
 
             # Compile should reflect the edit
@@ -1040,7 +1040,7 @@ class TestLRUCompileCacheAndPatching:
             t.commit(
                 DialogueContent(role="user", text="Edited question"),
                 operation=CommitOperation.EDIT,
-                response_to=c2.commit_hash,
+                edit_target=c2.commit_hash,
             )
             # verify_cache=True asserts patched == fresh
             result = t.compile()
@@ -1059,7 +1059,7 @@ class TestLRUCompileCacheAndPatching:
             t.commit(
                 InstructionContent(text="Edited system"),
                 operation=CommitOperation.EDIT,
-                response_to=c1.commit_hash,
+                edit_target=c1.commit_hash,
             )
             result = t.compile()
             assert result.generation_configs[0] == LLMConfig(temperature=0.7)
@@ -1076,7 +1076,7 @@ class TestLRUCompileCacheAndPatching:
             t.commit(
                 InstructionContent(text="Edited system"),
                 operation=CommitOperation.EDIT,
-                response_to=c1.commit_hash,
+                edit_target=c1.commit_hash,
                 generation_config={"temperature": 0.9},
             )
             result = t.compile()
@@ -1182,7 +1182,7 @@ class TestLRUCompileCacheAndPatching:
             t.commit(
                 DialogueContent(role="user", text="Edited Q1"),
                 operation=CommitOperation.EDIT,
-                response_to=c1.commit_hash,
+                edit_target=c1.commit_hash,
             )
             result = t.compile()
             # 3 messages: "Edited Q1", "Q2", "A1" (no aggregation)
@@ -1250,7 +1250,7 @@ class TestPerMessageTokenCounts:
             t.commit(
                 InstructionContent(text="This is a much longer replacement text"),
                 operation=CommitOperation.EDIT,
-                response_to=c1.commit_hash,
+                edit_target=c1.commit_hash,
             )
             snapshot_after = t._cache.get(t.head)
             assert snapshot_after is not None
@@ -1310,7 +1310,7 @@ class TestAPITokenPersistence:
             t.commit(
                 InstructionContent(text="Short text!"),
                 operation=CommitOperation.EDIT,
-                response_to=c1.commit_hash,
+                edit_target=c1.commit_hash,
             )
             new_cached = t._cache.get(t.head)
             assert new_cached is not None

@@ -876,7 +876,7 @@ def check_reorder_safety(
     Detects two types of issues:
     - "edit_before_target": An EDIT commit appears before its target in the
       reordered sequence (the target should come first for the edit to make sense).
-    - "response_chain_break": A commit references a response_to commit that is
+    - "response_chain_break": A commit references an edit_target commit that is
       not present in the reordered set at all.
 
     Args:
@@ -899,31 +899,31 @@ def check_reorder_safety(
             continue
 
         # Check for EDIT before target
-        if row.operation == CommitOperation.EDIT and row.response_to:
-            if row.response_to in hash_to_pos:
+        if row.operation == CommitOperation.EDIT and row.edit_target:
+            if row.edit_target in hash_to_pos:
                 # Target is in the order list -- check position
-                if hash_to_pos[h] < hash_to_pos[row.response_to]:
+                if hash_to_pos[h] < hash_to_pos[row.edit_target]:
                     warnings.append(
                         ReorderWarning(
                             warning_type="edit_before_target",
                             commit_hash=row.commit_hash,
                             description=(
                                 f"EDIT commit {row.commit_hash[:8]} appears before "
-                                f"its target {row.response_to[:8]}"
+                                f"its target {row.edit_target[:8]}"
                             ),
                             severity="structural",
                         )
                     )
 
-        # Check for response_to chain break
-        if row.response_to and row.response_to not in order_set:
+        # Check for edit_target chain break
+        if row.edit_target and row.edit_target not in order_set:
             warnings.append(
                 ReorderWarning(
                     warning_type="response_chain_break",
                     commit_hash=row.commit_hash,
                     description=(
                         f"Commit {row.commit_hash[:8]} references "
-                        f"{row.response_to[:8]} which is not in the reordered set"
+                        f"{row.edit_target[:8]} which is not in the reordered set"
                     ),
                     severity="semantic",
                 )
