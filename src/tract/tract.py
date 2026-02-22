@@ -75,23 +75,26 @@ _MAX_AUTO_MSG_LEN = 72
 
 
 def _auto_message(content_type: str, text: str) -> str:
-    """Generate a descriptive commit message from content type and text.
+    """Generate a descriptive commit message from content text.
+
+    The content_type is available separately on the commit; the message
+    is just a human-readable preview of the text (max 72 chars).
 
     Args:
-        content_type: The content type discriminator (e.g. "instruction").
+        content_type: The content type discriminator (kept for the
+            empty-text fallback).
         text: The text content of the commit.
 
     Returns:
-        A message like "instruction: Be helpful" (max 72 chars).
+        A message like "Be helpful" (max 72 chars), or the content_type
+        if text is empty.
     """
     preview = text.strip().replace("\n", " ")
     if not preview:
         return content_type
-    max_text = _MAX_AUTO_MSG_LEN - len(content_type) - 2  # ": " separator
-    if len(preview) > max_text:
-        max_text = _MAX_AUTO_MSG_LEN - len(content_type) - 5  # ": " + "..."
-        preview = preview[:max_text] + "..."
-    return f"{content_type}: {preview}"
+    if len(preview) > _MAX_AUTO_MSG_LEN:
+        preview = preview[: _MAX_AUTO_MSG_LEN - 3] + "..."
+    return preview
 
 
 class Tract:

@@ -322,7 +322,7 @@ class TestAutoMessage:
             info = t.commit(InstructionContent(text="Be helpful"))
             commit = t.get_commit(info.commit_hash)
             assert commit is not None
-            assert commit.message == "instruction: Be helpful"
+            assert commit.message == "Be helpful"
         finally:
             t.close()
 
@@ -336,7 +336,7 @@ class TestAutoMessage:
             info = t.commit(DialogueContent(role="user", text="Hello world"))
             commit = t.get_commit(info.commit_hash)
             assert commit is not None
-            assert commit.message == "dialogue: Hello world"
+            assert commit.message == "Hello world"
         finally:
             t.close()
 
@@ -349,7 +349,7 @@ class TestAutoMessage:
             info = t.system("Be helpful")
             commit = t.get_commit(info.commit_hash)
             assert commit is not None
-            assert commit.message == "instruction: Be helpful"
+            assert commit.message == "Be helpful"
         finally:
             t.close()
 
@@ -405,7 +405,7 @@ class TestAutoMessage:
             info = t.commit({"content_type": "instruction", "text": "Be helpful"})
             commit = t.get_commit(info.commit_hash)
             assert commit is not None
-            assert commit.message == "instruction: Be helpful"
+            assert commit.message == "Be helpful"
         finally:
             t.close()
 
@@ -434,6 +434,6 @@ class TestAutoMessage:
             commit = t.get_commit(info.commit_hash)
             assert commit is not None
             # FreeformContent extract_text returns JSON string of payload
-            assert commit.message.startswith("freeform: ")
+            assert commit.message.startswith("{")  # JSON preview, no type prefix
         finally:
             t.close()

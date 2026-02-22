@@ -1,6 +1,6 @@
 # Tract Usage Scenarios
 
-13 workflow stories covering every fundamental operation, then compositions that combine them. Each story has 2-3 standalone sub-scenarios that build incrementally within the story. Stories are independent — jump to any one without reading the others.
+11 workflow stories covering every fundamental operation, then compositions that combine them. Each story has 2-3 standalone sub-scenarios that build incrementally within the story. Stories are independent — jump to any one without reading the others.
 
 ## File Tree
 
@@ -53,10 +53,6 @@ cookbook/
 │   ├── 01_validate_and_retry.py
 │   ├── 02_chat_with_validation.py
 │   └── 03_custom_retry_pipeline.py
-├── 12_important_priority/
-│   └── 01_important_and_retention.py
-├── 13_tool_tracking/
-│   └── 01_tool_provenance.py
 └── compositions/
     ├── ab_testing.py
     ├── context_forensics.py
@@ -427,34 +423,6 @@ Build your own retry pipeline by providing closures to `retry_with_steering()`. 
 
 ---
 
-## 12 — IMPORTANT Priority
-
-The full priority spectrum: SKIP → NORMAL → IMPORTANT → PINNED. IMPORTANT commits are compressible but get extra care during summarization.
-
-### 12/01 — IMPORTANT and Retention
-
-**Use case:** A requirements document with budget figures should be compressible, but the dollar amounts and deadlines must survive.
-
-Annotate with `priority=IMPORTANT` plus optional retention criteria. Fuzzy: `retain="preserve budget and timeline"` guides the LLM. Deterministic: `retain_match=["$50k", "Q3 2026"]` validates the output with substring/regex checks. Both can combine — fuzzy guides, deterministic verifies. The compression engine gathers retention criteria from IMPORTANT commits, enriches the summarization prompt, and wires deterministic checks through the retry protocol.
-
-> `Priority.IMPORTANT`, `RetentionCriteria`, `retain=`, `retain_match=`, `retain_match_mode=`
-
----
-
-## 13 — Tool Tracking
-
-Content-addressed provenance for LLM tool schemas — what function-calling tools were available at each point in the conversation.
-
-### 13/01 — Tool Provenance
-
-**Use case:** An agent uses function calling. You need to know exactly which tools were available when each response was generated, and pass them correctly to the API.
-
-`set_tools([...])` registers tool schemas that auto-link to subsequent commits. Schemas are content-hashed: the same tool across 100 commits is stored once. `get_commit_tools(hash)` returns the exact schemas for any commit. `compile()` populates `CompiledContext.tools` from the last commit that had tools. `to_openai_params()` returns `{"messages": [...], "tools": [...]}` — full API-ready output. `to_openai()` remains backward-compatible (messages only).
-
-> `set_tools()`, `get_tools()`, `get_commit_tools()`, `commit(tools=)`, `to_openai_params()`, `to_anthropic_params()`, `hash_tool_schema()`
-
----
-
 # Part 2: Compositions
 
 Real-world scenarios that combine features across multiple stories. Each references the stories it builds on.
@@ -539,6 +507,6 @@ All policies active, orchestrator on triggers, agent self-manages via toolkit, G
 
 ### X.14 — Self-Correcting Agent
 
-**Combines:** 11 (retry) + 12 (IMPORTANT priority) + 07 (compression) + 13 (tool tracking)
+**Combines:** 11 (retry) + 04 (curation — IMPORTANT priority) + 07 (compression) + 05 (tracing — tool provenance)
 
 An agent validates its own JSON output via `chat(validator=json_validator)`, retries on failure with steering. Critical decisions are marked IMPORTANT with `retain_match=` for key terms. Tools are tracked per-commit for provenance. When the session compresses, retention criteria guarantee key details survive. Audit the full session later: `get_commit_tools()` and `query_by_config()` reconstruct exactly what the agent had available at each step.

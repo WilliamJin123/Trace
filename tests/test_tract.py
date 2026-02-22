@@ -201,7 +201,7 @@ class TestSC2CommitsAndAnnotations:
         retrieved = tract.get_commit(info.commit_hash)
         assert retrieved is not None
         assert retrieved.commit_hash == info.commit_hash
-        assert retrieved.message == "instruction: findme"  # auto-generated
+        assert retrieved.message == "findme"  # auto-generated
 
     def test_get_commit_nonexistent(self, tract: Tract):
         result = tract.get_commit("0000000000000000000000000000000000000000")
