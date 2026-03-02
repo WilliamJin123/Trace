@@ -101,8 +101,10 @@ class DiffResult:
         editor = editor or os.environ.get("TRACT_DIFF_EDITOR") or os.environ.get("EDITOR")
 
         # Auto-detect VS Code if no editor configured
-        if not editor and shutil.which("code"):
-            editor = "code"
+        if not editor:
+            code_path = shutil.which("code")
+            if code_path:
+                editor = code_path
 
         if not editor:
             raise EnvironmentError(
