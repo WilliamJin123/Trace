@@ -125,3 +125,9 @@ class ToolResult:
     success: bool
     output: str = ""
     error: str = ""
+
+    def __str__(self) -> str:
+        """Return LLM-friendly string: output on success, error on failure."""
+        if self.success:
+            return self.output
+        return f"Error: {self.error}" if self.error else "Error: unknown"
