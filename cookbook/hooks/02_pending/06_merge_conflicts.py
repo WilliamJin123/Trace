@@ -3,9 +3,8 @@ resolutions, edit individual conflict resolutions with edit_resolution(), and
 steer the resolver with edit_guidance().
 """
 
-import os
-
-from dotenv import load_dotenv
+import sys
+from pathlib import Path
 
 from typing import Any
 
@@ -13,11 +12,10 @@ from tract import Tract
 from tract.hooks.merge import PendingMerge
 from tract.models.commit import CommitInfo
 
-load_dotenv()
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from _providers import groq as llm  
 
-TRACT_OPENAI_API_KEY = os.environ["TRACT_OPENAI_API_KEY"]
-TRACT_OPENAI_BASE_URL = os.environ["TRACT_OPENAI_BASE_URL"]
-MODEL_ID = "gpt-oss-120b"
+MODEL_ID = llm.large
 
 
 def merge_conflict_hooks() -> None:
@@ -29,8 +27,8 @@ def merge_conflict_hooks() -> None:
     print("  Fast-forward and clean merges proceed without interception.")
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         # Build a conflict: both branches EDIT the same message
@@ -81,8 +79,8 @@ def merge_conflict_hooks() -> None:
     print(f"\n  Hook pattern: auto-pick incoming version")
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         t.system("You are a helpful assistant.")

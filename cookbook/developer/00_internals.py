@@ -12,17 +12,15 @@ Demonstrates: Tract.open(), commit(), compile(), generate(), ChatResponse,
               InstructionContent, DialogueContent, ctx.pprint()
 """
 
-import os
-
-from dotenv import load_dotenv
+import sys
+from pathlib import Path
 
 from tract import Tract, InstructionContent, DialogueContent
 
-load_dotenv()
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from _providers import cerebras as llm  
 
-TRACT_OPENAI_API_KEY = os.environ["TRACT_OPENAI_API_KEY"]
-TRACT_OPENAI_BASE_URL = os.environ["TRACT_OPENAI_BASE_URL"]
-MODEL_ID = "llama3.1-8b"
+MODEL_ID = llm.small
 
 
 # ---------------------------------------------------------------------------
@@ -82,8 +80,8 @@ def part2_compile_and_chat():
     print("=" * 60)
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         # Same two manual commits — system + user

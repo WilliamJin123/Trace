@@ -13,18 +13,17 @@ Demonstrates: t.reasoning() manual, generate() with reasoning,
               Tract.open(commit_reasoning=False)
 """
 
-import os
+import sys
+from pathlib import Path
 
 import click
-from dotenv import load_dotenv
 
 from tract import Tract
 
-load_dotenv()
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from _providers import cerebras as llm  
 
-TRACT_OPENAI_API_KEY = os.environ.get("TRACT_OPENAI_API_KEY", "")
-TRACT_OPENAI_BASE_URL = os.environ.get("TRACT_OPENAI_BASE_URL", "")
-MODEL_ID = "gpt-oss-120b"
+MODEL_ID = llm.large
 
 
 # =============================================================================
@@ -74,9 +73,9 @@ def part1_manual_reasoning():
 
 def part2_interactive():
     """After generate(), confirm whether to keep reasoning."""
-    if not TRACT_OPENAI_API_KEY:
+    if not llm.api_key:
         print("=" * 60)
-        print("Part 2: SKIPPED (no TRACT_OPENAI_API_KEY)")
+        print("Part 2: SKIPPED (no llm.api_key)")
         print("=" * 60)
         return
 
@@ -89,8 +88,8 @@ def part2_interactive():
     print()
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         t.system("Think step by step before answering.")
@@ -122,9 +121,9 @@ def part2_interactive():
 # =============================================================================
 
 def part3_llm_integration():
-    if not TRACT_OPENAI_API_KEY:
+    if not llm.api_key:
         print(f"\n{'=' * 60}")
-        print("Part 3: SKIPPED (no TRACT_OPENAI_API_KEY)")
+        print("Part 3: SKIPPED (no llm.api_key)")
         print("=" * 60)
         return
 
@@ -138,8 +137,8 @@ def part3_llm_integration():
     print("  3a: generate() auto-commits reasoning traces\n")
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         t.system("Think step by step before answering. Make sure your reasoning is thorough and clear, but your answers are concise")
@@ -163,8 +162,8 @@ def part3_llm_integration():
     print(f"\n  3b: reasoning=False skips the commit\n")
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         t.system("Think step by step.")
@@ -186,8 +185,8 @@ def part3_llm_integration():
     print(f"\n  3c: Tract.open(commit_reasoning=False) disables globally\n")
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
         commit_reasoning=False,
     ) as t:

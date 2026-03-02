@@ -6,9 +6,8 @@ no second hook call.  This demo uses compress as the outer hook (rich
 output to inspect) and triggers a tool_result inside it.
 """
 
-import os
-
-from dotenv import load_dotenv
+import sys
+from pathlib import Path
 
 from typing import Any
 
@@ -21,11 +20,10 @@ from tract.models.commit import CommitInfo
 from tract.models.compression import CompressResult
 from tract.protocols import CompiledContext
 
-load_dotenv()
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from _providers import groq as llm  
 
-TRACT_OPENAI_API_KEY = os.environ["TRACT_OPENAI_API_KEY"]
-TRACT_OPENAI_BASE_URL = os.environ["TRACT_OPENAI_BASE_URL"]
-MODEL_ID = "gpt-oss-120b"
+MODEL_ID = llm.large
 
 
 def recursion_guard() -> None:
@@ -39,8 +37,8 @@ def recursion_guard() -> None:
     print("  The outer hook continues normally -- no recursion, no double-fire.")
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         # Seed a conversation worth compressing

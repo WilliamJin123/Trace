@@ -12,19 +12,18 @@ Demonstrates: merge(), merge_type, MergeResult, no_ff, delete_branch=True,
               t.on("merge", handler)
 """
 
-import os
+import sys
+from pathlib import Path
 
 import click
-from dotenv import load_dotenv
 
 from tract import Tract
 from tract.hooks.merge import PendingMerge
 
-load_dotenv()
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from _providers import cerebras as llm  
 
-TRACT_OPENAI_API_KEY = os.environ["TRACT_OPENAI_API_KEY"]
-TRACT_OPENAI_BASE_URL = os.environ["TRACT_OPENAI_BASE_URL"]
-MODEL_ID = "gpt-oss-120b"
+MODEL_ID = llm.large
 
 
 # =============================================================================
@@ -46,8 +45,8 @@ def part1_manual():
     print("  main's pointer forward to feature's tip.")
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         t.system("You are a helpful assistant. Keep answers to one sentence.")
@@ -82,8 +81,8 @@ def part1_manual():
     print("  existing ones. All APPENDs -- Tract auto-merges cleanly.")
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         t.system("You are a helpful assistant. Keep answers to one sentence.")
@@ -122,8 +121,8 @@ def part1_manual():
     print("  delete_branch=True auto-cleans the source branch after merge.")
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         t.system("You are a helpful assistant. Keep answers to one sentence.")
@@ -162,8 +161,8 @@ def part2_interactive():
     print("  immediately. You inspect the preview and decide.")
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         t.system("You are a helpful assistant. Keep answers to one sentence.")
@@ -212,8 +211,8 @@ def part3_automated():
     print("  and rejects non-FF merges. No human in the loop.")
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
 

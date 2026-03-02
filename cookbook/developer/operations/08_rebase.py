@@ -12,19 +12,18 @@ Demonstrates: rebase(), RebaseResult, replayed_commits, original_commits,
               RebaseTrigger
 """
 
-import os
+import sys
+from pathlib import Path
 
 import click
-from dotenv import load_dotenv
 
 from tract import RebaseTrigger, Tract
 from tract.hooks.rebase import PendingRebase
 
-load_dotenv()
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from _providers import cerebras as llm  
 
-TRACT_OPENAI_API_KEY = os.environ["TRACT_OPENAI_API_KEY"]
-TRACT_OPENAI_BASE_URL = os.environ["TRACT_OPENAI_BASE_URL"]
-MODEL_ID = "gpt-oss-120b"
+MODEL_ID = llm.large
 
 
 def _build_diverged_branches(t):
@@ -56,8 +55,8 @@ def part1_manual():
     print("  the examples branch's commits on top of main's current tip.")
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
 
@@ -103,8 +102,8 @@ def part2_interactive():
     print("  inspection before committing the replayed commits.")
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
 
@@ -154,8 +153,8 @@ def part3_trigger_driven():
           f"divergence_commits=3")
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         t.configure_triggers([trigger])

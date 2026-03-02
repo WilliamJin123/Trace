@@ -12,19 +12,18 @@ Demonstrates: gc(), archive_retention_days, compress(),
               GCTrigger, t.on("gc", handler)
 """
 
-import os
+import sys
+from pathlib import Path
 
 import click
-from dotenv import load_dotenv
 
 from tract import GCTrigger, Priority, Tract
 from tract.hooks.gc import PendingGC
 
-load_dotenv()
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from _providers import cerebras as llm  
 
-TRACT_OPENAI_API_KEY = os.environ["TRACT_OPENAI_API_KEY"]
-TRACT_OPENAI_BASE_URL = os.environ["TRACT_OPENAI_BASE_URL"]
-MODEL_ID = "llama3.1-8b"
+MODEL_ID = llm.small
 
 
 # =============================================================================
@@ -41,8 +40,8 @@ def part1_manual():
     print("  None (default) = archives kept forever.")
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
 
@@ -82,8 +81,8 @@ def part2_interactive():
     print("  You can exclude specific commits before approving.")
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         sys_ci = t.system("You are a concise chess coach.")
@@ -142,8 +141,8 @@ def part3_automated():
           f"archive_retention_days=30")
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
 

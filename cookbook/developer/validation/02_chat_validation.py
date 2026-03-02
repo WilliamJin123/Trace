@@ -11,18 +11,16 @@ Demonstrates: chat(validator=, max_retries=, purify=, provenance_note=,
 """
 
 import json
-import os
-
-from dotenv import load_dotenv
+import sys
+from pathlib import Path
 
 from tract import Tract
 from tract.exceptions import RetryExhaustedError
 
-load_dotenv()
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from _providers import cerebras as llm  
 
-TRACT_OPENAI_API_KEY = os.environ["TRACT_OPENAI_API_KEY"]
-TRACT_OPENAI_BASE_URL = os.environ["TRACT_OPENAI_BASE_URL"]
-MODEL_ID = "llama3.1-8b"
+MODEL_ID = llm.small
 
 
 # =============================================================================
@@ -50,8 +48,8 @@ def part1_manual_validator():
         return (True, None)
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         t.system(
@@ -93,8 +91,8 @@ def part2_basic_validation():
         return (True, None)
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         t.system(
@@ -129,8 +127,8 @@ def part3_purify():
         return (True, None)
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         t.system("You are a helpful assistant. Be concise.")
@@ -168,8 +166,8 @@ def part4_provenance():
         return (True, None)
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         t.system("You are a history assistant. Be specific with dates.")
@@ -203,8 +201,8 @@ def part5_custom_steering():
         return (True, None)
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         t.system("You are a poet. Respond with ONLY the poem — no title, no explanation.")
@@ -228,8 +226,8 @@ def part5_custom_steering():
 
 def part6_exhaustion():
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         t.system("You are a helpful assistant.")

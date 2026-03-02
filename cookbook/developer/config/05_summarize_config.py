@@ -13,19 +13,18 @@ Pass ``auto_summarize=`` to ``Tract.open()`` to enable it:
 This example shows all four modes.
 """
 
-import os
+import sys
+from pathlib import Path
 
 import click
-from dotenv import load_dotenv
 
 from tract import LLMConfig, Tract
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from _providers import cerebras as llm  
 
-load_dotenv()
-TRACT_OPENAI_API_KEY = os.environ["TRACT_OPENAI_API_KEY"]
-TRACT_OPENAI_BASE_URL = os.environ["TRACT_OPENAI_BASE_URL"]
-MODEL_ID = "gpt-oss-120b"
-MESSAGE_MODEL_ID = "llama3.1-8b"  # cheap model for summarization
+MODEL_ID = llm.large
+MESSAGE_MODEL_ID = llm.small
 
 
 # =============================================================================
@@ -33,12 +32,12 @@ MESSAGE_MODEL_ID = "llama3.1-8b"  # cheap model for summarization
 # =============================================================================
 
 # --- 1. Cheapest: point auto_summarize at a small model ---
-# One parameter does it all.  Uses llama3.1-8b for commit messages
-# while the main tract model stays gpt-oss-120b.
+# One parameter does it all.  Uses the small model for commit messages
+# while the main tract model stays large.
 
 with Tract.open(
-    api_key=TRACT_OPENAI_API_KEY,
-    base_url=TRACT_OPENAI_BASE_URL,
+    api_key=llm.api_key,
+    base_url=llm.base_url,
     model=MODEL_ID,
     auto_summarize=MESSAGE_MODEL_ID,
 ) as t:
@@ -56,8 +55,8 @@ with Tract.open(
 # If your tract model is already cheap, just pass True.
 
 with Tract.open(
-    api_key=TRACT_OPENAI_API_KEY,
-    base_url=TRACT_OPENAI_BASE_URL,
+    api_key=llm.api_key,
+    base_url=llm.base_url,
     model=MESSAGE_MODEL_ID,
     auto_summarize=True,
 ) as t:
@@ -69,8 +68,8 @@ with Tract.open(
 # --- 3. Full control with LLMConfig ---
 
 with Tract.open(
-    api_key=TRACT_OPENAI_API_KEY,
-    base_url=TRACT_OPENAI_BASE_URL,
+    api_key=llm.api_key,
+    base_url=llm.base_url,
     model=MODEL_ID,
     auto_summarize=LLMConfig(model=MESSAGE_MODEL_ID, temperature=0.0, max_tokens=60),
 ) as t:
@@ -82,8 +81,8 @@ with Tract.open(
 # Without auto_summarize=, commit messages are truncated content previews.
 
 with Tract.open(
-    api_key=TRACT_OPENAI_API_KEY,
-    base_url=TRACT_OPENAI_BASE_URL,
+    api_key=llm.api_key,
+    base_url=llm.base_url,
     model=MODEL_ID,
 ) as t:
     t.system("You are a helpful assistant.")
@@ -131,8 +130,8 @@ def part2_interactive():
         print(f"  -> Auto-summarize disabled (raw text previews)")
 
     open_kwargs = dict(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     )
     if auto_summarize is not False:

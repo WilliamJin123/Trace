@@ -9,17 +9,15 @@ Demonstrates: compress(validator=, max_retries=), compress + retain_match=,
               instructions= + validator=, post-compression verification
 """
 
-import os
-
-from dotenv import load_dotenv
+import sys
+from pathlib import Path
 
 from tract import Priority, Tract
 
-load_dotenv()
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from _providers import cerebras as llm  
 
-TRACT_OPENAI_API_KEY = os.environ["TRACT_OPENAI_API_KEY"]
-TRACT_OPENAI_BASE_URL = os.environ["TRACT_OPENAI_BASE_URL"]
-MODEL_ID = "gpt-oss-120b"
+MODEL_ID = llm.large
 
 
 # =============================================================================
@@ -35,8 +33,8 @@ def part1_manual():
     print()
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         t.system("You are a database architecture assistant.")
@@ -80,8 +78,8 @@ def part2_interactive():
     print()
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         t.system("You are a database architecture assistant.")
@@ -114,8 +112,8 @@ def part2_interactive():
 
 def part3_compress_validator():
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         t.system("You are a database architecture assistant.")
@@ -158,8 +156,8 @@ def part3_compress_validator():
 
 def part4_combined_validation():
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         t.system("You are a financial analysis assistant.")
@@ -223,8 +221,8 @@ def part4_combined_validation():
 
 def part5_guided_and_validated():
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         t.system("You are a security audit assistant.")

@@ -15,21 +15,20 @@ Demonstrates: register_tag, role-based heuristics, click.confirm(),
               TAGGER_SYSTEM_PROMPT + build_tagger_task_prompt
 """
 
-import os
+import sys
+from pathlib import Path
 
 import click
-from dotenv import load_dotenv
 
 from tract import Tract
 from tract.formatting import pprint_log, pprint_tag_registry
 from tract.orchestrator import Orchestrator, OrchestratorConfig, AutonomyLevel
 from tract.prompts.tagger import TAGGER_SYSTEM_PROMPT, build_tagger_task_prompt
 
-load_dotenv()
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from _providers import cerebras as llm  
 
-TRACT_OPENAI_API_KEY = os.environ.get("TRACT_OPENAI_API_KEY", "")
-TRACT_OPENAI_BASE_URL = os.environ.get("TRACT_OPENAI_BASE_URL", "")
-MODEL_ID = "gpt-oss-120b"
+MODEL_ID = llm.large
 
 
 # =============================================================================
@@ -145,9 +144,9 @@ def part2_interactive():
 # =============================================================================
 
 def part3_agent():
-    if not TRACT_OPENAI_API_KEY:
+    if not llm.api_key:
         print("=" * 60)
-        print("Part 3: SKIPPED (no TRACT_OPENAI_API_KEY)")
+        print("Part 3: SKIPPED (no llm.api_key)")
         print("=" * 60)
         return
 
@@ -161,8 +160,8 @@ def part3_agent():
     print()
 
     t = Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     )
 

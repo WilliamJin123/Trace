@@ -7,14 +7,15 @@ to avoid duplication.
 """
 
 import os
+import sys
+from pathlib import Path
 
 import httpx
 
-# --- Environment variables (shared by all tool_results examples) ---
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from _providers import cerebras as llm  
 
-TRACT_OPENAI_API_KEY = os.environ.get("TRACT_OPENAI_API_KEY", "")
-TRACT_OPENAI_BASE_URL = os.environ.get("TRACT_OPENAI_BASE_URL", "")
-MODEL_ID = "gpt-oss-120b"
+MODEL_ID = llm.large
 
 
 # --- Tool definitions (OpenAI function-calling format) ---
@@ -145,8 +146,8 @@ def call_llm(messages: list[dict], tools: list[dict]) -> dict:
     we manage the LLM call.
     """
     response = httpx.post(
-        f"{TRACT_OPENAI_BASE_URL}/chat/completions",
-        headers={"Authorization": f"Bearer {TRACT_OPENAI_API_KEY}"},
+        f"{llm.base_url}/chat/completions",
+        headers={"Authorization": f"Bearer {llm.api_key}"},
         json={
             "model": MODEL_ID,
             "messages": messages,

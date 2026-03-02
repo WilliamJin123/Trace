@@ -9,16 +9,15 @@ Demonstrates: Tract.open(), system(), chat(), persistence, status()
 """
 
 import os
-
-from dotenv import load_dotenv
+import sys
+from pathlib import Path
 
 from tract import Tract
 
-load_dotenv()
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from _providers import groq as llm  
 
-TRACT_OPENAI_API_KEY = os.environ["TRACT_OPENAI_API_KEY"]
-TRACT_OPENAI_BASE_URL = os.environ["TRACT_OPENAI_BASE_URL"]
-MODEL_ID = "gpt-oss-120b"
+MODEL_ID = llm.large
 
 
 def main():
@@ -33,8 +32,8 @@ def main():
     with Tract.open(
         db_path,
         tract_id="my-chat",
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         t.system("You are a helpful assistant. Be concise.")
@@ -49,8 +48,8 @@ def main():
     with Tract.open(
         db_path,
         tract_id="my-chat",
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         # All prior context is included automatically

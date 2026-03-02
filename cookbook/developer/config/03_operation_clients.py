@@ -12,19 +12,18 @@ Demonstrates: OpenAIClient, configure_clients(), OperationClients,
               combining per-operation clients with per-operation configs
 """
 
-import os
+import sys
+from pathlib import Path
 
 import click
-from dotenv import load_dotenv
 
 from tract import LLMConfig, OperationClients, Tract
 from tract.llm import OpenAIClient
 
-load_dotenv()
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from _providers import cerebras as llm  
 
-TRACT_OPENAI_API_KEY = os.environ["TRACT_OPENAI_API_KEY"]
-TRACT_OPENAI_BASE_URL = os.environ["TRACT_OPENAI_BASE_URL"]
-MODEL_ID = "gpt-oss-120b"
+MODEL_ID = llm.large
 
 
 # =============================================================================
@@ -44,8 +43,8 @@ def part3_per_operation_clients():
     print()
 
     # Two different LLM endpoints
-    PRIMARY_KEY = TRACT_OPENAI_API_KEY
-    PRIMARY_URL = TRACT_OPENAI_BASE_URL
+    PRIMARY_KEY = llm.api_key
+    PRIMARY_URL = llm.base_url
     PRIMARY_MODEL = MODEL_ID
 
     # If you have a second endpoint (e.g. local Ollama), configure it here:
@@ -152,12 +151,12 @@ def part2_interactive():
     print("=" * 60)
 
     primary_client = OpenAIClient(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
     )
     secondary_client = OpenAIClient(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
     )
 
     try:

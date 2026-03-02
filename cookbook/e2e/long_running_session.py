@@ -5,10 +5,10 @@
   PART 3 -- LLM / Agent:  CompressTrigger(0.8) + GCTrigger(20) + PinTrigger over 50+ turns
 """
 
-import os
+import sys
+from pathlib import Path
 
 import click
-from dotenv import load_dotenv
 
 from tract import (
     CompressTrigger,
@@ -19,11 +19,10 @@ from tract import (
     TokenBudgetConfig,
 )
 
-load_dotenv()
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from _providers import cerebras as llm  
 
-TRACT_OPENAI_API_KEY = os.environ.get("TRACT_OPENAI_API_KEY", "")
-TRACT_OPENAI_BASE_URL = os.environ.get("TRACT_OPENAI_BASE_URL", "")
-MODEL_ID = "gpt-oss-120b"
+MODEL_ID = llm.large
 
 
 # =====================================================================

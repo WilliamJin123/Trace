@@ -11,29 +11,25 @@ Demonstrates: compress_tool_calls(name=) for selective compression,
               pprint(style="compact"), before/after visualization
 """
 
-import os
 import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
-
 from tract import Tract
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from _providers import cerebras as llm  
 
 # Allow importing _helpers from the same directory when run as a script.
 sys.path.insert(0, str(Path(__file__).parent))
-from _helpers import build_agent_session  # noqa: E402
+from _helpers import build_agent_session  
 
-load_dotenv()
-
-TRACT_OPENAI_API_KEY = os.environ.get("TRACT_OPENAI_API_KEY", "")
-TRACT_OPENAI_BASE_URL = os.environ.get("TRACT_OPENAI_BASE_URL", "")
-MODEL_ID = "gpt-oss-120b"
+MODEL_ID = llm.large
 
 
 def part3_selective_compression():
-    if not TRACT_OPENAI_API_KEY:
+    if not llm.api_key:
         print(f"\n{'=' * 60}")
-        print("PART 3 -- Manual: SKIPPED (no TRACT_OPENAI_API_KEY)")
+        print("PART 3 -- Manual: SKIPPED (no llm.api_key)")
         print("=" * 60)
         return
 
@@ -43,8 +39,8 @@ def part3_selective_compression():
     print()
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         refs = build_agent_session(t)
@@ -108,9 +104,9 @@ def part3_selective_compression():
 def part2_interactive():
     import click
 
-    if not TRACT_OPENAI_API_KEY:
+    if not llm.api_key:
         print(f"\n{'=' * 60}")
-        print("PART 2 -- Interactive: SKIPPED (no TRACT_OPENAI_API_KEY)")
+        print("PART 2 -- Interactive: SKIPPED (no llm.api_key)")
         print("=" * 60)
         return
 
@@ -120,8 +116,8 @@ def part2_interactive():
     print()
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         build_agent_session(t)

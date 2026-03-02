@@ -16,24 +16,21 @@ Demonstrates: find_tool_results(name=, after=), find_tool_calls(name=),
               record_usage(), token_checkpoints()
 """
 
-import os
 import sys
 from pathlib import Path
 
 import click
-from dotenv import load_dotenv
 
 from tract import Tract
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from _providers import cerebras as llm  
+
 # Allow importing _helpers from the same directory when run as a script.
 sys.path.insert(0, str(Path(__file__).parent))
-from _helpers import build_agent_session  # noqa: E402
+from _helpers import build_agent_session  
 
-load_dotenv()
-
-TRACT_OPENAI_API_KEY = os.environ.get("TRACT_OPENAI_API_KEY", "")
-TRACT_OPENAI_BASE_URL = os.environ.get("TRACT_OPENAI_BASE_URL", "")
-MODEL_ID = "gpt-oss-120b"
+MODEL_ID = llm.large
 
 
 def part1_query_api():

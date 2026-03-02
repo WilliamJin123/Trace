@@ -9,9 +9,8 @@ different operations (one per tier) to prove the point:
   Tier 1 (review=True):    tool_result with manual control
 """
 
-import os
-
-from dotenv import load_dotenv
+import sys
+from pathlib import Path
 
 from tract import Priority, Tract
 from tract.hooks.compress import PendingCompress
@@ -21,11 +20,10 @@ from tract.models.commit import CommitInfo
 from tract.models.compression import CompressResult
 from tract.protocols import CompiledContext
 
-load_dotenv()
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from _providers import cerebras as llm  
 
-TRACT_OPENAI_API_KEY = os.environ["TRACT_OPENAI_API_KEY"]
-TRACT_OPENAI_BASE_URL = os.environ["TRACT_OPENAI_BASE_URL"]
-MODEL_ID = "gpt-oss-120b"
+MODEL_ID = llm.large
 
 
 def three_tier_routing() -> None:
@@ -41,8 +39,8 @@ def three_tier_routing() -> None:
     print("  The operation commits directly and hook_log records 'auto-approved'.")
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         sys_ci = t.system("You are a code assistant with access to development tools.")
@@ -78,8 +76,8 @@ def three_tier_routing() -> None:
     print("  This is the bread-and-butter: register once, it fires every time.")
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         # Seed a conversation worth compressing
@@ -133,8 +131,8 @@ def three_tier_routing() -> None:
     print("  Even if a hook is registered, review=True bypasses it.")
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         sys_ci = t.system("You are a code assistant with access to development tools.")

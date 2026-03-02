@@ -14,19 +14,18 @@ Demonstrates: to_dict(), to_tools(), describe_api(), apply_decision(),
 """
 
 import json
-import os
+import sys
+from pathlib import Path
 
 import httpx
-from dotenv import load_dotenv
 
 from tract import Tract
 from tract.hooks.dynamic import ActionDef, OperationSpec
 
-load_dotenv()
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from _providers import cerebras as llm  
 
-TRACT_OPENAI_API_KEY = os.environ.get("TRACT_OPENAI_API_KEY", "")
-TRACT_OPENAI_BASE_URL = os.environ.get("TRACT_OPENAI_BASE_URL", "")
-MODEL_ID = "gpt-oss-120b"
+MODEL_ID = llm.large
 
 
 def _make_quality_spec() -> OperationSpec:
@@ -144,7 +143,7 @@ def introspection_demo() -> None:
         print("=" * 60)
         print()
 
-        if TRACT_OPENAI_API_KEY:
+        if llm.api_key:
             print("  LLM returns a decision dict; apply_decision() routes it.\n")
 
             # First decision: ask LLM to run a quality check
@@ -159,8 +158,8 @@ def introspection_demo() -> None:
                  f"Pending state: {json.dumps(ctx_info)}"},
             ]
             resp = httpx.post(
-                f"{TRACT_OPENAI_BASE_URL}/chat/completions",
-                headers={"Authorization": f"Bearer {TRACT_OPENAI_API_KEY}"},
+                f"{llm.base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {llm.api_key}"},
                 json={"model": MODEL_ID, "messages": messages, "tools": tools},
                 timeout=120,
             )
@@ -187,8 +186,8 @@ def introspection_demo() -> None:
                             "with reason 'Admin bypass'.\n\n"
                             f"Pending state: {json.dumps(pending3.to_dict())}"}
             resp2 = httpx.post(
-                f"{TRACT_OPENAI_BASE_URL}/chat/completions",
-                headers={"Authorization": f"Bearer {TRACT_OPENAI_API_KEY}"},
+                f"{llm.base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {llm.api_key}"},
                 json={"model": MODEL_ID, "messages": messages,
                       "tools": pending3.to_tools()},
                 timeout=120,

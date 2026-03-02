@@ -10,19 +10,18 @@ Demonstrates: t.assistant(edit=), edit_history(), restore(),
               response.pprint()
 """
 
-import os
+import sys
+from pathlib import Path
 
 import click
-from dotenv import load_dotenv
 
 from tract import Priority, Tract, ToolCall
 
-load_dotenv()
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from _providers import cerebras as llm  
 
-TRACT_OPENAI_API_KEY = os.environ["TRACT_OPENAI_API_KEY"]
-TRACT_OPENAI_BASE_URL = os.environ["TRACT_OPENAI_BASE_URL"]
-MODEL_ID = "gpt-oss-120b"
-MODEL_ID_SMALL = "llama3.1-8b"
+MODEL_ID = llm.large
+MODEL_ID_SMALL = llm.small
 
 
 def part3_edit_history():
@@ -32,8 +31,8 @@ def part3_edit_history():
     print()
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID_SMALL,
     ) as t:
 
@@ -148,8 +147,8 @@ def part2_interactive():
     print()
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID_SMALL,
     ) as t:
         t.system("You are a concise writing assistant. Keep answers under 2 sentences.")
@@ -222,8 +221,8 @@ def part3b_agent():
     from tract.toolkit import ToolExecutor
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         t.system("You are a concise assistant.")

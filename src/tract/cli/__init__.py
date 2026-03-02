@@ -133,15 +133,15 @@ def _discover_tract(db_path: str) -> str:
 
 
 # Register subcommands after cli group is defined
-from tract.cli.commands.log import log  # noqa: E402
-from tract.cli.commands.status import status  # noqa: E402
-from tract.cli.commands.diff import diff  # noqa: E402
-from tract.cli.commands.reset import reset  # noqa: E402
-from tract.cli.commands.checkout import checkout  # noqa: E402
-from tract.cli.commands.branch import branch  # noqa: E402
-from tract.cli.commands.switch import switch  # noqa: E402
-from tract.cli.commands.merge import merge  # noqa: E402
-from tract.cli.commands.compress import compress  # noqa: E402
+from tract.cli.commands.log import log  
+from tract.cli.commands.status import status  
+from tract.cli.commands.diff import diff  
+from tract.cli.commands.reset import reset  
+from tract.cli.commands.checkout import checkout  
+from tract.cli.commands.branch import branch  
+from tract.cli.commands.switch import switch  
+from tract.cli.commands.merge import merge  
+from tract.cli.commands.compress import compress  
 
 cli.add_command(log)
 cli.add_command(status)

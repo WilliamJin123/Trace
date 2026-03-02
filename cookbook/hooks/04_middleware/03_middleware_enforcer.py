@@ -5,19 +5,17 @@ pending compression without deciding, then an enforcer makes the approve/reject
 decision based on estimated token count.
 """
 
-import os
-
-from dotenv import load_dotenv
+import sys
+from pathlib import Path
 
 from tract import Priority, Tract
 from tract.hooks.compress import PendingCompress
 from tract.models.compression import CompressResult
 
-load_dotenv()
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from _providers import groq as llm  
 
-TRACT_OPENAI_API_KEY = os.environ["TRACT_OPENAI_API_KEY"]
-TRACT_OPENAI_BASE_URL = os.environ["TRACT_OPENAI_BASE_URL"]
-MODEL_ID = "gpt-oss-120b"
+MODEL_ID = llm.large
 
 
 def _seed_conversation(t: Tract) -> None:
@@ -66,8 +64,8 @@ def middleware_and_enforcer() -> None:
             pending.reject(f"Over budget: {pending.estimated_tokens} > {budget}")
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         # Stack: logger (middleware) fires first, enforcer fires second

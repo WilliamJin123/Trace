@@ -4,19 +4,18 @@ token_count), approve/reject flow, and review=True for manual inspection.
 """
 
 import os
-
-from dotenv import load_dotenv
+import sys
+from pathlib import Path
 
 from tract import Tract
 from tract.hooks.event import HookEvent
 from tract.hooks.tool_result import PendingToolResult
 from tract.models.commit import CommitInfo
 
-load_dotenv()
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from _providers import groq as llm  
 
-TRACT_OPENAI_API_KEY = os.environ["TRACT_OPENAI_API_KEY"]
-TRACT_OPENAI_BASE_URL = os.environ["TRACT_OPENAI_BASE_URL"]
-MODEL_ID = "gpt-oss-120b"
+MODEL_ID = llm.large
 
 
 def hook_basics() -> None:
@@ -33,8 +32,8 @@ def hook_basics() -> None:
     # With review=True, the caller gets a PendingToolResult (tier 1).
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         t.system("You are a code analysis assistant with access to development tools.")
@@ -89,8 +88,8 @@ def hook_basics() -> None:
     print(f"\n  review=True returns PendingToolResult for manual inspection:")
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         t.system("You are a code analysis assistant with access to development tools.")

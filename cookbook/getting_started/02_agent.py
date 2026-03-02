@@ -14,18 +14,17 @@ Demonstrates: Orchestrator, OrchestratorConfig, AutonomyLevel,
 """
 
 import os
-
-from dotenv import load_dotenv
+import sys
+from pathlib import Path
 
 from tract import Tract, TractConfig, TokenBudgetConfig
 from tract.toolkit import ToolConfig, ToolProfile
 from tract.orchestrator import Orchestrator, OrchestratorConfig, AutonomyLevel
 
-load_dotenv()
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from _providers import cerebras as llm  
 
-TRACT_OPENAI_API_KEY = os.environ["TRACT_OPENAI_API_KEY"]
-TRACT_OPENAI_BASE_URL = os.environ["TRACT_OPENAI_BASE_URL"]
-MODEL_ID = "gpt-oss-120b"
+MODEL_ID = llm.large
 
 # --- Tool profile: only expose the context-management tools ---
 # The agent gets status, annotate, and log -- enough to monitor
@@ -72,8 +71,8 @@ def main():
         db_path,
         tract_id="agent-demo",
         config=config,
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         # --- Seed the conversation with enough history to make

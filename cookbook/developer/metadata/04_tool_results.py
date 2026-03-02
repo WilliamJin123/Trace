@@ -16,17 +16,16 @@ from functools import partial
 from pathlib import Path
 
 import click
-from dotenv import load_dotenv
 
 from tract import Tract
 from tract.protocols import ToolCall
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from _providers import cerebras as llm  
+
 # Allow importing _helpers from the same directory when run as a script.
 sys.path.insert(0, str(Path(__file__).parent))
-from _helpers import TOOLS, execute_tool as _execute_tool, call_llm  # noqa: E402
-from _helpers import TRACT_OPENAI_API_KEY, TRACT_OPENAI_BASE_URL, MODEL_ID  # noqa: E402
-
-load_dotenv()
+from _helpers import TOOLS, execute_tool as _execute_tool, call_llm  
 
 # The directory this file lives in — tools will search here.
 COOKBOOK_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -87,9 +86,9 @@ def part1_manual_tools():
 
 def part2_interactive_approval():
     """After LLM requests a tool call, confirm before executing."""
-    if not TRACT_OPENAI_API_KEY:
+    if not llm.api_key:
         print("=" * 60)
-        print("Part 2: SKIPPED (no TRACT_OPENAI_API_KEY)")
+        print("Part 2: SKIPPED (no llm.api_key)")
         print("=" * 60)
         return
 
@@ -102,9 +101,9 @@ def part2_interactive_approval():
     print()
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
-        model=MODEL_ID,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
+        model=llm.large,
     ) as t:
         t.set_tools(TOOLS)
         t.system(

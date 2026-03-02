@@ -2,9 +2,8 @@
 exclude commits you want to drop, and check warnings before approving.
 """
 
-import os
-
-from dotenv import load_dotenv
+import sys
+from pathlib import Path
 
 from typing import Any
 
@@ -13,11 +12,10 @@ from tract.hooks.event import HookEvent
 from tract.hooks.rebase import PendingRebase
 from tract.models.commit import CommitInfo
 
-load_dotenv()
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from _providers import groq as llm  
 
-TRACT_OPENAI_API_KEY = os.environ["TRACT_OPENAI_API_KEY"]
-TRACT_OPENAI_BASE_URL = os.environ["TRACT_OPENAI_BASE_URL"]
-MODEL_ID = "gpt-oss-120b"
+MODEL_ID = llm.large
 
 
 def rebase_hooks() -> None:
@@ -31,8 +29,8 @@ def rebase_hooks() -> None:
     # get a PendingRebase to inspect the replay plan and exclude commits.
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         t.system("You are a fitness coach helping design personalized workout plans.")
@@ -86,8 +84,8 @@ def rebase_hooks() -> None:
     print(f"\n  Hook pattern: warn-and-approve")
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         t.system("You are a fitness coach helping design personalized workout plans.")

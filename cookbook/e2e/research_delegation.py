@@ -5,19 +5,18 @@
   PART 3 -- LLM / Agent:  Full session deploy + compress + collapse
 """
 
-import os
+import sys
+from pathlib import Path
 
 import click
-from dotenv import load_dotenv
 
 from tract import Session
 from tract.models.config import LLMConfig
 
-load_dotenv()
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from _providers import cerebras as llm  
 
-TRACT_OPENAI_API_KEY = os.environ.get("TRACT_OPENAI_API_KEY", "")
-TRACT_OPENAI_BASE_URL = os.environ.get("TRACT_OPENAI_BASE_URL", "")
-MODEL_ID = "gpt-oss-120b"
+MODEL_ID = llm.large
 
 
 def _configure_llm(tract):
@@ -25,8 +24,8 @@ def _configure_llm(tract):
     from tract.llm.client import OpenAIClient
 
     client = OpenAIClient(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL or None,
+        api_key=llm.api_key,
+        base_url=llm.base_url or None,
         default_model=MODEL_ID,
     )
     tract.configure_llm(client)
@@ -103,9 +102,9 @@ def part1_manual():
 # =====================================================================
 
 def part2_interactive():
-    if not TRACT_OPENAI_API_KEY:
+    if not llm.api_key:
         print("\n" + "=" * 60)
-        print("PART 2: SKIPPED (no TRACT_OPENAI_API_KEY)")
+        print("PART 2: SKIPPED (no llm.api_key)")
         print("=" * 60)
         return
 
@@ -157,9 +156,9 @@ def part2_interactive():
 # =====================================================================
 
 def part3_agent():
-    if not TRACT_OPENAI_API_KEY:
+    if not llm.api_key:
         print("\n" + "=" * 60)
-        print("PART 3: SKIPPED (no TRACT_OPENAI_API_KEY)")
+        print("PART 3: SKIPPED (no llm.api_key)")
         print("=" * 60)
         return
 

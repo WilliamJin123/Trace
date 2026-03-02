@@ -9,21 +9,20 @@ Demonstrates: as_tools(profile=), ToolExecutor profiles, capability scoping,
               Orchestrator with observer profile
 """
 
-import os
+import sys
+from pathlib import Path
 
 import click
-from dotenv import load_dotenv
 
 from tract import Tract, TractConfig, TokenBudgetConfig
 from tract.toolkit import ToolConfig, ToolExecutor, ToolProfile
 from tract.toolkit.profiles import SELF_PROFILE, SUPERVISOR_PROFILE, FULL_PROFILE
 from tract.orchestrator import Orchestrator, OrchestratorConfig, AutonomyLevel
 
-load_dotenv()
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from _providers import cerebras as llm  
 
-TRACT_OPENAI_API_KEY = os.environ["TRACT_OPENAI_API_KEY"]
-TRACT_OPENAI_BASE_URL = os.environ["TRACT_OPENAI_BASE_URL"]
-MODEL_ID = "gpt-oss-120b"
+MODEL_ID = llm.large
 
 
 # =====================================================================
@@ -232,9 +231,9 @@ def part2_interactive():
 
 def part3_agent():
     """Orchestrator with observer profile inspects but cannot modify."""
-    if not TRACT_OPENAI_API_KEY:
+    if not llm.api_key:
         print(f"\n{'=' * 60}")
-        print("PART 3: SKIPPED (no TRACT_OPENAI_API_KEY)")
+        print("PART 3: SKIPPED (no llm.api_key)")
         print("=" * 60)
         return
 
@@ -251,8 +250,8 @@ def part3_agent():
 
     with Tract.open(
         config=config,
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         # Build some context for the observer to inspect

@@ -16,19 +16,17 @@ Demonstrates: LLMConfig, 4-level resolution, LLMConfig.from_dict(),
               query_by_config(), response.pprint(), print(entry) in log loop
 """
 
-import os
 import sys
+from pathlib import Path
 
 import click
-from dotenv import load_dotenv
 
 from tract import LLMConfig, Tract
 
-load_dotenv()
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from _providers import cerebras as llm  
 
-TRACT_OPENAI_API_KEY = os.environ["TRACT_OPENAI_API_KEY"]
-TRACT_OPENAI_BASE_URL = os.environ["TRACT_OPENAI_BASE_URL"]
-MODEL_ID = "gpt-oss-120b"
+MODEL_ID = llm.large
 
 
 # =============================================================================
@@ -55,8 +53,8 @@ def part4_resolution_chain():
     )
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         default_config=tract_default,
     ) as t:
         t.system("You are a helpful assistant. Be concise.")
@@ -68,9 +66,9 @@ def part4_resolution_chain():
 
         # --- Call 1: Default + operation resolution ---
         print("=== Call 1: Default + operation resolution ===")
-        print("  Level 4 (tract default): model=gpt-oss-120b, temp=0.5, top_p=0.95")
+        print(f"  Level 4 (tract default): model={MODEL_ID}, temp=0.5, top_p=0.95")
         print("  Level 3 (chat operation): temp=0.8 (overrides default)")
-        print("  Effective: model=gpt-oss-120b, temp=0.8, top_p=0.95\n")
+        print(f"  Effective: model={MODEL_ID}, temp=0.8, top_p=0.95\n")
 
         response = t.chat("What is Python's GIL?")
         gc = response.generation_config
@@ -82,7 +80,7 @@ def part4_resolution_chain():
         precise = LLMConfig(temperature=0.2, seed=123)
         print("  Level 3 (chat operation): temp=0.8")
         print("  Level 2 (llm_config=): temp=0.2, seed=123 (overrides operation)")
-        print("  Effective: model=gpt-oss-120b, temp=0.2, top_p=0.95, seed=123\n")
+        print(f"  Effective: model={MODEL_ID}, temp=0.2, top_p=0.95, seed=123\n")
 
         response = t.chat("Explain it in one sentence.", llm_config=precise)
         gc = response.generation_config
@@ -93,7 +91,7 @@ def part4_resolution_chain():
         print("=== Call 3: Sugar param override ===")
         print("  Level 2 (llm_config=): temp=0.2, seed=123")
         print("  Level 1 (sugar): temperature=0.9 (beats llm_config)")
-        print("  Effective: model=gpt-oss-120b, temp=0.9, top_p=0.95, seed=123\n")
+        print(f"  Effective: model={MODEL_ID}, temp=0.9, top_p=0.95, seed=123\n")
 
         response = t.chat(
             "Give a creative analogy for the GIL.",
@@ -153,8 +151,8 @@ def part2_interactive():
     tract_default = LLMConfig(model=MODEL_ID, temperature=0.5, top_p=0.95)
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         default_config=tract_default,
     ) as t:
         t.system("You are a helpful assistant. Be concise.")

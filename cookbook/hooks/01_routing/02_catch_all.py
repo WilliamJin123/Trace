@@ -6,9 +6,8 @@ universal audit logger.  When a specific handler is also registered,
 it takes priority for its operation while "*" handles the rest.
 """
 
-import os
-
-from dotenv import load_dotenv
+import sys
+from pathlib import Path
 
 from tract import Priority, Tract
 from tract.hooks.compress import PendingCompress
@@ -16,11 +15,10 @@ from tract.hooks.event import HookEvent
 from tract.hooks.pending import Pending
 from tract.models.compression import CompressResult, GCResult
 
-load_dotenv()
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from _providers import cerebras as llm  
 
-TRACT_OPENAI_API_KEY = os.environ["TRACT_OPENAI_API_KEY"]
-TRACT_OPENAI_BASE_URL = os.environ["TRACT_OPENAI_BASE_URL"]
-MODEL_ID = "gpt-oss-120b"
+MODEL_ID = llm.large
 
 
 def catch_all() -> None:
@@ -33,8 +31,8 @@ def catch_all() -> None:
     print("  We trigger tool_result, compress, and gc -- all three hit the same handler.")
 
     with Tract.open(
-        api_key=TRACT_OPENAI_API_KEY,
-        base_url=TRACT_OPENAI_BASE_URL,
+        api_key=llm.api_key,
+        base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
         audit_log: list[dict[str, str]] = []
