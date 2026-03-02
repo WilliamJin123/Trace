@@ -39,6 +39,10 @@ def middleware_and_enforcer() -> None:
     print("  The logger calls pass_through() — it inspects without deciding.")
     print("  The enforcer fires next and makes the approve/reject decision.")
 
+    # --- Without hooks (baseline) ---
+    # Without these hooks, compress() auto-commits (tier 3). Here the
+    # logger middleware inspects, then the enforcer decides (tier 2).
+
     audit_log: list[dict[str, object]] = []
 
     def compression_logger(pending: PendingCompress) -> None:

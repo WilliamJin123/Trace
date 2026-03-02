@@ -1,18 +1,24 @@
 """Merge Strategies
 
-Two merge modes — fast-forward (linear history) and clean merge (diverged
-but no edit conflicts) — plus a bonus showing no_ff and auto-delete.
+Three tiers of merge usage — manual FF/clean/no_ff merges, interactive
+review with PendingMerge, and agent-driven auto-merge with hooks.
 
-Demonstrates: merge(), merge_type, MergeResult, committed,
-              merge_commit_hash, no_ff, delete_branch=True,
-              pprint(style="compact"), MergeResult.pprint()
+PART 1 -- Manual           Direct merge calls, no LLM, deterministic
+PART 2 -- Interactive       review=True, click.confirm, human decides
+PART 3 -- LLM / Agent      Hook auto-manages merge decisions
+
+Demonstrates: merge(), merge_type, MergeResult, no_ff, delete_branch=True,
+              merge(review=True), PendingMerge, approve/reject,
+              t.on("merge", handler), ToolExecutor
 """
 
 import os
 
+import click
 from dotenv import load_dotenv
 
-from tract import Tract
+from tract import Tract, ToolExecutor
+from tract.hooks.merge import PendingMerge
 
 load_dotenv()
 
@@ -22,17 +28,15 @@ MODEL_ID = "gpt-oss-120b"
 
 
 # =============================================================================
-# Part 2: Merge Strategies
+# PART 1 -- Manual: Direct API calls, no LLM, deterministic
 # =============================================================================
 
-def part2_merge_strategies():
+def part1_manual():
     print("=" * 60)
-    print("Part 2: MERGE STRATEGIES")
+    print("PART 1 -- Manual: Merge Strategies")
     print("=" * 60)
 
-    # -------------------------------------------------------------------------
-    # Scenario 1: Fast-Forward
-    # -------------------------------------------------------------------------
+    # --- Scenario 1: Fast-Forward ---
 
     print()
     print("Scenario 1: FAST-FORWARD")
@@ -53,14 +57,12 @@ def part2_merge_strategies():
         print(f"  main:")
         t.compile().pprint(style="compact")
 
-        # Branch and add commits only on feature
         t.branch("feature")
         t.chat("Give an example of a base case in recursion.")
 
         print(f"\n  feature:")
         t.compile().pprint(style="compact")
 
-        # Merge
         t.switch("main")
         result = t.merge("feature")
 
@@ -70,9 +72,7 @@ def part2_merge_strategies():
         print(f"  main:")
         t.compile().pprint(style="compact")
 
-    # -------------------------------------------------------------------------
-    # Scenario 2: Clean Merge (diverged, APPEND-only)
-    # -------------------------------------------------------------------------
+    # --- Scenario 2: Clean Merge (diverged, APPEND-only) ---
 
     print(f"\n{'=' * 60}")
     print("Scenario 2: CLEAN MERGE")
@@ -89,11 +89,9 @@ def part2_merge_strategies():
         t.system("You are a helpful assistant. Keep answers to one sentence.")
         t.chat("What is a linked list?")
 
-        # Feature: stacks
         t.branch("feature")
         t.chat("What is a stack?")
 
-        # Main: queues
         t.switch("main")
         t.chat("What is a queue?")
 
@@ -105,7 +103,6 @@ def part2_merge_strategies():
         print(f"\n  feature:")
         t.compile().pprint(style="compact")
 
-        # Merge
         t.switch("main")
         result = t.merge("feature")
 
@@ -115,9 +112,7 @@ def part2_merge_strategies():
         print(f"  main:")
         t.compile().pprint(style="compact")
 
-    # -------------------------------------------------------------------------
-    # Bonus: no_ff and delete_branch=True
-    # -------------------------------------------------------------------------
+    # --- Bonus: no_ff and delete_branch=True ---
 
     print(f"\n{'=' * 60}")
     print("Bonus: no_ff + delete_branch")
@@ -154,5 +149,126 @@ def part2_merge_strategies():
         t.compile().pprint(style="compact")
 
 
+# =============================================================================
+# PART 2 -- Interactive: review=True, click.confirm, human decides
+# =============================================================================
+
+def part2_interactive():
+    print("=" * 60)
+    print("PART 2 -- Interactive: Merge with Review")
+    print("=" * 60)
+    print()
+    print("  merge(review=True) returns a PendingMerge instead of committing")
+    print("  immediately. You inspect the preview and decide.")
+
+    with Tract.open(
+        api_key=TRACT_OPENAI_API_KEY,
+        base_url=TRACT_OPENAI_BASE_URL,
+        model=MODEL_ID,
+    ) as t:
+        t.system("You are a helpful assistant. Keep answers to one sentence.")
+        t.chat("What is a variable?")
+
+        t.branch("feature")
+        t.chat("What is a constant?")
+
+        t.switch("main")
+
+        print(f"\n  main before merge:")
+        t.compile().pprint(style="compact")
+
+        # review=True returns PendingMerge for human approval
+        pending = t.merge("feature", review=True)
+
+        if not isinstance(pending, PendingMerge):
+            print(f"  Merge completed without review: {pending.merge_type}")
+            return
+
+        print(f"\n  PendingMerge returned:")
+        print(f"    merge_type:  {pending.merge_type}")
+        print(f"    conflicts:   {len(pending.conflicts)}")
+        pending.pprint()
+
+        if click.confirm("  Proceed with merge?", default=True):
+            result = pending.approve()
+            result.pprint()
+            print(f"\n  AFTER MERGE")
+            t.compile().pprint(style="compact")
+        else:
+            pending.reject("User declined merge.")
+            print("  Merge rejected.")
+
+
+# =============================================================================
+# PART 3 -- LLM / Agent: Hook auto-manages merge decisions
+# =============================================================================
+
+def part3_agent():
+    print("=" * 60)
+    print("PART 3 -- Agent: Auto-Merge via Hook")
+    print("=" * 60)
+    print()
+    print("  Register a merge hook that auto-approves fast-forwards")
+    print("  and rejects non-FF merges. No human in the loop.")
+
+    with Tract.open(
+        api_key=TRACT_OPENAI_API_KEY,
+        base_url=TRACT_OPENAI_BASE_URL,
+        model=MODEL_ID,
+    ) as t:
+
+        # Register hook: auto-approve FF, reject others
+        def auto_merge(pending):
+            if pending.merge_type == "fast_forward":
+                print(f"    [hook] FF merge -> auto-approving")
+                return pending.approve()
+            else:
+                print(f"    [hook] {pending.merge_type} -> rejecting")
+                return pending.reject("Non-FF rejected by policy")
+
+        t.on("merge", auto_merge)
+
+        t.system("You are a helpful assistant.")
+        t.chat("What is polymorphism?")
+
+        # FF scenario: hook auto-approves
+        t.branch("feature")
+        t.chat("Give an example of polymorphism.")
+        t.switch("main")
+
+        print(f"\n  Merging 'feature' (FF eligible):")
+        result = t.merge("feature")
+        print(f"  Result: {result.merge_type}")
+        t.compile().pprint(style="compact")
+
+    # Toolkit approach
+    print(f"\n  --- ToolExecutor approach ---")
+
+    with Tract.open(
+        api_key=TRACT_OPENAI_API_KEY,
+        base_url=TRACT_OPENAI_BASE_URL,
+        model=MODEL_ID,
+    ) as t:
+        t.system("You are a helpful assistant.")
+        t.chat("What is encapsulation?")
+        t.branch("toolkit-feature")
+        t.chat("Give an example of encapsulation.")
+        t.switch("main")
+
+        executor = ToolExecutor(t)
+        result = executor.execute("merge", {"branch": "toolkit-feature"})
+        print(f"  ToolExecutor merge result: {result}")
+
+
+# =============================================================================
+# main
+# =============================================================================
+
+def main():
+    part1_manual()
+    part2_interactive()
+    part3_agent()
+
+
 if __name__ == "__main__":
-    part2_merge_strategies()
+    main()

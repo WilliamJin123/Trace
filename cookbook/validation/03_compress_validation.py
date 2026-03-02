@@ -23,13 +23,96 @@ MODEL_ID = "gpt-oss-120b"
 
 
 # =============================================================================
-# Part 1: compress(validator=) — validate summary quality
+# Part 1: Manual Content Check (no LLM validator)
+# =============================================================================
+# Compress content and manually verify the result programmatically.
+# Simple assertion-based validation without any LLM in the validator.
+
+def part1_manual():
+    print("=" * 60)
+    print("Part 1: MANUAL CONTENT CHECK")
+    print("=" * 60)
+    print()
+
+    with Tract.open(
+        api_key=TRACT_OPENAI_API_KEY,
+        base_url=TRACT_OPENAI_BASE_URL,
+        model=MODEL_ID,
+    ) as t:
+        t.system("You are a database architecture assistant.")
+        t.chat("Explain the difference between B-trees and LSM-trees.")
+        t.chat("When should I use PostgreSQL vs ClickHouse?")
+
+        before = t.compile()
+        print(f"  Before compression: {before.token_count} tokens")
+
+        result = t.compress(target_tokens=150)
+        print(f"  After compression: {result.compressed_tokens} tokens "
+              f"({result.compression_ratio:.0%})")
+
+        # Manual verification: check the compressed content programmatically
+        ctx = t.compile()
+        messages = ctx.to_dicts()
+        all_text = " ".join(m.get("content", "") for m in messages).lower()
+
+        checks = {
+            "mentions database": "database" in all_text or "tree" in all_text,
+            "has content": len(all_text) > 50,
+            "token reduction": ctx.token_count < before.token_count,
+        }
+        for check, passed in checks.items():
+            status = "PASS" if passed else "FAIL"
+            print(f"  [{status}] {check}")
+
+
+# =============================================================================
+# Part 2: Interactive Compression Review
+# =============================================================================
+# compress(review=True) returns a PendingCompress for human review.
+# The human sees the proposed summary and approves or rejects it.
+
+def part2_interactive():
+    import click
+
+    print(f"\n{'=' * 60}")
+    print("Part 2: INTERACTIVE COMPRESSION REVIEW")
+    print("=" * 60)
+    print()
+
+    with Tract.open(
+        api_key=TRACT_OPENAI_API_KEY,
+        base_url=TRACT_OPENAI_BASE_URL,
+        model=MODEL_ID,
+    ) as t:
+        t.system("You are a database architecture assistant.")
+        t.chat("Explain the difference between B-trees and LSM-trees.")
+        t.chat("When should I use PostgreSQL vs ClickHouse?")
+        t.chat("How does write-ahead logging work in crash recovery?")
+
+        print(f"  Before: {t.compile().token_count} tokens\n")
+
+        # review=True returns a pending compression for approval
+        pending = t.compress(target_tokens=200, review=True)
+        pending.pprint()
+
+        if click.confirm("\n  Does this summary look correct?", default=True):
+            result = pending.approve()
+            print(f"  Approved! {result.compressed_tokens} tokens")
+        else:
+            pending.reject()
+            print("  Rejected. Original content preserved.")
+
+        print(f"  After: {t.compile().token_count} tokens")
+
+
+# =============================================================================
+# Part 3: compress(validator=) — validate summary quality
 # =============================================================================
 # The validator ensures the LLM summary mentions specific technical terms.
 # If validation fails, the LLM retries with a steering message injected
 # into the summarization prompt.
 
-def part1_compress_validator():
+def part3_compress_validator():
     with Tract.open(
         api_key=TRACT_OPENAI_API_KEY,
         base_url=TRACT_OPENAI_BASE_URL,
@@ -67,13 +150,13 @@ def part1_compress_validator():
 
 
 # =============================================================================
-# Part 2: retain_match= + validator= — two-layer safety net
+# Part 4: retain_match= + validator= — two-layer safety net
 # =============================================================================
 # Layer 1 (retain_match): regex patterns — hard deterministic requirement.
 # Layer 2 (validator): semantic check — soft quality control.
 # Both must pass for the summary to be accepted.
 
-def part2_combined_validation():
+def part4_combined_validation():
     with Tract.open(
         api_key=TRACT_OPENAI_API_KEY,
         base_url=TRACT_OPENAI_BASE_URL,
@@ -133,12 +216,12 @@ def part2_combined_validation():
 
 
 # =============================================================================
-# Part 3: instructions= + validator= — guided and validated
+# Part 5: instructions= + validator= — guided and validated
 # =============================================================================
 # instructions= steers the summary focus. validator= confirms the summary
 # actually followed those instructions.
 
-def part3_guided_and_validated():
+def part5_guided_and_validated():
     with Tract.open(
         api_key=TRACT_OPENAI_API_KEY,
         base_url=TRACT_OPENAI_BASE_URL,
@@ -183,14 +266,19 @@ def part3_guided_and_validated():
 
 
 def main():
-    print("=== Part 1: compress(validator=) ===\n")
-    part1_compress_validator()
+    print("=== Part 1: Manual content check ===\n")
+    part1_manual()
 
-    print(f"\n=== Part 2: retain_match= + validator= ===\n")
-    part2_combined_validation()
+    part2_interactive()
 
-    print(f"\n=== Part 3: instructions= + validator= ===\n")
-    part3_guided_and_validated()
+    print(f"\n=== Part 3: compress(validator=) ===\n")
+    part3_compress_validator()
+
+    print(f"\n=== Part 4: retain_match= + validator= ===\n")
+    part4_combined_validation()
+
+    print(f"\n=== Part 5: instructions= + validator= ===\n")
+    part5_guided_and_validated()
 
 
 if __name__ == "__main__":

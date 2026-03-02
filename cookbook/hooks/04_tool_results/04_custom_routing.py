@@ -28,6 +28,10 @@ def custom_routing() -> None:
     print("  A single handler that routes tools through different strategies:")
     print("  pass-through, edit (redact), summarize, or reject.")
 
+    # --- Without hooks (baseline) ---
+    # Without this handler, all tool_result() calls auto-commit as-is
+    # (tier 3). The router gives per-tool control (tier 2).
+
     with Tract.open(
         api_key=TRACT_OPENAI_API_KEY,
         base_url=TRACT_OPENAI_BASE_URL,

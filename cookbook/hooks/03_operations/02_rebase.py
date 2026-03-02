@@ -25,6 +25,11 @@ def rebase_hooks() -> None:
     print("PendingRebase: Review Before Replay")
     print("=" * 60)
 
+    # --- Without hooks (baseline) ---
+    # Without t.on("rebase", ...) and without review=True, rebase()
+    # replays all commits immediately (tier 3). With review=True, you
+    # get a PendingRebase to inspect the replay plan and exclude commits.
+
     with Tract.open(
         api_key=TRACT_OPENAI_API_KEY,
         base_url=TRACT_OPENAI_BASE_URL,

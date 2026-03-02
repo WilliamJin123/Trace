@@ -26,7 +26,7 @@ MODEL_ID_SMALL = "llama3.1-8b"
 
 def part3_edit_history():
     print(f"\n{'=' * 60}")
-    print("Part 3: EDIT HISTORY")
+    print("PART 3 -- Manual: EDIT HISTORY")
     print("=" * 60)
     print()
 
@@ -139,5 +139,53 @@ def part3_edit_history():
         print(f"  Only the black hole definition was rolled back to v1.")
 
 
-if __name__ == "__main__":
+# =============================================================================
+# Part 3b -- Agent: Traces Own Edit History
+# =============================================================================
+# Agents can detect and understand their own corrections by walking
+# the edit chain. Useful for self-reflection and learning from mistakes.
+
+def part3b_agent():
+    print(f"\n{'=' * 60}")
+    print("PART 3b -- Agent: TRACES OWN EDIT HISTORY")
+    print("=" * 60)
+    print()
+
+    from tract.toolkit import ToolExecutor
+
+    with Tract.open(
+        api_key=TRACT_OPENAI_API_KEY,
+        base_url=TRACT_OPENAI_BASE_URL,
+        model=MODEL_ID,
+    ) as t:
+        t.system("You are a concise assistant.")
+        executor = ToolExecutor(t)
+
+        # Initial response
+        r1 = t.chat("Define entropy.")
+        original_hash = r1.commit_info.commit_hash
+
+        # Edit the response
+        t.assistant("Entropy is a measure of disorder or randomness "
+                    "in a thermodynamic system.", edit=original_hash)
+
+        # Agent traces edit history
+        history = t.edit_history(original_hash)
+        print(f"  Edit chain for {original_hash[:8]}:")
+        for i, version in enumerate(history):
+            label = "ORIGINAL" if i == 0 else f"EDIT {i}"
+            content = t.get_content(version)
+            print(f"    v{i} ({label}): {str(content)[:60]}...")
+
+    # Note: Agents can detect and understand their own corrections
+    # by walking the edit chain. This enables self-reflection patterns
+    # where the agent reasons about why it needed to revise an answer.
+
+
+def main():
     part3_edit_history()
+    part3b_agent()
+
+
+if __name__ == "__main__":
+    main()

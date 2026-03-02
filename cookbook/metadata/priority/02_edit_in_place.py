@@ -1,35 +1,38 @@
 """Edit in Place
 
-A support agent's system prompt says '60-day return policy' — but it's
-actually 30 days. Chat with the LLM, see it parrot the wrong info, then
-edit the system prompt in place and ask again. Both versions stay in
-history for audit.
+Three tiers of editing: manual edit with chat verification, interactive
+editing via $EDITOR, and a note on agent-driven edits.
+
+PART 1 -- Manual           Direct API calls, no LLM, deterministic
+PART 2 -- Interactive       review=True, click.edit/confirm, human decides
+PART 3 -- LLM / Agent      Orchestrator, triggers, hooks auto-manage
 
 Demonstrates: system(edit=hash), annotate(SKIP) for stale responses,
               chat() before/after edit, compile() serves corrected
-              content, log() preserves both versions
+              content, log() preserves both versions, click.edit()
 """
 
 import os
 
+import click
 from dotenv import load_dotenv
 
 from tract import Priority, Tract
 
 load_dotenv()
 
-TRACT_OPENAI_API_KEY = os.environ["TRACT_OPENAI_API_KEY"]
-TRACT_OPENAI_BASE_URL = os.environ["TRACT_OPENAI_BASE_URL"]
+TRACT_OPENAI_API_KEY = os.environ.get("TRACT_OPENAI_API_KEY", "")
+TRACT_OPENAI_BASE_URL = os.environ.get("TRACT_OPENAI_BASE_URL", "")
 MODEL_ID = "gpt-oss-120b"
 
 
 # =============================================================================
-# Part 2: Edit in Place
+# Part 1: Edit in Place  (PART 1 — Manual, with LLM verification)
 # =============================================================================
 
-def part2_edit_in_place():
+def part1_edit_in_place():
     print("=" * 60)
-    print("Part 2: EDIT IN PLACE")
+    print("Part 1: EDIT IN PLACE  [Manual Tier]")
     print("=" * 60)
     print()
     print("  A support agent's system prompt says '60-day return policy' —")
@@ -96,5 +99,82 @@ def part2_edit_in_place():
             print(f"  {entry}")
 
 
+# =============================================================================
+# Part 2: Interactive Edit via $EDITOR  (PART 2 — Interactive)
+# =============================================================================
+
+def part2_interactive_edit():
+    print("=" * 60)
+    print("Part 2: INTERACTIVE EDIT VIA $EDITOR  [Interactive Tier]")
+    print("=" * 60)
+    print()
+    print("  Open the current system prompt in $EDITOR, make changes,")
+    print("  then confirm and apply the edit.")
+    print()
+
+    t = Tract.open()
+
+    sys_ci = t.system(
+        "You are a customer support agent for Acme Corp.\n"
+        "Return policy: customers may return any item within 60 days.\n"
+        "Tone: friendly and professional.",
+    )
+    t.user("Tell me about returns.")
+    t.assistant("Our return policy allows returns within 60 days of purchase.")
+
+    # Show current system prompt
+    old_text = t.get_content(sys_ci.commit_hash)["text"]
+    print(f"  Current system prompt:\n    {old_text[:80]}...\n")
+
+    # Open in $EDITOR
+    edited = click.edit(old_text)
+    if edited and edited.strip() != old_text.strip():
+        if click.confirm("  Apply this edit to the system prompt?"):
+            new_ci = t.system(edited.strip(), edit=sys_ci.commit_hash)
+            print(f"  Edit applied: {new_ci.commit_hash[:8]}\n")
+
+            print("  --- Compiled context (after edit) ---\n")
+            t.compile().pprint()
+        else:
+            print("  Edit cancelled.")
+    else:
+        print("  No changes made (or editor closed without saving).")
+
+    print()
+    t.close()
+
+
+# =============================================================================
+# Part 3: Agent-Driven Edits  (PART 3 — LLM / Agent)
+# =============================================================================
+
+def part3_agent_note():
+    print("=" * 60)
+    print("Part 3: AGENT-DRIVEN EDITS  [Agent Tier — Note]")
+    print("=" * 60)
+    print()
+    print("  Editing is inherently a manual or interactive operation —")
+    print("  an agent needs human judgment to know *what* to change.")
+    print()
+    print("  For agent-driven edits via the toolkit, see:")
+    print("    orchestrator/01_toolkit.py")
+    print("  where agents can execute edit operations using ToolExecutor:")
+    print("    executor.execute('commit', {'content': new_text, 'edit': old_hash})")
+    print()
+
+
+# =============================================================================
+# Main
+# =============================================================================
+
+def main():
+    part1_edit_in_place()
+    part2_interactive_edit()
+    part3_agent_note()
+    print("=" * 60)
+    print("Done -- all 3 tiers of edit-in-place demonstrated.")
+    print("=" * 60)
+
+
 if __name__ == "__main__":
-    part2_edit_in_place()
+    main()

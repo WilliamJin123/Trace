@@ -25,6 +25,11 @@ def gc_hooks() -> None:
     print("  GC removes orphaned commits (not reachable from any branch).")
     print("  Create orphans by branching, adding commits, then deleting the branch.")
 
+    # --- Without hooks (baseline) ---
+    # Without t.on("gc", ...) and without review=True, gc() removes all
+    # eligible orphans immediately (tier 3). With review=True, you get a
+    # PendingGC to inspect and exclude commits before approving (tier 1).
+
     with Tract.open(
         api_key=TRACT_OPENAI_API_KEY,
         base_url=TRACT_OPENAI_BASE_URL,

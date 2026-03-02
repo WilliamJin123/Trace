@@ -1,21 +1,24 @@
 """Rebase
 
-Update a stale branch to include the latest main by replaying
-the branch's commits on top of the target's tip. Rebase gives
-the branch everything main has plus its own work, with new
-hashes (new parents) but same content.
+Three tiers of rebase usage -- manual rebase with result inspection,
+interactive review with PendingRebase, and agent-driven triggers/toolkit.
 
-Demonstrates: rebase(), RebaseResult, replayed_commits,
-              original_commits, new_head, branch(), switch(),
-              pprint(style="compact"), pprint(style="chat"),
-              before/after state visualization
+PART 1 -- Manual           Direct rebase(), inspect RebaseResult
+PART 2 -- Interactive       rebase(review=True), PendingRebase, click.confirm
+PART 3 -- LLM / Agent      RebaseTrigger + ToolExecutor auto-rebase
+
+Demonstrates: rebase(), RebaseResult, replayed_commits, original_commits,
+              new_head, rebase(review=True), PendingRebase, approve/reject,
+              RebaseTrigger, ToolExecutor
 """
 
 import os
 
+import click
 from dotenv import load_dotenv
 
-from tract import Tract, CompiledContext
+from tract import RebaseTrigger, Tract, ToolExecutor
+from tract.hooks.rebase import PendingRebase
 
 load_dotenv()
 
@@ -24,19 +27,33 @@ TRACT_OPENAI_BASE_URL = os.environ["TRACT_OPENAI_BASE_URL"]
 MODEL_ID = "gpt-oss-120b"
 
 
-def main():
-    # =================================================================
-    # Part 2: rebase
-    # =================================================================
+def _build_diverged_branches(t):
+    """Helper: build main + examples branch that diverge."""
+    t.system("You are a concise music theory tutor. One paragraph max.")
+    t.chat("What are major and minor scales?")
 
-    print(f"\n{'=' * 60}")
-    print("Part 2: REBASE")
+    t.branch("examples")
+    t.chat("Give me 3 chord progression examples, from simple to complex.")
+    t.chat("Now explain the emotional feel of each progression.")
+
+    t.switch("main")
+    t.chat("What are modes? How do they differ from standard scales?")
+
+    t.switch("examples")
+
+
+# =============================================================================
+# PART 1 -- Manual: Direct rebase(), inspect RebaseResult
+# =============================================================================
+
+def part1_manual():
+    print("=" * 60)
+    print("PART 1 -- Manual: Rebase")
     print("=" * 60)
     print()
     print("  Scenario: 'examples' branch started from an older main.")
     print("  Main has since advanced with new content. Rebase replays")
-    print("  the examples branch's commits on top of main's current tip,")
-    print("  so the branch includes everything main has plus its own work.")
+    print("  the examples branch's commits on top of main's current tip.")
 
     with Tract.open(
         api_key=TRACT_OPENAI_API_KEY,
@@ -44,47 +61,15 @@ def main():
         model=MODEL_ID,
     ) as t:
 
-        # Step 1: Build shared base
-        print("\n  Step 1: Build shared base on main\n")
+        _build_diverged_branches(t)
 
-        t.system("You are a concise music theory tutor. One paragraph max.")
-        t.chat("What are major and minor scales?")
-
-        print("  main (shared base):")
-        t.compile().pprint(style="compact")
-
-        # Step 2: Branch and add feature work
-        print("\n  Step 2: Branch 'examples' and add 2 LLM exchanges\n")
-
-        t.branch("examples")
-        r1 = t.chat("Give me 3 chord progression examples, from simple to complex.")
-        r2 = t.chat("Now explain the emotional feel of each progression.")
-
-        print("  examples (2 extra exchanges beyond shared base):")
-        t.compile().pprint(style="compact")
-
-        # Step 3: Main advances independently
-        print("\n  Step 3: Main advances -- examples is now stale\n")
-
-        t.switch("main")
-        t.chat("What are modes? How do they differ from standard scales?")
-
-        print("  main (has modes content examples branch doesn't):")
-        t.compile().pprint(style="compact")
-
-        # Step 4: Show the stale examples branch
-        print("\n  Step 4: examples branch is missing main's latest\n")
-
-        t.switch("examples")
         ctx_before = t.compile()
-
-        print(f"  examples BEFORE rebase ({len(ctx_before.messages)} messages):")
+        print(f"\n  examples BEFORE rebase ({len(ctx_before.messages)} messages):")
         ctx_before.pprint(style="compact")
         print("\n  (notice: no modes content)")
 
-        # Step 5: Rebase
-        print("\n  Step 5: Rebase examples onto main\n")
-
+        # Rebase
+        print("\n  Rebasing examples onto main...\n")
         result = t.rebase("main")
 
         print(f"  Rebase complete:")
@@ -92,20 +77,133 @@ def main():
         print(f"    new HEAD: {result.new_head[:8]}")
         print(f"    warnings: {len(result.warnings)}")
 
-        # Show hash changes (new parentage -> new hashes)
+        # Show hash changes
         print(f"\n  Hash changes (same content, new lineage):")
         for orig, replayed in zip(result.original_commits, result.replayed_commits):
             print(f"    {orig.commit_hash[:8]} -> {replayed.commit_hash[:8]}")
 
-        # Step 6: Show the result
         ctx_after = t.compile()
-
         print(f"\n  examples AFTER rebase ({len(ctx_after.messages)} messages):")
         ctx_after.pprint(style="chat")
 
         print("\n  The examples branch now includes main's modes")
         print("  content PLUS its own chord progression work.")
-        print("  Commits got new hashes (new parents) but same content.")
+
+
+# =============================================================================
+# PART 2 -- Interactive: rebase(review=True), PendingRebase, click.confirm
+# =============================================================================
+
+def part2_interactive():
+    print("=" * 60)
+    print("PART 2 -- Interactive: Rebase with Review")
+    print("=" * 60)
+    print()
+    print("  rebase(review=True) returns a PendingRebase for human")
+    print("  inspection before committing the replayed commits.")
+
+    with Tract.open(
+        api_key=TRACT_OPENAI_API_KEY,
+        base_url=TRACT_OPENAI_BASE_URL,
+        model=MODEL_ID,
+    ) as t:
+
+        _build_diverged_branches(t)
+
+        print(f"\n  examples BEFORE rebase:")
+        t.compile().pprint(style="compact")
+
+        # review=True returns PendingRebase
+        pending = t.rebase("main", review=True)
+
+        if not isinstance(pending, PendingRebase):
+            print(f"  Rebase completed without review.")
+            return
+
+        print(f"\n  PendingRebase returned:")
+        print(f"    commits to replay: {len(pending.original_commits)}")
+        pending.pprint()
+
+        if click.confirm("  Proceed with rebase?", default=True):
+            result = pending.approve()
+            print(f"\n  Rebase approved:")
+            print(f"    replayed: {len(result.replayed_commits)} commits")
+            print(f"    new HEAD: {result.new_head[:8]}")
+            t.compile().pprint(style="chat")
+        else:
+            pending.reject("User declined rebase.")
+            print("  Rebase rejected. Branch unchanged.")
+
+
+# =============================================================================
+# PART 3 -- LLM / Agent: RebaseTrigger + ToolExecutor auto-rebase
+# =============================================================================
+
+def part3_agent():
+    print("=" * 60)
+    print("PART 3 -- Agent: Auto-Rebase via Trigger + Toolkit")
+    print("=" * 60)
+    print()
+    print("  RebaseTrigger fires when branch diverges beyond a threshold.")
+    print("  ToolExecutor can also rebase on demand.")
+
+    # --- Trigger approach ---
+    print(f"\n  --- RebaseTrigger approach ---")
+
+    trigger = RebaseTrigger(target_branch="main", divergence_commits=3)
+    print(f"  RebaseTrigger: fires_on={trigger.fires_on}, "
+          f"divergence_commits=3")
+
+    with Tract.open(
+        api_key=TRACT_OPENAI_API_KEY,
+        base_url=TRACT_OPENAI_BASE_URL,
+        model=MODEL_ID,
+    ) as t:
+        t.configure_triggers([trigger])
+
+        t.system("You are a concise music theory tutor.")
+        t.chat("What are scales?")
+
+        t.branch("feature")
+        t.chat("What are arpeggios?")
+
+        # Main advances past the threshold
+        t.switch("main")
+        for i in range(4):
+            t.user(f"Main content {i}")
+
+        t.switch("feature")
+        action = trigger.evaluate(t)
+        if action:
+            print(f"  Trigger fired: {action.action_type}")
+            print(f"  Reason: {action.reason}")
+
+    # --- ToolExecutor approach ---
+    print(f"\n  --- ToolExecutor approach ---")
+
+    with Tract.open(
+        api_key=TRACT_OPENAI_API_KEY,
+        base_url=TRACT_OPENAI_BASE_URL,
+        model=MODEL_ID,
+    ) as t:
+        _build_diverged_branches(t)
+
+        executor = ToolExecutor(t)
+        result = executor.execute("rebase", {"target": "main"})
+        print(f"  ToolExecutor rebase result: {result}")
+
+        print(f"\n  AFTER REBASE:")
+        t.compile().pprint(style="compact")
+
+
+# =============================================================================
+# main
+# =============================================================================
+
+def main():
+    part1_manual()
+    part2_interactive()
+    part3_agent()
 
 
 if __name__ == "__main__":

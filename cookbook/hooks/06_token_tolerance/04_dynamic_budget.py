@@ -35,6 +35,10 @@ def dynamic_budget() -> None:
     print("PART 4 — Dynamic Budget")
     print("=" * 60)
 
+    # --- Without hooks (baseline) ---
+    # Without this hook, compress() uses a fixed token_tolerance (tier 3).
+    # This hook scales tolerance dynamically with context size (tier 2).
+
     def dynamic_tolerance(pending: PendingCompress) -> None:
         """Tolerance = 10% of original tokens, clamped to [50, 500]."""
         original = pending.original_tokens

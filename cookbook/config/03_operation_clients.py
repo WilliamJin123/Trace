@@ -27,7 +27,7 @@ MODEL_ID = "gpt-oss-120b"
 
 
 # =============================================================================
-# Part 3: Per-Operation LLM Clients
+# Part 3 -- Manual: Per-Operation LLM Clients
 # =============================================================================
 # Use a different LLM *client* for each operation — e.g. OpenAI for chat,
 # a local Ollama for compression, Anthropic for merge conflict resolution.
@@ -38,7 +38,7 @@ MODEL_ID = "gpt-oss-120b"
 
 def part3_per_operation_clients():
     print(f"\n{'=' * 60}")
-    print("Part 3: PER-OPERATION LLM CLIENTS")
+    print("PART 3 -- Manual: PER-OPERATION LLM CLIENTS")
     print("=" * 60)
     print()
 
@@ -138,5 +138,43 @@ def part3_per_operation_clients():
         print("\n=== Clients closed by caller ===")
 
 
-if __name__ == "__main__":
+# =============================================================================
+# Part 3b -- Agent: Perspective on Client Routing
+# =============================================================================
+# Client routing is init-time configuration. Agents observe which client
+# they're using via status() but cannot switch clients at runtime. This is
+# by design -- client selection is an infrastructure concern, not an agent
+# concern.
+
+def part3b_agent_client_perspective():
+    print(f"\n{'=' * 60}")
+    print("PART 3b -- Agent: PERSPECTIVE ON CLIENT ROUTING")
+    print("=" * 60)
+    print()
+
+    from tract.toolkit import ToolExecutor
+
+    with Tract.open(
+        api_key=TRACT_OPENAI_API_KEY,
+        base_url=TRACT_OPENAI_BASE_URL,
+        model=MODEL_ID,
+    ) as t:
+        t.system("You are a helpful assistant.")
+        executor = ToolExecutor(t)
+
+        status = executor.execute("status", {})
+        print(f"  Agent sees its client routing via status():\n{status}\n")
+
+        # Note: Client routing is init-time configuration. Agents observe
+        # which client they're using via status() but cannot switch clients
+        # at runtime. This is by design -- client selection is an
+        # infrastructure concern, not an agent concern.
+
+
+def main():
     part3_per_operation_clients()
+    part3b_agent_client_perspective()
+
+
+if __name__ == "__main__":
+    main()

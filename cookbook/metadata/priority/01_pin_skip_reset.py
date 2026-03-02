@@ -1,16 +1,31 @@
 """Annotations — Pin, Skip, and Reset
 
-Control what the LLM sees without deleting history. System prompts are
-PINNED by default (survive compression), user/assistant messages are
-NORMAL, and any message can be annotated SKIP to hide it from compile().
-All operations are non-destructive — reset back to NORMAL at any time.
+Control what the LLM sees without deleting history. Three tiers:
+manual API calls, interactive prompts, and agent-driven via triggers/toolkit.
+
+PART 1 -- Manual           Direct API calls, no LLM, deterministic
+PART 2 -- Interactive       review=True, click.edit/confirm, human decides
+PART 3 -- LLM / Agent      Orchestrator, triggers, hooks auto-manage
 
 Demonstrates: default PINNED on system(), annotate(NORMAL) to unpin,
               annotate(SKIP), annotate(NORMAL) to reset, compile()
-              reflects annotations, Priority enum values
+              reflects annotations, Priority enum values, click prompts,
+              PinTrigger, ToolExecutor
 """
 
+import os
+
+import click
+from dotenv import load_dotenv
+
 from tract import Priority, Tract
+from tract.toolkit import ToolExecutor
+
+load_dotenv()
+
+TRACT_OPENAI_API_KEY = os.environ.get("TRACT_OPENAI_API_KEY", "")
+TRACT_OPENAI_BASE_URL = os.environ.get("TRACT_OPENAI_BASE_URL", "")
+MODEL_ID = "gpt-oss-120b"
 
 
 # =============================================================================
@@ -19,7 +34,7 @@ from tract import Priority, Tract
 
 def part1_annotations():
     print("=" * 60)
-    print("Part 1: ANNOTATIONS — Pin, Skip, Reset")
+    print("Part 1: ANNOTATIONS — Pin, Skip, Reset  [Manual Tier]")
     print("=" * 60)
     print()
     print("  System prompts are PINNED by default (they survive compression).")
@@ -90,5 +105,112 @@ def part1_annotations():
     t.close()
 
 
-if __name__ == "__main__":
+# =============================================================================
+# Part 2: Interactive Priority Management  (PART 2 — Interactive)
+# =============================================================================
+
+def part2_interactive():
+    print("=" * 60)
+    print("Part 2: INTERACTIVE PRIORITY MANAGEMENT  [Interactive Tier]")
+    print("=" * 60)
+    print()
+    print("  Walk commits with t.log(), pick one by number, and change")
+    print("  its priority with confirmation.")
+    print()
+
+    t = Tract.open()
+
+    t.system("You are a coding assistant.")
+    t.user("Write a factorial function.")
+    t.assistant("def factorial(n):\n    return 1 if n <= 1 else n * factorial(n - 1)")
+    t.user("Now write it iteratively.")
+    t.assistant("def factorial(n):\n    result = 1\n    for i in range(2, n+1):\n        result *= i\n    return result")
+
+    # Show numbered commit list with current priorities
+    entries = list(reversed(t.log()))
+    print("  Commits:")
+    for i, entry in enumerate(entries):
+        content_preview = (entry.content_text or "")[:40].replace("\n", " ")
+        print(f"    [{i}] {entry.commit_hash[:8]}  {entry.role:9s}  {content_preview}")
+    print()
+
+    idx = click.prompt("  Change priority for which commit? (number)", type=int)
+    if 0 <= idx < len(entries):
+        choice = click.prompt(
+            "  Priority (PINNED/SKIP/NORMAL)",
+            type=click.Choice(["PINNED", "SKIP", "NORMAL"], case_sensitive=False),
+        )
+        target = entries[idx]
+        if click.confirm(f"  Set {target.commit_hash[:8]} to {choice}?"):
+            t.annotate(target.commit_hash, Priority[choice])
+            print(f"  Done. Priority updated.\n")
+
+            ctx = t.compile()
+            print(f"  Compiled context: {ctx.commit_count} messages, "
+                  f"{ctx.token_count} tokens")
+    else:
+        print("  (invalid index, skipping)")
+
+    print()
+    t.close()
+
+
+# =============================================================================
+# Part 3: Agent-Driven Priority  (PART 3 — LLM / Agent)
+# =============================================================================
+
+def part3_agent():
+    print("=" * 60)
+    print("Part 3: AGENT-DRIVEN PRIORITY  [Agent Tier]")
+    print("=" * 60)
+    print()
+    print("  PinTrigger auto-pins system prompts (instruction type).")
+    print("  ToolExecutor lets an agent annotate commits programmatically.")
+    print()
+
+    t = Tract.open(
+        api_key=TRACT_OPENAI_API_KEY,
+        base_url=TRACT_OPENAI_BASE_URL,
+        model=MODEL_ID,
+    )
+
+    sys_ci = t.system("You are a security auditor. Follow OWASP guidelines.")
+    t.user("Review the login endpoint.")
+    ast_ci = t.assistant(
+        "The login endpoint uses bcrypt for passwords but has no "
+        "rate limiting. I recommend adding a 5-attempt lockout."
+    )
+
+    # Agent uses ToolExecutor to annotate a commit as PINNED
+    executor = ToolExecutor(t)
+    result = executor.execute("annotate", {
+        "commit_hash": ast_ci.commit_hash,
+        "priority": "PINNED",
+    })
+    print(f"  executor.execute('annotate', PINNED) -> success={result.success}")
+    print(f"  The security finding is now PINNED (survives compression).")
+    print()
+
+    # Show compiled context
+    ctx = t.compile()
+    print(f"  Compiled: {ctx.commit_count} messages, {ctx.token_count} tokens")
+    print()
+
+    t.close()
+
+
+# =============================================================================
+# Main
+# =============================================================================
+
+def main():
     part1_annotations()
+    part2_interactive()
+    part3_agent()
+    print("=" * 60)
+    print("Done -- all 3 tiers of priority management demonstrated.")
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    main()

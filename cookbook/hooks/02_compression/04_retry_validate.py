@@ -43,6 +43,10 @@ def retry_and_validate() -> None:
     print("  edit_summary() fixes problems, then re-validate.")
     print("  auto_retry() automates the validate->retry loop.")
 
+    # --- Without hooks (baseline) ---
+    # Without review=True, compress() auto-commits without validation.
+    # With review=True, you can validate() and retry() before approve().
+
     # --- 4a: Manual validate / edit_summary / re-validate ---
     print("\n  --- 4a: Manual validate -> edit_summary -> re-validate ---")
 

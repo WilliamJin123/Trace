@@ -36,6 +36,11 @@ def hook_handler_patterns() -> None:
     print("PART 2 -- Hook Handler Patterns")
     print("=" * 60)
 
+    # --- Without hooks (baseline) ---
+    # Without t.on("compress", ...), compress() auto-commits the LLM's
+    # summary directly (tier 3). With a handler, you can inspect, edit,
+    # or reject before it commits (tier 2, shown below).
+
     # --- Pattern A: Auto-edit and approve ---
     print("\n  Pattern A: Auto-edit handler (enforce word limit)")
 

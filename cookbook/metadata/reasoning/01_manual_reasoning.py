@@ -1,14 +1,17 @@
 """Manual Reasoning Commits
 
-Part 1 of Reasoning Traces: use t.reasoning() to commit thinking text,
-inspect it in log(), and verify it's excluded from compile(). No LLM needed.
+Three tiers of reasoning management: manual commits, interactive
+confirmation, and agent-driven reasoning via generate().
 
-t.reasoning() commits a ReasoningContent with SKIP priority by default.
-The reasoning is in the commit chain (visible in log()) but excluded
-from compile() — the LLM never sees it unless you ask for it.
+PART 1 -- Manual           Direct API calls, no LLM, deterministic
+PART 2 -- Interactive       review=True, click.edit/confirm, human decides
+PART 3 -- LLM / Agent      Orchestrator, triggers, hooks auto-manage
 
-Demonstrates: t.reasoning(), log(), compile(), get_content(), get_metadata()
+Demonstrates: t.reasoning(), log(), compile(), get_content(), get_metadata(),
+              click.confirm(), compile(include_reasoning=True)
 """
+
+import click
 
 from tract import Tract
 
@@ -70,5 +73,77 @@ def part1_manual_reasoning():
     t.close()
 
 
-if __name__ == "__main__":
+# =============================================================================
+# Part 2: Interactive Reasoning Toggle  (PART 2 — Interactive)
+# =============================================================================
+
+def part2_interactive():
+    print("=" * 60)
+    print("Part 2: INTERACTIVE REASONING TOGGLE  [Interactive Tier]")
+    print("=" * 60)
+    print()
+    print("  Compile with reasoning included, then let the user decide")
+    print("  whether to include reasoning in the next compile.")
+    print()
+
+    t = Tract.open()
+    t.system("You are a helpful assistant.")
+    t.user("Explain gravity.")
+    t.reasoning(
+        "Gravity is the fundamental force of attraction between masses. "
+        "I should mention Newton's law and Einstein's general relativity."
+    )
+    t.assistant("Gravity is the force of attraction between objects with mass.")
+
+    # Show with reasoning
+    ctx_with = t.compile(include_reasoning=True)
+    print(f"  With reasoning: {ctx_with.commit_count} messages, "
+          f"{ctx_with.token_count} tokens")
+    ctx_with.pprint(style="chat")
+
+    if click.confirm("\n  Include reasoning in next compile?", default=False):
+        ctx = t.compile(include_reasoning=True)
+    else:
+        ctx = t.compile()
+
+    print(f"\n  Your choice: {ctx.commit_count} messages, {ctx.token_count} tokens")
+    print()
+
+    t.close()
+
+
+# =============================================================================
+# Part 3: Agent Reasoning  (PART 3 — LLM / Agent)
+# =============================================================================
+
+def part3_agent_note():
+    print("=" * 60)
+    print("Part 3: AGENT REASONING  [Agent Tier — Note]")
+    print("=" * 60)
+    print()
+    print("  See 04_llm_integration.py for generate() auto-extracting")
+    print("  reasoning from LLM responses. The agent generates reasoning")
+    print("  automatically via generate(reasoning_effort='high').")
+    print()
+    print("  Key patterns:")
+    print("    resp = t.generate(reasoning_effort='high')")
+    print("    resp.reasoning         # extracted text")
+    print("    resp.reasoning_commit  # auto-committed CommitInfo")
+    print()
+
+
+# =============================================================================
+# Main
+# =============================================================================
+
+def main():
     part1_manual_reasoning()
+    part2_interactive()
+    part3_agent_note()
+    print("=" * 60)
+    print("Done -- all 3 tiers of reasoning management demonstrated.")
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    main()

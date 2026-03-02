@@ -109,7 +109,7 @@ def execute_tool(name: str, args: dict) -> str:
 
 def part2_tool_provenance():
     print(f"\n{'=' * 60}")
-    print("Part 2: TOOL PROVENANCE")
+    print("PART 2 -- Manual: TOOL PROVENANCE")
     print("=" * 60)
     print()
 
@@ -279,5 +279,51 @@ def part2_tool_provenance():
         t.compile().pprint(style="chat")
 
 
-if __name__ == "__main__":
+# =============================================================================
+# Part 3 -- Agent: Introspects Tool Provenance
+# =============================================================================
+# Agents use get_commit_tools() to verify which tools were available when
+# a response was generated. Useful for debugging tool availability issues.
+
+def part3_agent():
+    print(f"\n{'=' * 60}")
+    print("PART 3 -- Agent: INTROSPECTS TOOL PROVENANCE")
+    print("=" * 60)
+    print()
+
+    from tract.toolkit import ToolExecutor
+
+    with Tract.open(
+        api_key=TRACT_OPENAI_API_KEY,
+        base_url=TRACT_OPENAI_BASE_URL,
+        model=MODEL_ID,
+    ) as t:
+        t.set_tools([PYTHON_EVAL_TOOL, SHELL_TOOL])
+        t.system("You are a helpful assistant with tools.")
+        executor = ToolExecutor(t)
+
+        r = t.chat("What is 2**10?")
+        if r.tool_calls:
+            for tc in r.tool_calls:
+                result = execute_tool(tc.name, tc.arguments)
+                t.tool_result(tc.id, tc.name, result)
+            t.generate()
+
+        # Agent introspects tools available at each commit
+        for entry in t.log(limit=10):
+            tools = t.get_commit_tools(entry.commit_hash)
+            names = [d["function"]["name"] for d in tools] if tools else ["(none)"]
+            print(f"    {entry.commit_hash[:8]}  tools: {', '.join(names)}")
+
+    # Note: Agents use get_commit_tools() to verify which tools were
+    # available when a response was generated. This is essential for
+    # debugging when an agent claims a tool wasn't available.
+
+
+def main():
     part2_tool_provenance()
+    part3_agent()
+
+
+if __name__ == "__main__":
+    main()

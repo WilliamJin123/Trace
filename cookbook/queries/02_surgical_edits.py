@@ -182,7 +182,7 @@ def _build_agent_session(t: Tract):
 
 def part2_surgical_edits():
     print(f"\n{'=' * 60}")
-    print("Part 2: SURGICAL EDITS (tool_result(edit=))")
+    print("PART 2 -- Manual: SURGICAL EDITS (tool_result(edit=))")
     print("=" * 60)
     print()
 
@@ -250,5 +250,101 @@ def part2_surgical_edits():
     t.close()
 
 
-if __name__ == "__main__":
+# =============================================================================
+# Part 2b -- Interactive: Surgical Edits
+# =============================================================================
+# Walk verbose tool results interactively. For each result, show the content
+# and let the human decide whether to trim it, with click.edit() for editing.
+
+def part2b_interactive():
+    import click
+
+    print(f"\n{'=' * 60}")
+    print("PART 2b -- Interactive: SURGICAL EDITS")
+    print("=" * 60)
+    print()
+
+    t = Tract.open()
+    refs = _build_agent_session(t)
+
+    ctx_before = t.compile()
+    print(f"  BEFORE: {ctx_before.token_count} tokens\n")
+
+    # Walk all tool results and let the human decide
+    results = t.find_tool_results()
+    for r in results:
+        content = t.get_content(r)
+        name = r.metadata.get("name", "?")
+        print(f"\n  [{name}] {r.token_count} tokens ({r.commit_hash[:8]}):")
+        lines = (content or "").split("\n")
+        for line in lines[:5]:
+            print(f"    {line}")
+        if len(lines) > 5:
+            print(f"    ... ({len(lines) - 5} more lines)")
+
+        if click.confirm(f"  Trim this {name} result?", default=False):
+            edited = click.edit(content)
+            if edited and edited.strip() != content:
+                ci = t.tool_result(
+                    r.metadata.get("call_id", ""),
+                    name,
+                    edited.strip(),
+                    edit=r.commit_hash,
+                )
+                print(f"    Edited: {r.token_count} -> {ci.token_count} tokens")
+            else:
+                print("    (no changes)")
+
+    ctx_after = t.compile()
+    saved = ctx_before.token_count - ctx_after.token_count
+    print(f"\n  AFTER: {ctx_after.token_count} tokens (saved {saved})")
+
+    t.close()
+
+
+# =============================================================================
+# Part 3 -- Agent: Auto-Trims via Toolkit
+# =============================================================================
+# An agent can surgically edit tool results via the toolkit, trimming
+# verbose output programmatically without human intervention.
+
+def part3_agent():
+    print(f"\n{'=' * 60}")
+    print("PART 3 -- Agent: AUTO-TRIMS VIA TOOLKIT")
+    print("=" * 60)
+    print()
+
+    from tract.toolkit import ToolExecutor
+
+    t = Tract.open()
+    refs = _build_agent_session(t)
+    executor = ToolExecutor(t)
+
+    ctx_before = t.compile()
+    print(f"  BEFORE: {ctx_before.token_count} tokens")
+
+    # Agent trims a verbose grep result via direct tool_result(edit=)
+    trimmed = (
+        "src/auth/login.py:15: def authenticate(username, password):\n"
+        "src/auth/login.py:22:     if not authenticate_ldap(username, password):"
+    )
+    ci = t.tool_result("c1", "grep", trimmed, edit=refs["grep1"].commit_hash)
+    print(f"  Trimmed grep1: {refs['grep1'].token_count} -> {ci.token_count} tokens")
+
+    ctx_after = t.compile()
+    print(f"  AFTER: {ctx_after.token_count} tokens")
+
+    # Note: Agents use tool_result(edit=hash) to surgically replace verbose
+    # tool output. The original is preserved in history for audit trails.
+
+    t.close()
+
+
+def main():
     part2_surgical_edits()
+    part2b_interactive()
+    part3_agent()
+
+
+if __name__ == "__main__":
+    main()

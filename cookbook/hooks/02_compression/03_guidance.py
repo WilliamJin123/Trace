@@ -39,6 +39,10 @@ def guidance() -> None:
     print("  edit_guidance() tells the LLM what to focus on.")
     print("  guidance_source tracks where guidance came from.")
 
+    # --- Without hooks (baseline) ---
+    # Without review=True, compress() uses only instructions= for guidance.
+    # With review=True, edit_guidance() lets you steer after seeing the draft.
+
     with Tract.open(
         api_key=TRACT_OPENAI_API_KEY,
         base_url=TRACT_OPENAI_BASE_URL,

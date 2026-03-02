@@ -22,6 +22,11 @@ def edit_and_summarize() -> None:
     print("PART 2 -- Edit and Summarize")
     print("=" * 60)
 
+    # --- Without hooks (baseline) ---
+    # Without review=True, tool_result() commits content as-is (tier 3).
+    # With review=True, edit_result() and summarize() let you transform
+    # the content before committing (tier 1).
+
     # --- edit_result(): manual replacement ---
     print("\n  edit_result(): replace content before commit")
 

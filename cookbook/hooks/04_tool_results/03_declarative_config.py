@@ -32,6 +32,11 @@ def declarative_config() -> None:
     print("  Sugar over t.on('tool_result', handler).")
     print("  Set per-tool instructions and auto-thresholds declaratively.")
 
+    # --- Without hooks (baseline) ---
+    # Without configure_tool_summarization(), all tool results commit
+    # verbatim (tier 3). This sugar auto-registers a handler that
+    # summarizes results above a token threshold (tier 2).
+
     with Tract.open(
         api_key=TRACT_OPENAI_API_KEY,
         base_url=TRACT_OPENAI_BASE_URL,

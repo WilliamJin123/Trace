@@ -40,6 +40,10 @@ def two_stage() -> None:
     print("  two_stage=True generates guidance before summaries.")
     print("  The LLM first decides *what matters*, then summarizes.")
 
+    # --- Without hooks (baseline) ---
+    # Without two_stage=True, compress() goes straight to summarization.
+    # two_stage=True adds an LLM guidance step; review=True lets you edit it.
+
     # --- 5a: two_stage=True generates LLM guidance ---
     print("\n  --- 5a: two_stage=True with review=True ---")
 

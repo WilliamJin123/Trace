@@ -30,7 +30,7 @@ MODEL_ID = "gpt-oss-120b"
 
 
 # =============================================================================
-# Part 1: Per-Call Config (sugar params + LLMConfig)
+# Part 1 -- Manual: Per-Call Config (sugar params + LLMConfig)
 # =============================================================================
 # Override model, temperature, or any LLM setting for a single call —
 # without changing your defaults. Two styles: sugar params for quick tweaks,
@@ -38,7 +38,7 @@ MODEL_ID = "gpt-oss-120b"
 
 def part1_per_call_config():
     print("=" * 60)
-    print("Part 1: PER-CALL CONFIG")
+    print("PART 1 -- Manual: PER-CALL CONFIG")
     print("=" * 60)
     print()
 
@@ -103,5 +103,50 @@ def part1_per_call_config():
         # Note: response.pprint() would show the same info as a rich panel
 
 
-if __name__ == "__main__":
+# =============================================================================
+# Part 3 -- Agent: Self-Configuring via Toolkit
+# =============================================================================
+# Agents introspect their own generation_config via status() and adjust
+# temperature/max_tokens per-call using the toolkit.
+
+def part3_agent():
+    print(f"\n{'=' * 60}")
+    print("PART 3 -- Agent: SELF-CONFIGURING VIA TOOLKIT")
+    print("=" * 60)
+    print()
+
+    from tract.toolkit import ToolExecutor
+
+    with Tract.open(
+        api_key=TRACT_OPENAI_API_KEY,
+        base_url=TRACT_OPENAI_BASE_URL,
+        model=MODEL_ID,
+    ) as t:
+        t.system("You are a helpful assistant.")
+        executor = ToolExecutor(t)
+
+        # Agent checks its current config via status()
+        status = executor.execute("status", {})
+        print(f"  Agent sees its own config via status():\n{status}\n")
+
+        # Agent makes a creative call with high temperature
+        r = t.chat("Invent a metaphor for recursion.", temperature=0.9)
+        print(f"  Creative call (temp=0.9): {r.text[:80]}...")
+
+        # Agent makes a precise call with low temperature
+        r = t.chat("Define recursion in one sentence.", temperature=0.1)
+        print(f"  Precise call (temp=0.1): {r.text[:80]}...")
+
+    # Note: Agents introspect their own generation_config via status()
+    # and adjust temperature/max_tokens per-call using the toolkit.
+    # The toolkit's status tool surfaces the resolved config so agents
+    # can reason about what settings are active before each call.
+
+
+def main():
     part1_per_call_config()
+    part3_agent()
+
+
+if __name__ == "__main__":
+    main()

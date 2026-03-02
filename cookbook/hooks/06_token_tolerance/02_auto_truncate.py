@@ -38,6 +38,11 @@ def auto_truncate() -> None:
     print("PART 2 — Auto-Truncate")
     print("=" * 60)
 
+    # --- Without hooks (baseline) ---
+    # Without this hook, over-budget summaries either pass or get rejected
+    # by the built-in check (tier 3). This hook auto-truncates instead of
+    # rejecting (tier 2).
+
     def make_truncator(max_tokens: int) -> Callable[[PendingCompress], None]:
         """Factory: truncate summaries to fit within max_tokens."""
         def truncate_to_budget(pending: PendingCompress) -> None:

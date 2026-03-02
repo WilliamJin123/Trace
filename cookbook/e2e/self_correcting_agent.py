@@ -1,11 +1,162 @@
-"""
-Self-Correcting Agent — Combines retry/validation + edit-in-place + tool provenance.
-Agent validates JSON output, retries with steering on failure, uses EDIT to fix mistakes,
-tracks tools per commit for audit.
+"""Self-correcting agent: validation + retry + edit + provenance.
+
+  PART 1 -- Manual:      generate() -> validate -> if fail: commit correction, retry loop
+  PART 2 -- Interactive:  Human reviews each retry, click.confirm("Retry?"), click.edit(steering)
+  PART 3 -- LLM / Agent:  generate(validator=fn, max_retries=3, purify=True, provenance_note=True)
 """
 
+import json
+import os
 
-def main(): pass
+import click
+from dotenv import load_dotenv
+
+from tract import Tract
+
+load_dotenv()
+
+TRACT_OPENAI_API_KEY = os.environ.get("TRACT_OPENAI_API_KEY", "")
+TRACT_OPENAI_BASE_URL = os.environ.get("TRACT_OPENAI_BASE_URL", "")
+MODEL_ID = "gpt-oss-120b"
+
+
+# =====================================================================
+# PART 1 -- Manual: generate + validate + retry loop
+# =====================================================================
+
+def part1_manual():
+    print("=" * 60)
+    print("PART 1 -- Manual: Validation Retry Loop")
+    print("=" * 60)
+
+    with Tract.open(
+        api_key=TRACT_OPENAI_API_KEY,
+        base_url=TRACT_OPENAI_BASE_URL,
+        model=MODEL_ID,
+    ) as t:
+        t.system("You are a data assistant. Always respond with valid JSON only. "
+                 "No markdown, no explanation, just raw JSON.")
+        t.user("Return a JSON array of 3 planets with name and distance_au fields.")
+
+        max_retries = 3
+        for attempt in range(1, max_retries + 1):
+            response = t.generate()
+            print(f"\n  Attempt {attempt}: {response.text[:80]}...")
+
+            try:
+                data = json.loads(response.text)
+                print(f"  Valid JSON: {len(data)} items")
+                break
+            except json.JSONDecodeError as e:
+                print(f"  Invalid JSON: {e}")
+                if attempt < max_retries:
+                    t.user(f"That was not valid JSON. Error: {e}. "
+                           "Please return ONLY a raw JSON array, no markdown.")
+                else:
+                    print("  Max retries reached.")
+
+
+# =====================================================================
+# PART 2 -- Interactive: human reviews each retry
+# =====================================================================
+
+def part2_interactive():
+    print("\n" + "=" * 60)
+    print("PART 2 -- Interactive: Human-Reviewed Retries")
+    print("=" * 60)
+
+    with Tract.open(
+        api_key=TRACT_OPENAI_API_KEY,
+        base_url=TRACT_OPENAI_BASE_URL,
+        model=MODEL_ID,
+    ) as t:
+        t.system("You are a data assistant. Respond with valid JSON only.")
+        t.user("Return a JSON object with keys: star, type, magnitude "
+               "for Sirius, Betelgeuse, and Vega.")
+
+        for attempt in range(1, 4):
+            response = t.generate()
+            print(f"\n  Attempt {attempt}:")
+            print(f"  Response: {response.text[:120]}")
+
+            try:
+                data = json.loads(response.text)
+                print(f"  Parsed OK: {type(data).__name__}")
+                if click.confirm("  Accept this response?", default=True):
+                    print("  Accepted.")
+                    break
+            except json.JSONDecodeError:
+                print("  JSON parse failed.")
+
+            if attempt < 3:
+                if click.confirm("  Retry with steering?", default=True):
+                    steering = click.edit("Please return valid JSON only. "
+                                         "No markdown code fences.")
+                    if steering:
+                        t.user(steering.strip())
+                    else:
+                        t.user("Please fix the JSON formatting.")
+                else:
+                    print("  Stopping retries.")
+                    break
+
+
+# =====================================================================
+# PART 3 -- LLM / Agent: built-in validation + retry
+# =====================================================================
+
+def part3_agent():
+    print("\n" + "=" * 60)
+    print("PART 3 -- LLM / Agent: Built-In Validator")
+    print("=" * 60)
+
+    def json_validator(text: str) -> tuple[bool, str | None]:
+        """Validate that the response is valid JSON."""
+        try:
+            json.loads(text)
+            return (True, None)
+        except json.JSONDecodeError as e:
+            return (False, f"Invalid JSON: {e}")
+
+    with Tract.open(
+        api_key=TRACT_OPENAI_API_KEY,
+        base_url=TRACT_OPENAI_BASE_URL,
+        model=MODEL_ID,
+    ) as t:
+        t.system("You are a data assistant. Always respond with valid JSON only. "
+                 "No markdown, no explanation.")
+
+        # generate() handles the full retry loop internally
+        t.user("Return a JSON array of 3 galaxies with name and "
+               "distance_mly (million light years) fields.")
+        response = t.generate(
+            validator=json_validator,
+            max_retries=3,
+            purify=True,
+            provenance_note=True,
+        )
+
+        print(f"\n  Final response: {response.text[:120]}")
+        print(f"  Retries used: {response.metadata.get('retries', 0) if response.metadata else 0}")
+
+        # Verify the result
+        try:
+            data = json.loads(response.text)
+            print(f"  Parsed: {len(data)} galaxies")
+            for item in data[:3]:
+                print(f"    {item}")
+        except json.JSONDecodeError:
+            print("  Still invalid after retries.")
+
+        # Check provenance -- log shows validation attempts
+        log = t.log(limit=10)
+        print(f"\n  Total commits (shows retry provenance): {len(log)}")
+
+
+def main():
+    part1_manual()
+    part2_interactive()
+    part3_agent()
 
 
 if __name__ == "__main__":

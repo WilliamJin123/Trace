@@ -2,6 +2,18 @@
 
 The cookbook is organized by **what you're doing**, not by difficulty level. **Basics** covers the core mental model. **Operations** groups history-modifying actions (compress, merge, branch, rebase, gc, rollback). **Metadata** covers data you attach to commits (tags, priorities, tool results, reasoning). **Config** handles LLM routing and budgets. **Queries** and **Validation** cover inspection and retry patterns. **Hooks** provide the approval layer. **Orchestrator** and **Multi-Agent** handle autonomous and multi-agent workflows. **E2E** combines everything into real-world scenarios.
 
+### 3-Tier Convention
+
+Every cookbook file follows a three-tier pattern showing the same feature at different autonomy levels:
+
+| Tier | Label | Description |
+|------|-------|-------------|
+| **PART 1** | Manual | Direct API calls, no LLM, fully deterministic |
+| **PART 2** | Interactive | `review=True`, `click.edit`/`click.confirm`, human decides |
+| **PART 3** | LLM / Agent | Orchestrator, triggers, hooks auto-manage |
+
+Each tier is a separate function. `main()` calls all three. The gold-standard example is `hooks/01_registration/01_routing.py`.
+
 Every file is standalone — jump to any individual file if you know what you need.
 
 ## File Tree
@@ -9,7 +21,7 @@ Every file is standalone — jump to any individual file if you know what you ne
 ```
 cookbook/
 ├── SCENARIOS.md
-├── 00_basics/                           # Core mental model + basic operations
+├── basics/                           # Core mental model + basic operations
 │   ├── 01_commit_and_compile.py         # Tract.open, commit(), compile(), CompiledContext
 │   ├── 02_shorthand_and_format.py       # system/user/assistant, to_openai/anthropic/dicts
 │   ├── 03_status_and_budget.py          # status(), TractConfig, token budget tracking
@@ -19,11 +31,9 @@ cookbook/
 │
 ├── operations/                          # History-modifying operations
 │   ├── compress/
-│   │   ├── 01_manual.py                # compress(content=), PINNED preservation, preserve=
-│   │   ├── 02_llm_auto.py             # compress(target_tokens=), instructions=, system_prompt=
-│   │   ├── 03_guided.py               # IMPORTANT priority + guided compression
-│   │   ├── 04_collaborative_review.py  # auto_commit=False, PendingCompress, edit_summary
-│   │   ├── 05_important_and_retain.py  # retain=, retain_match=, retain_match_mode=
+│   │   ├── 01_compression.py           # Manual, interactive, and LLM compression
+│   │   ├── 02_guided_and_retention.py  # Priorities, retention guarantees, retain_match
+│   │   ├── 03_autonomous_compression.py # ToolExecutor, hooks, CompressTrigger automation
 │   │   └── sample_contract.md          # Sample data for compression demos
 │   ├── merge/
 │   │   ├── 01_merge_strategies.py      # FF merge, clean merge, no_ff, delete_branch
@@ -148,7 +158,8 @@ The primitives. No LLM key required for most files. Read these to understand wha
 
 ## 01 — Commit and Compile
 
-**File:** `00_basics/01_commit_and_compile.py`
+**File:** `basics/01_commit_and_compile.py`
+**Tiers:** Manual (primitives -- see tier notes in file)
 
 **Use case:** You want to understand what tract is actually doing under the hood — no shortcuts, no magic.
 
@@ -158,7 +169,8 @@ Open an in-memory tract with `Tract.open()`. Commit a system prompt, a user mess
 
 ## 02 — Shorthand and Format Methods
 
-**File:** `00_basics/02_shorthand_and_format.py`
+**File:** `basics/02_shorthand_and_format.py`
+**Tiers:** Manual (primitives -- see tier notes in file)
 
 **Use case:** You know how commit/compile works and want the convenience layer. You also need to format output for a specific LLM provider.
 
@@ -168,7 +180,8 @@ Replace manual content model commits with `system()`, `user()`, and `assistant()
 
 ## 03 — Status and Token Budget
 
-**File:** `00_basics/03_status_and_budget.py`
+**File:** `basics/03_status_and_budget.py`
+**Tiers:** Manual (primitives -- see tier notes in file)
 
 **Use case:** You want to know how many tokens are in the context window and how close you are to a limit — without an LLM call.
 
@@ -178,7 +191,8 @@ Part 1 opens a tract without a budget and calls `status()` to see the raw token 
 
 ## 04 — Log and Diff
 
-**File:** `00_basics/04_log_and_diff.py`
+**File:** `basics/04_log_and_diff.py`
+**Tiers:** Manual (primitives -- see tier notes in file)
 
 **Use case:** Walk history, compare two states, and reconstruct exactly what the LLM was seeing at any past point.
 
@@ -188,7 +202,8 @@ Part 1 opens a tract without a budget and calls `status()` to see the raw token 
 
 ## 05 — Batch and Rollback
 
-**File:** `00_basics/05_batch_and_rollback.py`
+**File:** `basics/05_batch_and_rollback.py`
+**Tiers:** Manual (primitives -- see tier notes in file)
 
 **Use case:** A RAG retrieval plus user question must land as one atomic unit — partial state is worse than nothing.
 
@@ -198,7 +213,8 @@ Wrap multiple commits in `with t.batch(): ...`. If any commit fails or an except
 
 ## 06 — Chat and Persist
 
-**File:** `00_basics/06_chat_and_persist.py`
+**File:** `basics/06_chat_and_persist.py`
+**Tiers:** Manual (primitives -- see tier notes in file)
 
 **Use case:** A coding assistant that chats, persists to disk, and resumes the next session.
 
@@ -214,61 +230,45 @@ History-modifying operations. Each folder groups related operations with progres
 
 ## Compress
 
-### 01 — Manual Compression
+### 01 — Core Compression
 
-**File:** `operations/compress/01_manual.py`
+**File:** `operations/compress/01_compression.py`
+**Tiers:** Manual | Interactive | Agent
 
-**Use case:** Replace verbose history with your own summary, no LLM needed.
+**Use case:** Compress conversation history — from hand-written summaries to LLM-generated with human review.
 
-Manual compression with `compress(content="...")` — your text replaces archived commits. PINNED commits survive verbatim. Use `preserve=[hash1, hash2]` for one-shot protection without permanent annotation.
+Part 1 (Manual): `compress(content="...")` with PINNED preservation. Part 2 (Interactive): `compress(target_tokens=150, review=True)` → PendingCompress → `click.edit()` → approve. Part 3 (Agent): `compress(target_tokens=200, instructions="...")` with SKIP exclusion.
 
-> `compress(content=)`, `compress(preserve=)`, PINNED preservation
+> `compress(content=)`, `compress(review=True)`, `PendingCompress`, `edit_summary()`, `instructions=`
 
-### 02 — LLM Compression
+### 02 — Guided Compression and Retention
 
-**File:** `operations/compress/02_llm_auto.py`
+**File:** `operations/compress/02_guided_and_retention.py`
+**Tiers:** Manual | Interactive | Agent
 
-**Use case:** Let the LLM summarize old context to free up token budget.
+**Use case:** Guarantee that critical values survive compression with priority annotations and regex retention.
 
-LLM compression with `compress(target_tokens=200)`. PINNED passes through untouched, SKIP commits are excluded. Guide the summary with `instructions=` or replace the entire prompt with `system_prompt=`.
+Part 1 (Manual): `annotate(IMPORTANT)`, `compress(content=..., preserve=[...])`. Part 2 (Interactive): `compress(review=True)` with `retain_match` inspection. Part 3 (Agent): `compress(target_tokens=300, retain_match=[regex], max_retries=5)`.
 
-> `compress(target_tokens=)`, `instructions=`, `system_prompt=`
+> `Priority.IMPORTANT`, `retain_match=`, `retain_match_mode=`, `preserve=`, `max_retries=`
 
-### 03 — Guided Compression
+### 03 — Autonomous Compression
 
-**File:** `operations/compress/03_guided.py`
+**File:** `operations/compress/03_autonomous_compression.py`
+**Tiers:** Manual | Interactive | Agent
 
-**Use case:** Direct the LLM's summarization with IMPORTANT priority and specific guidance.
+**Use case:** Let agents and triggers manage compression automatically.
 
-`annotate(hash, Priority.IMPORTANT)` tells the compressor to be conservative with specific commits. Combine with `instructions=` for domain-specific summarization guidance.
+Part 1 (Manual): `ToolExecutor.execute("compress", {...})`. Part 2 (Interactive): `t.on("compress", handler)` with `click.confirm`. Part 3 (Agent): `CompressTrigger(threshold=0.7)` fires automatically on `compile()`.
 
-> `Priority.IMPORTANT`, `instructions=`, guided summarization
-
-### 04 — Collaborative Review
-
-**File:** `operations/compress/04_collaborative_review.py`
-
-**Use case:** A human or secondary LLM reviews and edits compression summaries before they commit.
-
-Collaborative review with `auto_commit=False` — returns a `PendingCompress` with the LLM's draft. Inspect with `.summaries`, edit with `.edit_summary(i, text)`, then `.approve()` to finalize.
-
-> `auto_commit=False`, `PendingCompress`, `edit_summary()`, `approve()`
-
-### 05 — IMPORTANT Priority and Retention
-
-**File:** `operations/compress/05_important_and_retain.py`
-
-**Use case:** Some context is too important to lose in compression. Guarantee retention of specific values.
-
-`annotate(hash, Priority.IMPORTANT)` tells the compressor to be conservative. Add fuzzy guidance with `retain="preserve all dollar amounts"`. Add deterministic checks with `retain_match=[r"\$2,847,000"]` in `"regex"` mode — validated against the summary before committing.
-
-> `Priority.IMPORTANT`, `retain=`, `retain_match=`, `retain_match_mode=`, `compress(max_retries=)`
+> `ToolExecutor`, `t.on("compress", ...)`, `CompressTrigger`, `configure_triggers()`
 
 ## Merge
 
 ### 01 — Merge Strategies
 
 **File:** `operations/merge/01_merge_strategies.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Merge branches back together using fast-forward or clean merge.
 
@@ -279,6 +279,7 @@ The two non-conflicting merge modes: **fast-forward** (branch is ahead of main, 
 ### 02 — Merge Conflicts
 
 **File:** `operations/merge/02_merge_conflicts.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Two branches both edit the same message. Detect the conflict, resolve it manually, then finalize.
 
@@ -291,6 +292,7 @@ The two non-conflicting merge modes: **fast-forward** (branch is ahead of main, 
 ### 01 — Branch Lifecycle
 
 **File:** `operations/branch/01_branch_lifecycle.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Try an experimental approach without affecting main.
 
@@ -303,6 +305,7 @@ The two non-conflicting merge modes: **fast-forward** (branch is ahead of main, 
 ### 01 — Import Commit
 
 **File:** `operations/rebase/01_import_commit.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Grab one useful commit from an experiment (cherry-pick).
 
@@ -313,6 +316,7 @@ The two non-conflicting merge modes: **fast-forward** (branch is ahead of main, 
 ### 02 — Rebase
 
 **File:** `operations/rebase/02_rebase.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Update a stale branch to include the latest from main.
 
@@ -325,6 +329,7 @@ The two non-conflicting merge modes: **fast-forward** (branch is ahead of main, 
 ### 01 — GC After Compression
 
 **File:** `operations/gc/01_gc_after_compression.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Reclaim storage after compression removes history.
 
@@ -335,6 +340,7 @@ Compress, then run `gc(archive_retention_days=0)` to reclaim storage. `GCResult`
 ### 02 — Retention Policies
 
 **File:** `operations/gc/02_retention_policies.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Control how long archived data is preserved before GC.
 
@@ -345,6 +351,7 @@ Compare conservative (`archive_retention_days=None`) vs aggressive (`=0`) retent
 ### 03 — Message Reordering
 
 **File:** `operations/gc/03_message_reordering.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Reorder messages for better LLM context flow.
 
@@ -357,6 +364,7 @@ Compare conservative (`archive_retention_days=None`) vs aggressive (`=0`) retent
 ### 01 — Rollback
 
 **File:** `operations/rollback/01_rollback.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Undo recent changes and go back to a known good state.
 
@@ -375,6 +383,7 @@ Data attached to commits — tags, priority annotations, tool results, and reaso
 ### 01 — Classify and Query
 
 **File:** `metadata/tags/01_classify_and_query.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Classify commits by what the content *is* and query by tag.
 
@@ -385,6 +394,7 @@ Part 1 (auto-classification): `system()` auto-tags with `"instruction"`, `assist
 ### 02 — LLM Auto-Tagger
 
 **File:** `metadata/tags/02_llm_auto_tagger.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Let an LLM agent autonomously tag a conversation using the orchestrator.
 
@@ -397,6 +407,7 @@ An orchestrator agent reviews a completed conversation and retrospectively tags 
 ### 01 — Pin, Skip, Reset
 
 **File:** `metadata/priority/01_pin_skip_reset.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Control what the LLM sees without deleting history.
 
@@ -407,6 +418,7 @@ An orchestrator agent reviews a completed conversation and retrospectively tags 
 ### 02 — Edit in Place
 
 **File:** `metadata/priority/02_edit_in_place.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Fix mistakes after the fact without losing the audit trail.
 
@@ -419,6 +431,7 @@ Commit a system prompt with a mistake, then fix with `system(edit=original_hash)
 ### 01 — Agentic Loop
 
 **File:** `metadata/tool_results/01_agentic_loop.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Build an agentic tool-calling loop where the LLM decides which tools to call, every step is committed for provenance, and verbose tool output is compressed afterward.
 
@@ -429,6 +442,7 @@ Define tools in OpenAI function-calling format, register with `set_tools()`, run
 ### 02 — Auto-Summarization
 
 **File:** `metadata/tool_results/02_auto_summarization.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Automatically summarize verbose tool results based on per-tool instructions.
 
@@ -439,6 +453,7 @@ Define tools in OpenAI function-calling format, register with `set_tools()`, run
 ### 03 — Offline Tool Management
 
 **File:** `metadata/tool_results/03_offline_tool_management.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Query and manage tool history, surgical edits to verbose results.
 
@@ -451,6 +466,7 @@ Define tools in OpenAI function-calling format, register with `set_tools()`, run
 ### 01 — Manual Reasoning
 
 **File:** `metadata/reasoning/01_manual_reasoning.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Capture LLM chain-of-thought as first-class commits.
 
@@ -461,6 +477,7 @@ Define tools in OpenAI function-calling format, register with `set_tools()`, run
 ### 02 — Compile Control
 
 **File:** `metadata/reasoning/02_compile_control.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Include or exclude reasoning from compiled context.
 
@@ -471,6 +488,7 @@ Define tools in OpenAI function-calling format, register with `set_tools()`, run
 ### 03 — Formatting
 
 **File:** `metadata/reasoning/03_formatting.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Display reasoning traces in the terminal.
 
@@ -481,6 +499,7 @@ Define tools in OpenAI function-calling format, register with `set_tools()`, run
 ### 04 — LLM Integration
 
 **File:** `metadata/reasoning/04_llm_integration.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Auto-extract reasoning from provider responses.
 
@@ -497,6 +516,7 @@ LLM routing, budgets, and generation configuration.
 ## 01 — Per-Call Config
 
 **File:** `config/01_per_call_config.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Override model settings for a single call.
 
@@ -507,6 +527,7 @@ Pass `LLMConfig(temperature=0.9)` or sugar params directly to `chat()` or `gener
 ## 02 — Operation Config
 
 **File:** `config/02_operation_config.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Set different defaults for chat vs compression vs other operations.
 
@@ -517,6 +538,7 @@ Set tract-level defaults with `default_config=LLMConfig(...)` and per-operation 
 ## 03 — Operation Clients
 
 **File:** `config/03_operation_clients.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Route different operations to different LLM providers.
 
@@ -527,6 +549,7 @@ Assign a different LLM client to each operation with `configure_clients(chat=ope
 ## 04 — Resolution Chain
 
 **File:** `config/04_resolution_chain.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Understand which config wins when multiple are set.
 
@@ -537,6 +560,7 @@ Trace the 4-level resolution chain: sugar > llm_config > operation > default. Us
 ## 05 — Summarize Config
 
 **File:** `config/05_summarize_config.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Configure the LLM used specifically for compression summaries.
 
@@ -547,6 +571,7 @@ Compression-specific LLM configuration and prompt customization.
 ## 06 — Budget Guardrail
 
 **File:** `config/06_budget_guardrail.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** A chatbot that checks its token budget before every LLM call and stops when it's running hot.
 
@@ -563,6 +588,7 @@ Inspecting and auditing history — provenance, tool history, and edit chains.
 ## 01 — Query API
 
 **File:** `queries/01_query_api.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Inspect which tools were called and how many tokens each consumed.
 
@@ -573,6 +599,7 @@ Inspecting and auditing history — provenance, tool history, and edit chains.
 ## 02 — Surgical Edits
 
 **File:** `queries/02_surgical_edits.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Replace verbose tool results with trimmed versions.
 
@@ -583,6 +610,7 @@ Walk verbose tool results with `find_tool_results()`, replace each with a trimme
 ## 03 — Selective Compression
 
 **File:** `queries/03_selective_compression.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Compress only specific tool turns, leave others untouched.
 
@@ -593,6 +621,7 @@ Walk verbose tool results with `find_tool_results()`, replace each with a trimme
 ## 04 — Config Provenance
 
 **File:** `queries/04_config_provenance.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** "Which model produced this output? What temperature was used?"
 
@@ -603,6 +632,7 @@ Every assistant commit stores the fully-resolved `generation_config`. Query with
 ## 05 — Tool Provenance
 
 **File:** `queries/05_tool_provenance.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** "What tools were available when this response was generated?"
 
@@ -613,6 +643,7 @@ Every assistant commit stores the fully-resolved `generation_config`. Query with
 ## 06 — Edit History
 
 **File:** `queries/06_edit_history.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** "How did this message get to its current state?"
 
@@ -629,6 +660,7 @@ Retry and validation patterns for LLM output.
 ## 01 — Core Primitive
 
 **File:** `validation/01_core_primitive.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Validate LLM output and retry with steering when it fails.
 
@@ -639,6 +671,7 @@ Retry and validation patterns for LLM output.
 ## 02 — Chat Validation
 
 **File:** `validation/02_chat_validation.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Validate chat responses inline with retry.
 
@@ -649,6 +682,7 @@ Retry and validation patterns for LLM output.
 ## 03 — Compress Validation
 
 **File:** `validation/03_compress_validation.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Validate compression summaries before committing.
 
@@ -735,6 +769,7 @@ Autonomous agent operations — the LLM manages its own context window using tra
 ## 01 — Toolkit and Profiles
 
 **File:** `orchestrator/01_toolkit.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Let the LLM decide when to compress, branch, annotate, or query status via function calling.
 
@@ -745,6 +780,7 @@ Autonomous agent operations — the LLM manages its own context window using tra
 ## 02 — Orchestrator Loop
 
 **File:** `orchestrator/02_orchestrator_loop.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Auto-assess context health and execute maintenance operations autonomously.
 
@@ -755,6 +791,7 @@ Configure triggers on `OrchestratorConfig`: `on_commit_count=20`, `on_token_thre
 ## 03 — Triggers
 
 **File:** `orchestrator/03_triggers.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Make an agent self-managing with automatic operations and hooks for override.
 
@@ -771,6 +808,7 @@ Multi-agent coordination — parent-child tracts, delegation, and curated deploy
 ## 01 — Parent-Child Relationship
 
 **File:** `multi_agent/01_parent_child.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Spawn a sub-agent with its own isolated context, preserving lineage for provenance.
 
@@ -781,6 +819,7 @@ Create a child tract linked to the parent. The child has independent history and
 ## 02 — Sub-Agent Delegation
 
 **File:** `multi_agent/02_delegation.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Spawn a research sub-agent, let it work for 40 turns, then ingest only the summary into the parent.
 
@@ -791,6 +830,7 @@ The sub-agent works in a child tract. When finished, compress into a summary. Th
 ## 03 — Curated Deploy
 
 **File:** `multi_agent/03_curated_deploy.py`
+**Tiers:** Manual | Interactive | Agent
 
 **Use case:** Deploy a sub-agent on a purpose-built branch with filtered context, then merge back.
 
@@ -812,19 +852,19 @@ An agent that validates its own JSON output via `chat(validator=json_validator, 
 
 ## long_running_session.py
 
-**Combines:** operations/compress + orchestrator/triggers + operations/gc + 00_basics/chat
+**Combines:** operations/compress + orchestrator/triggers + operations/gc + basics/chat
 
 A session that runs for 50+ turns unattended. `CompressTrigger(threshold=0.8)` fires automatically when the budget fills up. PINNED alerts survive every compression cycle. `gc(archive_retention_days=30)` reclaims storage while preserving a month of audit history.
 
 ## ab_testing.py
 
-**Combines:** operations/branch + config + 00_basics/log_and_diff + queries/provenance
+**Combines:** operations/branch + config + basics/log_and_diff + queries/provenance
 
 Branch from the same conversation state, run identical prompts on each branch with different model configs, then `diff()` the results and `query_by_config(model=)` to compare.
 
 ## context_forensics.py
 
-**Combines:** 00_basics/log_and_diff + operations/branch + operations/rebase
+**Combines:** basics/log_and_diff + operations/branch + operations/rebase
 
 Walk `log()` to find the commit where bad data entered. `compile(at_commit=hash)` reconstructs what the LLM saw. Branch from before contamination, cherry-pick good work, rebase onto main.
 

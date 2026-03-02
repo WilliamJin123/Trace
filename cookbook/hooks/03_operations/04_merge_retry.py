@@ -31,6 +31,10 @@ def merge_retry_and_validate() -> None:
     print("  retry() re-resolves all conflicts via LLM with optional guidance.")
     print("  auto_retry() is the automated validate->retry loop.")
 
+    # --- Without hooks (baseline) ---
+    # Without review=True, conflicting merges auto-resolve via LLM and commit.
+    # With review=True, you get a PendingMerge to validate and retry resolutions.
+
     # -- Manual validate / retry cycle --
     print(f"\n  --- Manual validate/retry cycle ---")
 

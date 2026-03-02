@@ -40,6 +40,11 @@ def pending_lifecycle() -> None:
     print("  compress(review=True) returns a PendingCompress.")
     print("  Nothing is committed until you call approve().")
 
+    # --- Without hooks (baseline) ---
+    # Without review=True and without t.on("compress", ...), compress()
+    # auto-commits immediately (tier 3). With review=True, the caller
+    # gets a PendingCompress for manual inspection (tier 1, shown below).
+
     with Tract.open(
         api_key=TRACT_OPENAI_API_KEY,
         base_url=TRACT_OPENAI_BASE_URL,

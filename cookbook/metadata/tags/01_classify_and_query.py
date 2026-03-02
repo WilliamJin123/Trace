@@ -3,11 +3,28 @@
 Every commit is auto-classified with semantic tags (instruction, reasoning,
 tool_call, etc.).  You can also attach explicit tags at commit time, add
 mutable annotation tags after the fact, register custom tags with
-descriptions, and query history by tag.  This cookbook covers all five facets.
+descriptions, and query history by tag.  This cookbook covers all seven facets
+across three tiers: manual API calls, interactive prompts, and agent-driven.
+
+PART 1 -- Manual           Direct API calls, no LLM, deterministic
+PART 2 -- Interactive       review=True, click.edit/confirm, human decides
+PART 3 -- LLM / Agent      Orchestrator, triggers, hooks auto-manage
 """
+
+import os
+
+import click
+from dotenv import load_dotenv
 
 from tract import Priority, Tract, TagNotRegisteredError
 from tract.formatting import pprint_log, pprint_tag_registry
+from tract.toolkit import ToolExecutor
+
+load_dotenv()
+
+TRACT_OPENAI_API_KEY = os.environ.get("TRACT_OPENAI_API_KEY", "")
+TRACT_OPENAI_BASE_URL = os.environ.get("TRACT_OPENAI_BASE_URL", "")
+MODEL_ID = "gpt-oss-120b"
 
 
 # =============================================================================
@@ -255,17 +272,110 @@ def part5_tag_queries():
 
 
 # =============================================================================
+# Part 6: Interactive Tag Management  (PART 2 — Interactive)
+# =============================================================================
+
+def part6_interactive():
+    print("=" * 60)
+    print("Part 6: INTERACTIVE TAG MANAGEMENT  [Interactive Tier]")
+    print("=" * 60)
+    print()
+    print("  Walk commits from t.log(), pick one by number, then apply")
+    print("  a tag with confirmation.  Uses click.prompt() and click.confirm().")
+    print()
+
+    t = Tract.open()
+
+    # Build a small conversation to tag interactively
+    t.system("You are a project planner.")
+    t.user("We need to ship the API by Friday.")
+    t.assistant("I'll draft a timeline with milestones for each day.")
+    t.user("Make sure QA gets at least one day.")
+    t.assistant("Updated: dev Mon-Wed, QA Thu, deploy Fri morning.")
+
+    # Show numbered commit list
+    entries = list(reversed(t.log()))
+    print("  Commits:")
+    for i, entry in enumerate(entries):
+        tags = t.get_tags(entry.commit_hash)
+        print(f"    [{i}] {entry.commit_hash[:8]}  {entry.role:9s}  tags={tags}")
+    print()
+
+    idx = click.prompt("  Tag which commit? (number)", type=int)
+    if 0 <= idx < len(entries):
+        tag_name = click.prompt("  Tag name")
+        target = entries[idx]
+        if click.confirm(f"  Tag commit {target.commit_hash[:8]} as '{tag_name}'?"):
+            t.register_tag(tag_name, f"User-applied tag: {tag_name}")
+            t.tag(target.commit_hash, tag_name)
+            print(f"  Done. Tags for {target.commit_hash[:8]}: "
+                  f"{t.get_tags(target.commit_hash)}")
+    else:
+        print("  (invalid index, skipping)")
+
+    print()
+    t.close()
+
+
+# =============================================================================
+# Part 7: Agent-Driven Tagging  (PART 3 — LLM / Agent)
+# =============================================================================
+
+def part7_agent():
+    print("=" * 60)
+    print("Part 7: AGENT-DRIVEN TAGGING  [Agent Tier]")
+    print("=" * 60)
+    print()
+    print("  ToolExecutor lets an agent tag commits programmatically.")
+    print("  For full LLM auto-tagging, see 02_llm_auto_tagger.py.")
+    print()
+
+    t = Tract.open(
+        api_key=TRACT_OPENAI_API_KEY,
+        base_url=TRACT_OPENAI_BASE_URL,
+        model=MODEL_ID,
+    )
+
+    t.system("You are a helpful assistant.")
+    ci = t.user("What is the roadmap for Q3?")
+    t.assistant("Q3 focuses on scaling: shard the DB, add caching, hire 2 SREs.")
+
+    # Agent uses ToolExecutor to tag a commit
+    executor = ToolExecutor(t)
+    result = executor.execute("tag", {
+        "commit_hash": ci.commit_hash,
+        "tag": "question",
+    })
+    print(f"  executor.execute('tag', ...) -> success={result.success}")
+    print(f"  Tags on {ci.commit_hash[:8]}: {t.get_tags(ci.commit_hash)}")
+    print()
+    print("  Tip: For full LLM auto-tagging with an orchestrator agent,")
+    print("  see 02_llm_auto_tagger.py.")
+    print()
+
+    t.close()
+
+
+# =============================================================================
 # Main
 # =============================================================================
 
 def main():
+    # --- PART 1: Manual (Parts 1-5) ---
     part1_auto_classification()
     part2_explicit_tags()
     part3_mutable_tags()
     part4_tag_registry()
     part5_tag_queries()
+
+    # --- PART 2: Interactive (Part 6) ---
+    part6_interactive()
+
+    # --- PART 3: LLM / Agent (Part 7) ---
+    part7_agent()
+
     print("=" * 60)
-    print("Done -- all 5 parts demonstrated the tag system end-to-end.")
+    print("Done -- all 7 parts demonstrated the tag system across 3 tiers.")
     print("=" * 60)
 
 

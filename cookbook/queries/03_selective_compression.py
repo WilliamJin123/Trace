@@ -183,12 +183,12 @@ def _build_agent_session(t):
 def part3_selective_compression():
     if not TRACT_OPENAI_API_KEY:
         print(f"\n{'=' * 60}")
-        print("Part 3: SKIPPED (no TRACT_OPENAI_API_KEY)")
+        print("PART 3 -- Manual: SKIPPED (no TRACT_OPENAI_API_KEY)")
         print("=" * 60)
         return
 
     print(f"\n{'=' * 60}")
-    print("Part 3: SELECTIVE COMPRESSION (compress_tool_calls(name=))")
+    print("PART 3 -- Manual: SELECTIVE COMPRESSION (compress_tool_calls(name=))")
     print("=" * 60)
     print()
 
@@ -249,5 +249,110 @@ def part3_selective_compression():
         ctx_after_both.pprint(style="compact")
 
 
-if __name__ == "__main__":
+# =============================================================================
+# Part 2 -- Interactive: Selective Compression
+# =============================================================================
+# Show tool turns grouped by name. Let the human choose which tool types
+# to compress interactively.
+
+def part2_interactive():
+    import click
+
+    if not TRACT_OPENAI_API_KEY:
+        print(f"\n{'=' * 60}")
+        print("PART 2 -- Interactive: SKIPPED (no TRACT_OPENAI_API_KEY)")
+        print("=" * 60)
+        return
+
+    print(f"\n{'=' * 60}")
+    print("PART 2 -- Interactive: SELECTIVE COMPRESSION")
+    print("=" * 60)
+    print()
+
+    with Tract.open(
+        api_key=TRACT_OPENAI_API_KEY,
+        base_url=TRACT_OPENAI_BASE_URL,
+        model=MODEL_ID,
+    ) as t:
+        _build_agent_session(t)
+
+        # Show tool turns grouped by name
+        all_turns = t.find_tool_turns()
+        tool_names = set()
+        for turn in all_turns:
+            tool_names.update(turn.tool_names)
+
+        print(f"  Tool types found: {sorted(tool_names)}\n")
+        for name in sorted(tool_names):
+            name_turns = t.find_tool_turns(name=name)
+            total = sum(turn.total_tokens for turn in name_turns)
+            print(f"    {name}: {len(name_turns)} turn(s), {total} tokens")
+
+        # Let human choose which to compress
+        for name in sorted(tool_names):
+            if click.confirm(f"\n  Compress all '{name}' tool turns?", default=False):
+                result = t.compress_tool_calls(
+                    name=name,
+                    instructions=f"Summarize {name} output in 1-2 lines.",
+                )
+                print(f"    Compressed: {result.original_tokens} -> "
+                      f"{result.compacted_tokens} tokens")
+
+        ctx = t.compile()
+        print(f"\n  Final: {ctx.token_count} tokens")
+
+
+# =============================================================================
+# Part 3b -- Agent: Auto-Compresses via Toolkit
+# =============================================================================
+# An agent auto-compresses specific tool types via compress_tool_calls.
+
+def part3b_agent():
+    if not TRACT_OPENAI_API_KEY:
+        print(f"\n{'=' * 60}")
+        print("PART 3b -- Agent: SKIPPED (no TRACT_OPENAI_API_KEY)")
+        print("=" * 60)
+        return
+
+    print(f"\n{'=' * 60}")
+    print("PART 3b -- Agent: AUTO-COMPRESSES VIA TOOLKIT")
+    print("=" * 60)
+    print()
+
+    from tract.toolkit import ToolExecutor
+
+    with Tract.open(
+        api_key=TRACT_OPENAI_API_KEY,
+        base_url=TRACT_OPENAI_BASE_URL,
+        model=MODEL_ID,
+    ) as t:
+        _build_agent_session(t)
+        executor = ToolExecutor(t)
+
+        ctx_before = t.compile()
+        print(f"  BEFORE: {ctx_before.token_count} tokens")
+
+        # Agent auto-compresses grep results
+        result = t.compress_tool_calls(
+            name="grep",
+            instructions="One line per file: 'filename: relevant finding'",
+        )
+        print(f"  Compressed grep: {result.original_tokens} -> "
+              f"{result.compacted_tokens} tokens")
+
+        ctx_after = t.compile()
+        print(f"  AFTER: {ctx_after.token_count} tokens")
+
+    # Note: Agents identify verbose tool types via find_tool_turns() and
+    # selectively compress them. This is a common pattern in long agent
+    # sessions where grep/read_file outputs dominate the context.
+
+
+def main():
+    part2_interactive()
     part3_selective_compression()
+    part3b_agent()
+
+
+if __name__ == "__main__":
+    main()

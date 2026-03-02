@@ -29,14 +29,14 @@ MODEL_ID = "gpt-oss-120b"
 
 
 # =============================================================================
-# Part 2: Defaults and Per-Operation Config
+# Part 2 -- Manual: Defaults and Per-Operation Config
 # =============================================================================
 # Set a tract-level default (every call inherits it), then override per
 # operation so chat is creative and compression is deterministic.
 
 def part2_defaults_and_operations():
     print(f"\n{'=' * 60}")
-    print("Part 2: DEFAULTS AND PER-OPERATION CONFIG")
+    print("PART 2 -- Manual: DEFAULTS AND PER-OPERATION CONFIG")
     print("=" * 60)
     print()
 
@@ -99,5 +99,43 @@ def part2_defaults_and_operations():
         # Note: response.pprint() would show the full panel with all resolved fields
 
 
-if __name__ == "__main__":
+# =============================================================================
+# Part 3 -- Agent: Agent-Driven Operation Config
+# =============================================================================
+# Agents can observe but not modify operation configs at runtime --
+# these are set at Tract.open() time.
+
+def part3_agent():
+    print(f"\n{'=' * 60}")
+    print("PART 3 -- Agent: AGENT-DRIVEN OPERATION CONFIG")
+    print("=" * 60)
+    print()
+
+    from tract.toolkit import ToolExecutor
+
+    with Tract.open(
+        api_key=TRACT_OPENAI_API_KEY,
+        base_url=TRACT_OPENAI_BASE_URL,
+        default_config=LLMConfig(model=MODEL_ID, temperature=0.5),
+    ) as t:
+        t.system("You are a helpful assistant.")
+        t.configure_operations(chat=LLMConfig(temperature=0.8))
+        executor = ToolExecutor(t)
+
+        # Agent observes operation configs via status
+        status = executor.execute("status", {})
+        print(f"  Agent sees operation configs via status():\n{status}\n")
+
+        # Agent cannot change operation configs at runtime -- by design.
+        # Operation configs are infrastructure, not agent decisions.
+        print("  Note: Agents can observe but not modify operation configs")
+        print("  at runtime. These are set at Tract.open() time.")
+
+
+def main():
     part2_defaults_and_operations()
+    part3_agent()
+
+
+if __name__ == "__main__":
+    main()

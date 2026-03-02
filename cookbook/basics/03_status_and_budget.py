@@ -87,5 +87,11 @@ def main():
             print("WARNING: Over 80% budget — time to compress or take action!")
 
 
+# --- Tier notes ---
+# Commits and compile are primitives; they don't have review=True variants.
+# For interactive (HITL) patterns, see: operations/compress/01_compression.py (Part 2)
+# For agent automation, see: orchestrator/02_orchestrator_loop.py (Part 3)
+# For the full 3-tier convention, see: hooks/01_registration/01_routing.py
+
 if __name__ == "__main__":
     main()

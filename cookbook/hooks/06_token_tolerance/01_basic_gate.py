@@ -37,6 +37,10 @@ def basic_token_gate() -> None:
     print("PART 1 — Basic Token Gate")
     print("=" * 60)
 
+    # --- Without hooks (baseline) ---
+    # Without this gate, compress() uses its built-in token_tolerance
+    # check (tier 3). This hook replaces that with a custom budget (tier 2).
+
     def make_token_gate(max_tokens: int, tolerance: int = 100) -> Callable[[PendingCompress], None]:
         """Factory: returns a hook that rejects over-budget summaries."""
         def token_gate(pending: PendingCompress) -> None:

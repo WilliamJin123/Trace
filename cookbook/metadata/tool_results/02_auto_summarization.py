@@ -1,16 +1,19 @@
 """Context-Aware Auto-Summarization (Noisy Tools)
 
-Scenario 2 of Tool Calling: intentionally noisy tool results (huge directory
-listing, verbose config file) are auto-summarized on commit.
-include_context=True lets the summarizer see the conversation so it keeps
-only what matters to the user's question.
+Three tiers of tool result management: manual surgical edit, interactive
+review of pending summaries, and fully autonomous auto-summarization.
 
-Demonstrates: set_tools(), tool_result(), configure_tool_summarization(),
-              include_context=True, get_content(), pprint()
+PART 1 -- Manual           Direct API calls, no LLM, deterministic
+PART 2 -- Interactive       review=True, click.edit/confirm, human decides
+PART 3 -- LLM / Agent      Orchestrator, triggers, hooks auto-manage
+
+Demonstrates: tool_result(edit=), configure_tool_summarization(),
+              include_context=True, get_content(), pprint(), click.edit()
 """
 
 import os
 
+import click
 import httpx
 from dotenv import load_dotenv
 
@@ -19,8 +22,8 @@ from tract.protocols import ToolCall
 
 load_dotenv()
 
-TRACT_OPENAI_API_KEY = os.environ["TRACT_OPENAI_API_KEY"]
-TRACT_OPENAI_BASE_URL = os.environ["TRACT_OPENAI_BASE_URL"]
+TRACT_OPENAI_API_KEY = os.environ.get("TRACT_OPENAI_API_KEY", "")
+TRACT_OPENAI_BASE_URL = os.environ.get("TRACT_OPENAI_BASE_URL", "")
 MODEL_ID = "gpt-oss-120b"
 
 # The directory this file lives in — tools will search here.
@@ -156,17 +159,135 @@ def call_llm(messages: list[dict], tools: list[dict]) -> dict:
     return response.json()
 
 
-def main():
-    # =================================================================
-    # SCENARIO 2: Context-Aware Auto-Summarization (Noisy Tools)
-    # =================================================================
-    # A different task with intentionally verbose tool results.
-    # configure_tool_summarization(include_context=True) lets the
-    # summarizer see the conversation, so it extracts ONLY what the
-    # user asked about — filtering out irrelevant noise.
+# =============================================================================
+# Part 1: Manual Surgical Edit  (PART 1 — Manual)
+# =============================================================================
 
-    print(f"\n\n{'=' * 60}")
-    print("SCENARIO 2: Context-Aware Auto-Summarization")
+def part1_manual_edit():
+    """Edit a tool result manually — no LLM needed."""
+    print("=" * 60)
+    print("Part 1: MANUAL SURGICAL EDIT  [Manual Tier]")
+    print("=" * 60)
+    print()
+    print("  Use tool_result(edit=) to surgically replace a verbose tool")
+    print("  result with a trimmed version. Show token savings.")
+    print()
+
+    with Tract.open() as t:
+        t.system("You are a configuration auditor.")
+        t.user("What is the database connection string?")
+
+        # Commit a verbose tool result
+        t.assistant(
+            "Let me read the config file.",
+            metadata={"tool_calls": [
+                {"id": "call_1", "name": "read_file",
+                 "arguments": {"path": "config.yaml"}},
+            ]},
+        )
+        original_ci = t.tool_result(
+            "call_1", "read_file",
+            "APP_NAME=my-service\nAPP_VERSION=2.4.1\nLOG_LEVEL=INFO\n"
+            "CACHE_TTL=3600\nCACHE_BACKEND=redis\nREDIS_HOST=cache.internal\n"
+            "DB_CONNECTION=postgresql://admin:s3cret@db.prod.internal:5432/myapp\n"
+            "DB_POOL_SIZE=20\nDB_TIMEOUT=30\nENABLE_DARK_MODE=true\n"
+            "MAX_UPLOAD_SIZE=10485760\nSMTP_HOST=mail.example.com",
+        )
+
+        before_ctx = t.compile()
+        print(f"  Before edit: {before_ctx.token_count} tokens")
+
+        # Surgical edit: keep only the relevant line
+        edited_ci = t.tool_result(
+            "call_1", "read_file",
+            "DB_CONNECTION=postgresql://admin:s3cret@db.prod.internal:5432/myapp",
+            edit=original_ci.commit_hash,
+        )
+
+        after_ctx = t.compile()
+        saved = before_ctx.token_count - after_ctx.token_count
+        print(f"  After edit:  {after_ctx.token_count} tokens (saved {saved})")
+        print(f"  Original preserved at {original_ci.commit_hash[:8]} for audit.\n")
+
+    print()
+
+
+# =============================================================================
+# Part 2: Interactive Review  (PART 2 — Interactive)
+# =============================================================================
+
+def part2_interactive_review():
+    """Review and edit tool results interactively before committing."""
+    print("=" * 60)
+    print("Part 2: INTERACTIVE REVIEW  [Interactive Tier]")
+    print("=" * 60)
+    print()
+    print("  After a tool result is committed, open it in $EDITOR for")
+    print("  trimming, then apply the edit with confirmation.")
+    print()
+
+    with Tract.open() as t:
+        t.system("You are a deployment auditor.")
+        t.user("Show me the server health report.")
+
+        # Commit a verbose tool result
+        t.assistant(
+            "Running health check...",
+            metadata={"tool_calls": [
+                {"id": "call_1", "name": "health_check",
+                 "arguments": {}},
+            ]},
+        )
+        verbose_output = (
+            "Server: prod-web-01\n"
+            "CPU: 23%  Memory: 45%  Disk: 67%\n"
+            "Uptime: 42 days\n"
+            "Active connections: 1,247\n"
+            "Request rate: 340 req/s\n"
+            "Error rate: 0.02%\n"
+            "Last deploy: 2026-02-28T14:30:00Z\n"
+            "Docker containers: 12 running, 0 stopped\n"
+            "SSL cert expires: 2026-09-15\n"
+            "DNS resolution: 2.1ms avg"
+        )
+        ci = t.tool_result("call_1", "health_check", verbose_output)
+
+        # Show the content and offer to edit
+        content = t.get_content(ci.commit_hash)
+        print(f"  Tool result ({len(verbose_output)} chars):")
+        for line in verbose_output.split("\n")[:5]:
+            print(f"    {line}")
+        print(f"    ... ({len(verbose_output.splitlines())} lines total)\n")
+
+        edited = click.edit(verbose_output)
+        if edited and edited.strip() != verbose_output.strip():
+            if click.confirm("  Approve trimmed result?"):
+                t.tool_result(
+                    "call_1", "health_check", edited.strip(),
+                    edit=ci.commit_hash,
+                )
+                print(f"  Edit applied.\n")
+            else:
+                print(f"  Edit cancelled.\n")
+        else:
+            print(f"  No changes made.\n")
+
+    print()
+
+
+# =============================================================================
+# Part 3: Auto-Summarization  (PART 3 — LLM / Agent)
+# =============================================================================
+
+def part3_auto_summarization():
+    if not TRACT_OPENAI_API_KEY:
+        print("=" * 60)
+        print("Part 3: SKIPPED (no TRACT_OPENAI_API_KEY)")
+        print("=" * 60)
+        return
+
+    print("=" * 60)
+    print("Part 3: CONTEXT-AWARE AUTO-SUMMARIZATION  [Agent Tier]")
     print("=" * 60)
     print()
     print("  The user asks a specific question. Tools return intentionally")
@@ -295,6 +416,15 @@ def main():
         ctx = t2.compile()
         print(f"  {len(ctx.messages)} messages  |  {ctx.token_count} tokens\n")
         ctx.pprint(style="chat")
+
+
+def main():
+    part1_manual_edit()
+    part2_interactive_review()
+    part3_auto_summarization()
+    print("=" * 60)
+    print("Done -- all 3 tiers of tool result management demonstrated.")
+    print("=" * 60)
 
 
 if __name__ == "__main__":

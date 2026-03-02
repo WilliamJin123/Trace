@@ -1,18 +1,23 @@
-"""Branch Lifecycle — Create, Switch, List, Delete
+"""Branch Lifecycle -- Create, Switch, List, Delete
 
-Try an experimental explanation style without affecting main. Branching
-is lightweight — it's just a pointer to a commit, not a copy. Create
-branches, switch between them, list what exists, and clean up.
+Three tiers of branch management -- manual API calls, interactive prompts,
+and agent-driven toolkit execution.
+
+PART 1 -- Manual           Direct branch/switch/list/delete calls
+PART 2 -- Interactive       click.confirm, click.prompt, human decides
+PART 3 -- LLM / Agent      ToolExecutor dispatches branch operations
 
 Demonstrates: branch(), switch(), list_branches(), current_branch,
-              branch(switch=False), delete_branch(force=True)
+              branch(switch=False), delete_branch(force=True),
+              click.confirm, click.prompt, ToolExecutor
 """
 
 import os
 
+import click
 from dotenv import load_dotenv
 
-from tract import Tract
+from tract import Tract, ToolExecutor
 
 load_dotenv()
 
@@ -22,16 +27,16 @@ MODEL_ID = "gpt-oss-120b"
 
 
 # =============================================================================
-# Part 1: Branch Lifecycle — Create, Switch, List, Delete
+# PART 1 -- Manual: Direct API calls, no LLM, deterministic
 # =============================================================================
 
-def part1_branch_lifecycle():
+def part1_manual():
     print("=" * 60)
-    print("Part 1: BRANCH LIFECYCLE")
+    print("PART 1 -- Manual: Branch Lifecycle")
     print("=" * 60)
     print()
     print("  Try an experimental explanation style without affecting main.")
-    print("  Branching is lightweight — it's just a pointer to a commit,")
+    print("  Branching is lightweight -- it's just a pointer to a commit,")
     print("  not a copy.")
     print()
 
@@ -53,7 +58,6 @@ def part1_branch_lifecycle():
         print(f"\n  Branch: {t.current_branch}  |  Messages: {main_messages}\n")
 
         # --- Branch: try a different explanation style ---
-        # branch() creates a new branch at HEAD and switches to it by default.
 
         print("=== Branch 'analogy': try a different angle ===\n")
 
@@ -66,8 +70,7 @@ def part1_branch_lifecycle():
         analogy_messages = len(t.compile().messages)
         print(f"\n  Branch: {t.current_branch}  |  Messages: {analogy_messages}\n")
 
-        # --- List branches: see what exists ---
-        # list_branches() returns BranchInfo objects with is_current flag.
+        # --- List branches ---
 
         print("=== All branches ===\n")
 
@@ -75,18 +78,16 @@ def part1_branch_lifecycle():
             marker = "*" if b.is_current else " "
             print(f"  {marker} {b.name:12s}  @ {b.commit_hash[:8]}")
 
-        # --- Switch back to main: experiment is isolated ---
-        # Main still has only the original messages — the analogy chat isn't here.
+        # --- Switch back to main ---
 
         print("\n=== Switch back to main ===\n")
 
         t.switch("main")
         ctx_main = t.compile()
         print(f"  Branch: {t.current_branch}  |  Messages: {len(ctx_main.messages)}")
-        print(f"  (analogy branch had {analogy_messages} — main is untouched)")
+        print(f"  (analogy branch had {analogy_messages} -- main is untouched)")
 
         # --- Peek at analogy from main ---
-        # switch() to analogy and back to verify both are intact.
 
         print("\n=== Peek at analogy ===\n")
 
@@ -96,7 +97,6 @@ def part1_branch_lifecycle():
         ctx_analogy.pprint(style="chat")
 
         # --- Create a branch without switching ---
-        # branch(switch=False) keeps HEAD on the current branch.
 
         t.switch("main")
         t.branch("draft", switch=False)
@@ -109,8 +109,6 @@ def part1_branch_lifecycle():
             print(f"    {marker} {b.name}")
 
         # --- Clean up ---
-        # delete_branch() removes the branch pointer. force=True allows
-        # deleting branches with unmerged work (analogy was never merged).
 
         print("\n=== Clean up ===\n")
 
@@ -121,5 +119,119 @@ def part1_branch_lifecycle():
         print(f"  Remaining branches: {remaining}")
 
 
+# =============================================================================
+# PART 2 -- Interactive: click.confirm, click.prompt, human decides
+# =============================================================================
+
+def part2_interactive():
+    print("=" * 60)
+    print("PART 2 -- Interactive: Branch Management with Prompts")
+    print("=" * 60)
+    print()
+    print("  Use click prompts to let the user decide branch operations.")
+
+    with Tract.open(
+        api_key=TRACT_OPENAI_API_KEY,
+        base_url=TRACT_OPENAI_BASE_URL,
+        model=MODEL_ID,
+    ) as t:
+        t.system("You are a concise Python tutor.")
+        t.chat("What is a list comprehension?")
+
+        # Create branch with confirmation
+        if click.confirm("  Create branch 'experiment'?", default=True):
+            t.branch("experiment")
+            print(f"  Created and switched to: {t.current_branch}")
+            t.chat("Explain generator expressions.")
+        else:
+            print("  Skipped branch creation.")
+            return
+
+        t.switch("main")
+
+        # List branches with numbered display
+        branches = t.list_branches()
+        print(f"\n  Available branches:")
+        for i, b in enumerate(branches):
+            marker = "*" if b.is_current else " "
+            print(f"    [{i}] {marker} {b.name:15s} @ {b.commit_hash[:8]}")
+
+        # Switch with interactive selection
+        choice = click.prompt(
+            "  Switch to which branch? (number)",
+            type=int,
+            default=0,
+        )
+        if 0 <= choice < len(branches):
+            t.switch(branches[choice].name)
+            print(f"  Switched to: {t.current_branch}")
+            t.compile().pprint(style="compact")
+
+        # Delete with force confirmation
+        t.switch("main")
+        if click.confirm("  Force delete unmerged branch 'experiment'?", default=False):
+            t.delete_branch("experiment", force=True)
+            print(f"  Deleted 'experiment'.")
+        else:
+            print("  Kept 'experiment'.")
+
+        remaining = [b.name for b in t.list_branches()]
+        print(f"\n  Remaining branches: {remaining}")
+
+
+# =============================================================================
+# PART 3 -- LLM / Agent: ToolExecutor dispatches branch operations
+# =============================================================================
+
+def part3_agent():
+    print("=" * 60)
+    print("PART 3 -- Agent: ToolExecutor Branch Operations")
+    print("=" * 60)
+    print()
+    print("  An LLM agent uses ToolExecutor to manage branches")
+    print("  programmatically -- no human prompts needed.")
+
+    with Tract.open(
+        api_key=TRACT_OPENAI_API_KEY,
+        base_url=TRACT_OPENAI_BASE_URL,
+        model=MODEL_ID,
+    ) as t:
+        t.system("You are a concise Python tutor.")
+        t.chat("What is a class?")
+
+        executor = ToolExecutor(t)
+
+        # Agent creates a branch
+        result = executor.execute("branch", {"name": "auto-research"})
+        print(f"\n  branch('auto-research'): {result}")
+
+        # Agent adds work on the new branch
+        t.chat("Explain inheritance in Python.")
+
+        # Agent lists branches
+        result = executor.execute("list_branches", {})
+        print(f"\n  list_branches(): {result}")
+
+        # Agent switches back to main
+        result = executor.execute("switch", {"branch": "main"})
+        print(f"\n  switch('main'): {result}")
+        print(f"  Current branch: {t.current_branch}")
+
+        # Agent cleans up
+        t.delete_branch("auto-research", force=True)
+        remaining = [b.name for b in t.list_branches()]
+        print(f"\n  After cleanup: {remaining}")
+
+
+# =============================================================================
+# main
+# =============================================================================
+
+def main():
+    part1_manual()
+    part2_interactive()
+    part3_agent()
+
+
 if __name__ == "__main__":
-    part1_branch_lifecycle()
+    main()

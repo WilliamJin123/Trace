@@ -27,6 +27,11 @@ def hook_basics() -> None:
     print("  Every tool_result() call passes through the hook system.")
     print("  A handler can inspect, modify, or reject before commit.")
 
+    # --- Without hooks (baseline) ---
+    # Without t.on("tool_result", ...), tool_result() auto-commits
+    # immediately (tier 3). With a handler, you intercept every result.
+    # With review=True, the caller gets a PendingToolResult (tier 1).
+
     with Tract.open(
         api_key=TRACT_OPENAI_API_KEY,
         base_url=TRACT_OPENAI_BASE_URL,

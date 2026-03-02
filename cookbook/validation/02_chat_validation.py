@@ -26,12 +26,61 @@ MODEL_ID = "llama3.1-8b"
 
 
 # =============================================================================
-# Part 1: Basic chat(validator=) — steering in context
+# Part 1: Manual Validator (pure Python, no LLM needed for the validator)
+# =============================================================================
+# The simplest usage: a deterministic Python function validates the LLM output.
+# No LLM in the validator itself — just json.loads() and type checks.
+
+def part1_manual_validator():
+    print("=" * 60)
+    print("Part 1: MANUAL VALIDATOR (pure Python)")
+    print("=" * 60)
+    print()
+
+    def json_validator(text: str) -> tuple[bool, str | None]:
+        """Validate that the response is valid JSON with required fields."""
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as e:
+            return (False, f"Not valid JSON: {e}")
+        if not isinstance(data, dict):
+            return (False, f"Expected a JSON object, got {type(data).__name__}")
+        if "result" not in data:
+            return (False, "Missing required key: 'result'")
+        return (True, None)
+
+    with Tract.open(
+        api_key=TRACT_OPENAI_API_KEY,
+        base_url=TRACT_OPENAI_BASE_URL,
+        model=MODEL_ID,
+    ) as t:
+        t.system(
+            "You are a data assistant. Always respond with a JSON object "
+            "containing a 'result' key. No markdown, no explanation."
+        )
+
+        response = t.chat(
+            "What is 2 + 2? Return as JSON.",
+            validator=json_validator,
+            max_retries=3,
+        )
+
+        print(f"  Validated response: {response.text}")
+        parsed = json.loads(response.text)
+        print(f"  Parsed result: {parsed['result']}")
+
+        print("\n  Commit chain:")
+        for entry in reversed(t.log()):
+            print(f"    {entry}")
+
+
+# =============================================================================
+# Part 2: Basic chat(validator=) — steering in context
 # =============================================================================
 # On failure, chat() auto-commits a steering user message so the LLM sees
 # its own mistake. The validator signature is (str) -> (bool, str | None).
 
-def part1_basic_validation():
+def part2_basic_validation():
     def validate_json_list(text: str) -> tuple[bool, str | None]:
         try:
             data = json.loads(text)
@@ -68,12 +117,12 @@ def part1_basic_validation():
 
 
 # =============================================================================
-# Part 2: purify=True — clean history after retries
+# Part 3: purify=True — clean history after retries
 # =============================================================================
 # Without purify, failed responses + steering messages stay in the chain.
 # With purify=True, HEAD resets and only the clean result is re-committed.
 
-def part2_purify():
+def part3_purify():
     def must_contain_scala(text: str) -> tuple[bool, str | None]:
         if "scala" not in text.lower():
             return (False, "Response must mention scala")
@@ -102,12 +151,12 @@ def part2_purify():
 
 
 # =============================================================================
-# Part 3: provenance_note=True — record retry metadata
+# Part 4: provenance_note=True — record retry metadata
 # =============================================================================
 # Auto-commits "[retry] Succeeded on attempt 2/3. Previous failures: ..."
 # after success. Survives in the log for auditing.
 
-def part3_provenance():
+def part4_provenance():
     call_count = 0
 
     def flaky_validator(text: str) -> tuple[bool, str | None]:
@@ -141,12 +190,12 @@ def part3_provenance():
 
 
 # =============================================================================
-# Part 4: retry_prompt= and generate(validator=)
+# Part 5: retry_prompt= and generate(validator=)
 # =============================================================================
 # retry_prompt= customizes the steering message. generate(validator=) works
 # for two-step flows where user() was already called.
 
-def part4_custom_steering():
+def part5_custom_steering():
     def validate_haiku(text: str) -> tuple[bool, str | None]:
         lines = [l.strip() for l in text.strip().split("\n") if l.strip()]
         if len(lines) != 3:
@@ -173,11 +222,11 @@ def part4_custom_steering():
 
 
 # =============================================================================
-# Part 5: RetryExhaustedError from chat()
+# Part 6: RetryExhaustedError from chat()
 # =============================================================================
 # When all retries fail, chat() raises RetryExhaustedError with last_result.
 
-def part5_exhaustion():
+def part6_exhaustion():
     with Tract.open(
         api_key=TRACT_OPENAI_API_KEY,
         base_url=TRACT_OPENAI_BASE_URL,
@@ -198,20 +247,23 @@ def part5_exhaustion():
 
 
 def main():
-    print("=== Part 1: chat(validator=) ===\n")
-    part1_basic_validation()
+    print("=== Part 1: Manual validator (pure Python) ===\n")
+    part1_manual_validator()
 
-    print(f"\n=== Part 2: purify=True ===\n")
-    part2_purify()
+    print(f"\n=== Part 2: chat(validator=) ===\n")
+    part2_basic_validation()
 
-    print(f"\n=== Part 3: provenance_note=True ===\n")
-    part3_provenance()
+    print(f"\n=== Part 3: purify=True ===\n")
+    part3_purify()
 
-    print(f"\n=== Part 4: generate(validator=) + retry_prompt= ===\n")
-    part4_custom_steering()
+    print(f"\n=== Part 4: provenance_note=True ===\n")
+    part4_provenance()
 
-    print(f"\n=== Part 5: RetryExhaustedError ===\n")
-    part5_exhaustion()
+    print(f"\n=== Part 5: generate(validator=) + retry_prompt= ===\n")
+    part5_custom_steering()
+
+    print(f"\n=== Part 6: RetryExhaustedError ===\n")
+    part6_exhaustion()
 
 
 if __name__ == "__main__":

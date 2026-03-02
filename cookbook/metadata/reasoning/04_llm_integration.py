@@ -1,17 +1,21 @@
 """LLM Integration
 
-Part 4 of Reasoning Traces: generate() auto-extracts reasoning from
-provider responses (Cerebras, OpenAI o1/o3, Anthropic thinking, <think>
-tags). Auto-committed before the assistant response. Per-call and global
-opt-out available. Requires an LLM — skips if no API key.
+Three tiers: manual reasoning commits, interactive approval of generated
+reasoning, and fully autonomous LLM reasoning extraction.
 
-Demonstrates: generate() with reasoning, ChatResponse.reasoning,
-              ChatResponse.reasoning_commit, generate(reasoning=False),
-              Tract.open(commit_reasoning=False), t.reasoning() manual
+PART 1 -- Manual           Direct API calls, no LLM, deterministic
+PART 2 -- Interactive       review=True, click.edit/confirm, human decides
+PART 3 -- LLM / Agent      Orchestrator, triggers, hooks auto-manage
+
+Demonstrates: t.reasoning() manual, generate() with reasoning,
+              ChatResponse.reasoning, ChatResponse.reasoning_commit,
+              generate(reasoning=False), click.confirm(),
+              Tract.open(commit_reasoning=False)
 """
 
 import os
 
+import click
 from dotenv import load_dotenv
 
 from tract import Tract
@@ -23,21 +27,115 @@ TRACT_OPENAI_BASE_URL = os.environ.get("TRACT_OPENAI_BASE_URL", "")
 MODEL_ID = "gpt-oss-120b"
 
 
-def part4_llm_integration():
+# =============================================================================
+# Part 1: Manual Reasoning  (PART 1 — Manual)
+# =============================================================================
+
+def part1_manual_reasoning():
+    """Commit reasoning manually — no LLM needed."""
+    print("=" * 60)
+    print("Part 1: MANUAL REASONING COMMITS  [Manual Tier]")
+    print("=" * 60)
+    print()
+    print("  t.reasoning() commits chain-of-thought text without any LLM.")
+    print("  It appears in log() but not in compile() by default.")
+    print()
+
+    t = Tract.open()
+    t.system("You are a math tutor.")
+    t.user("What is 15 * 13?")
+
+    # Manual reasoning commit
+    r_info = t.reasoning(
+        "Let me think step by step about this problem...\n"
+        "15 * 13 = 15 * 10 + 15 * 3 = 150 + 45 = 195",
+        format="parsed",
+    )
+    t.assistant("15 x 13 = 195")
+
+    # Reasoning is in log()
+    print("  log() shows reasoning:")
+    for entry in reversed(t.log()):
+        print(f"    {entry}")
+
+    # But excluded from compile()
+    ctx = t.compile()
+    print(f"\n  compile() -> {ctx.commit_count} messages (reasoning excluded)")
+    for msg in ctx.messages:
+        print(f"    [{msg.role}] {msg.content[:60]}")
+
+    print()
+    t.close()
+
+
+# =============================================================================
+# Part 2: Interactive Reasoning Approval  (PART 2 — Interactive)
+# =============================================================================
+
+def part2_interactive():
+    """After generate(), confirm whether to keep reasoning."""
+    if not TRACT_OPENAI_API_KEY:
+        print("=" * 60)
+        print("Part 2: SKIPPED (no TRACT_OPENAI_API_KEY)")
+        print("=" * 60)
+        return
+
+    print("=" * 60)
+    print("Part 2: INTERACTIVE REASONING APPROVAL  [Interactive Tier]")
+    print("=" * 60)
+    print()
+    print("  After generate(), inspect reasoning and decide whether to")
+    print("  keep it committed. Show generate(reasoning=False) as opt-out.")
+    print()
+
+    with Tract.open(
+        api_key=TRACT_OPENAI_API_KEY,
+        base_url=TRACT_OPENAI_BASE_URL,
+        model=MODEL_ID,
+    ) as t:
+        t.system("Think step by step before answering.")
+        t.user("What is 23 * 17?")
+
+        response = t.generate(reasoning_effort="high")
+
+        if response.reasoning:
+            print(f"  Reasoning extracted ({len(response.reasoning)} chars):")
+            preview = response.reasoning[:120].replace("\n", " ")
+            print(f"    {preview}...\n")
+
+            if click.confirm("  Keep this reasoning committed?", default=True):
+                print("  -> reasoning already committed by generate()")
+            else:
+                print("  -> To skip reasoning, use generate(reasoning=False)")
+                print("     The reasoning text is still in ChatResponse.reasoning")
+                print("     but won't be committed to history.")
+        else:
+            print("  (Model did not produce reasoning tokens)")
+
+        print(f"\n  Answer: {response.text[:80]}")
+
+    print()
+
+
+# =============================================================================
+# Part 3: Autonomous LLM Reasoning  (PART 3 — LLM / Agent)
+# =============================================================================
+
+def part3_llm_integration():
     if not TRACT_OPENAI_API_KEY:
         print(f"\n{'=' * 60}")
-        print("Part 4: SKIPPED (no TRACT_OPENAI_API_KEY)")
+        print("Part 3: SKIPPED (no TRACT_OPENAI_API_KEY)")
         print("=" * 60)
         return
 
     print(f"\n{'=' * 60}")
-    print("Part 4: LLM INTEGRATION (auto-extract reasoning)")
+    print("Part 3: AUTONOMOUS LLM REASONING  [Agent Tier]")
     print("=" * 60)
     print()
 
-    # --- 4a: generate() with reasoning ---
+    # --- 3a: generate() with reasoning ---
 
-    print("  4a: generate() auto-commits reasoning traces\n")
+    print("  3a: generate() auto-commits reasoning traces\n")
 
     with Tract.open(
         api_key=TRACT_OPENAI_API_KEY,
@@ -60,9 +158,9 @@ def part4_llm_integration():
         ctx = t.compile(include_reasoning=True)
         ctx.pprint(style="chat")
 
-    # --- 4b: Per-call opt-out ---
+    # --- 3b: Per-call opt-out ---
 
-    print(f"\n  4b: reasoning=False skips the commit\n")
+    print(f"\n  3b: reasoning=False skips the commit\n")
 
     with Tract.open(
         api_key=TRACT_OPENAI_API_KEY,
@@ -83,9 +181,9 @@ def part4_llm_integration():
         print(f"  content types in log: {log_types}")
         print(f"  'reasoning' in log: {'reasoning' in log_types}")
 
-    # --- 4c: Global opt-out ---
+    # --- 3c: Global opt-out ---
 
-    print(f"\n  4c: Tract.open(commit_reasoning=False) disables globally\n")
+    print(f"\n  3c: Tract.open(commit_reasoning=False) disables globally\n")
 
     with Tract.open(
         api_key=TRACT_OPENAI_API_KEY,
@@ -107,5 +205,18 @@ def part4_llm_integration():
         print(f"  manual commit type:  {manual.content_type}")
 
 
+# =============================================================================
+# Main
+# =============================================================================
+
+def main():
+    part1_manual_reasoning()
+    part2_interactive()
+    part3_llm_integration()
+    print("=" * 60)
+    print("Done -- all 3 tiers of LLM reasoning integration demonstrated.")
+    print("=" * 60)
+
+
 if __name__ == "__main__":
-    part4_llm_integration()
+    main()

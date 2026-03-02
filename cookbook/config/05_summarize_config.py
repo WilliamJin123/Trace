@@ -25,6 +25,10 @@ MODEL_ID = "gpt-oss-120b"
 MESSAGE_MODEL_ID = "llama3.1-8b"  # cheap model for summarization
 
 
+# =============================================================================
+# Parts 1-2 -- Manual: Auto-Summarize Modes
+# =============================================================================
+
 # --- 1. Cheapest: point auto_summarize at a small model ---
 # One parameter does it all.  Uses llama3.1-8b for commit messages
 # while the main tract model stays gpt-oss-120b.
@@ -93,3 +97,41 @@ with Tract.open(
 # with Tract.open(api_key="sk-...", auto_summarize=True) as t:
 #     t.configure_clients(summarize=summarize_client)
 #     t.system("You are helpful.")
+
+
+# =============================================================================
+# Part 3 -- Agent: Observes Compression Config
+# =============================================================================
+# Agents observe compression config via status() and can influence
+# summarization behavior via the instructions= parameter on compress().
+
+def part3_agent():
+    print(f"\n{'=' * 60}")
+    print("PART 3 -- Agent: OBSERVES SUMMARIZE CONFIG")
+    print("=" * 60)
+    print()
+
+    from tract.toolkit import ToolExecutor
+
+    with Tract.open(
+        api_key=TRACT_OPENAI_API_KEY,
+        base_url=TRACT_OPENAI_BASE_URL,
+        model=MODEL_ID,
+        auto_summarize=MESSAGE_MODEL_ID,
+    ) as t:
+        t.system("You are a helpful assistant.")
+        executor = ToolExecutor(t)
+
+        # Agent observes the summarization config via status
+        status = executor.execute("status", {})
+        print(f"  Agent sees auto_summarize config:\n{status}\n")
+
+        # Agents can influence compression content via instructions=
+        # but the summarization model choice is init-time config.
+        print("  Note: Agents observe compression config via status()")
+        print("  and can influence summary content via instructions=,")
+        print("  but the summarization model is set at Tract.open() time.")
+
+
+if __name__ == "__main__":
+    part3_agent()
