@@ -113,7 +113,7 @@ def part2_auto_summarization():
 
         t2.set_tools(TOOLS)
         t2.system("You are a code auditor. Answer precisely.")
-        t2.user("Which function in this directory makes HTTP calls to the LLM API?")
+        t2.user("Which function in this directory handles file I/O for tool execution?")
 
         # Enable context-aware auto-summarization — the hook fires on every
         # tool_result() commit and the LLM sees the conversation above.
@@ -124,7 +124,7 @@ def part2_auto_summarization():
         )
 
         # --- Noisy tool result 1: directory listing ---
-        # The user asked about HTTP/LLM calls. A full directory listing
+        # The user asked about file I/O for tools. A full directory listing
         # has many files; the LLM should focus on _helpers.py.
 
         real_listing = execute_tool("list_directory", {"path": "."})
@@ -143,7 +143,7 @@ def part2_auto_summarization():
         print(f"    Summarized: {t2.get_content(ci1)}\n")
 
         # --- Noisy tool result 2: full file read ---
-        # _helpers.py has ~160 lines; only call_llm() is relevant.
+        # _helpers.py has ~120 lines; only execute_tool() is relevant.
 
         real_file = execute_tool("read_file", {"path": "_helpers.py"})
         t2.assistant(
@@ -161,20 +161,20 @@ def part2_auto_summarization():
         print(f"    Summarized: {t2.get_content(ci2)}\n")
 
         # --- Noisy tool result 3: search across all files ---
-        # Search for "httpx" finds matches in multiple files; only
-        # the call_llm() function is relevant to the question.
+        # Search for "open(" finds matches in multiple files; only
+        # the execute_tool() function is relevant to the question.
 
-        real_search = execute_tool("search_files", {"pattern": "httpx"})
+        real_search = execute_tool("search_files", {"pattern": "open("})
         t2.assistant(
-            "Let me search for 'httpx' across all files.",
+            "Let me search for 'open(' across all files.",
             metadata={"tool_calls": [
                 {"id": "n3", "name": "search_files",
-                 "arguments": {"pattern": "httpx"}},
+                 "arguments": {"pattern": "open("}},
             ]},
         )
         ci3 = t2.tool_result("n3", "search_files", real_search)
 
-        print(f"  Tool 3: search_files ('httpx')")
+        print(f"  Tool 3: search_files ('open(')")
         print(f"    Original: {len(real_search)} chars, "
               f"{real_search.count(chr(10)) + 1} matches")
         print(f"    Summarized: {t2.get_content(ci3)}\n")

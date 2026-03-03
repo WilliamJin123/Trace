@@ -1,21 +1,12 @@
 """Shared helpers for tool_results cookbook examples.
 
-Provides: TOOLS, make_execute_tool(), call_llm().
+Provides: TOOLS, execute_tool().
 
-These are extracted from 01_agentic_loop.py and 02_auto_summarization.py
-to avoid duplication.
+These are extracted from the tool_results and tool_summarization
+cookbook demos to avoid duplication.
 """
 
 import os
-import sys
-from pathlib import Path
-
-import httpx
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from _providers import cerebras as llm  
-
-MODEL_ID = llm.large
 
 
 # --- Tool definitions (OpenAI function-calling format) ---
@@ -133,27 +124,3 @@ def execute_tool(name: str, arguments: dict, *, cookbook_dir: str, exclude_file:
         return "\n".join(matches) if matches else f"No matches for '{pattern}'"
 
     return f"Unknown tool: {name}"
-
-
-# --- LLM caller (bypasses generate() for tool-calling turns) ---
-
-def call_llm(messages: list[dict], tools: list[dict]) -> dict:
-    """Call OpenAI-compatible API with tool definitions.
-
-    We call the API directly (via httpx) rather than using t.generate()
-    because tool-calling responses often have null content, which the
-    current generate() path doesn't handle. Tract manages the context;
-    we manage the LLM call.
-    """
-    response = httpx.post(
-        f"{llm.base_url}/chat/completions",
-        headers={"Authorization": f"Bearer {llm.api_key}"},
-        json={
-            "model": MODEL_ID,
-            "messages": messages,
-            "tools": tools,
-        },
-        timeout=120,
-    )
-    response.raise_for_status()
-    return response.json()
