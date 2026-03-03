@@ -1,4 +1,4 @@
-"""Shared helpers for queries cookbook examples.
+"""Shared helpers for provenance cookbook examples.
 
 Provides: build_agent_session().
 

@@ -66,7 +66,9 @@ cookbook/
 │   │   ├── 09_gc.py                             # gc(), GCResult, archive retention
 │   │   ├── 10_retention_policies.py             # archive_retention_days, conservative vs aggressive
 │   │   ├── 11_reorder.py                        # compile(order=), ReorderWarning
-│   │   └── sample_contract.md                   # Sample data for compression demos
+│   │   ├── 12_selective_compression.py          # compress_tool_calls(name=), targeted compression
+│   │   └── _data/
+│   │       └── sample_contract.md               # Sample data for compression demos
 │   │
 │   ├── metadata/                              # Data attached to commits
 │   │   ├── 01_tags.py                           # auto-classify, explicit tags, mutable tags, registry, queries
@@ -74,9 +76,9 @@ cookbook/
 │   │   ├── 03_edit_in_place.py                  # system(edit=hash), edit-in-place workflow
 │   │   ├── 04_tool_results.py                   # set_tools, tool_result, compress_tool_calls
 │   │   ├── 05_tool_summarization.py             # configure_tool_summarization, auto-summarize
-│   │   ├── 06_offline_tool_management.py        # tool management without LLM calls
-│   │   ├── 07_reasoning.py                      # Manual reasoning commits + compile control
-│   │   ├── 08_reasoning_llm.py                  # Reasoning formatting + LLM integration
+│   │   ├── 06_tool_error_handling.py            # is_error, drop_failed_tool_turns, ToolDropResult
+│   │   ├── 07_reasoning.py                      # Reasoning: manual commits, compile control, formatting, LLM
+│   │   ├── 08_surgical_edits.py                 # tool_result(edit=hash), trimming verbose results
 │   │   └── _helpers.py                          # Shared utilities for tool result examples
 │   │
 │   ├── config/                                # LLM routing, budgets, generation config
@@ -87,13 +89,11 @@ cookbook/
 │   │   ├── 05_message_config.py                  # auto-message commit message LLM config
 │   │   └── 06_budget_guardrail.py               # status() loop, budget check before chat, auto-stop
 │   │
-│   ├── queries/                               # Inspecting and auditing history
+│   ├── provenance/                            # Auditing and tracking history
 │   │   ├── 01_tool_queries.py                   # find_tool_results, find_tool_calls, find_tool_turns
-│   │   ├── 02_surgical_edits.py                 # tool_result(edit=hash), trimming verbose results
-│   │   ├── 03_selective_compression.py          # compress_tool_calls(name=), targeted compression
-│   │   ├── 04_config_provenance.py              # query_by_config, generation_config tracking
-│   │   ├── 05_tool_provenance.py                # set_tools, get_commit_tools, to_openai_params
-│   │   └── _helpers.py                          # Shared utilities for query examples
+│   │   ├── 02_config_provenance.py              # query_by_config, generation_config tracking
+│   │   ├── 03_tool_provenance.py                # set_tools, get_commit_tools, to_openai_params
+│   │   └── _helpers.py                          # Shared utilities for provenance examples
 │   │
 │   └── validation/                            # Retry and validation patterns
 │       ├── 01_core_retry.py                     # retry_with_steering, RetryResult, RetryExhaustedError
@@ -124,7 +124,8 @@ cookbook/
 │       ├── 02_branch_and_merge.py               # branch, switch, list_branches, merge
 │       ├── 03_context_management.py             # compress, annotate, gc, configure_model, status
 │       ├── 04_tagging_and_search.py             # register_tag, tag, untag, query_by_tags, list_tags
-│       └── 05_self_reflection.py                # commit(edit), get_commit, diff, log — agent edits own work
+│       ├── 05_self_reflection.py                # commit(edit), get_commit, diff, log — agent edits own work
+│       └── 06_branch_workflows.py              # tangent branching, compress-then-merge pattern
 │
 ├── integrations/                              # External framework integration (requires extra deps)
 │   ├── 01_callable_tools.py                     # as_callable_tools() -- framework-agnostic export [Coming Soon]
@@ -357,6 +358,13 @@ Open an in-memory tract. Commit messages using `InstructionContent` and `Dialogu
 
 > `compile(order=)`, `ReorderWarning`
 
+### 12 — Selective Compression
+
+**File:** `developer/operations/12_selective_compression.py`
+**Tiers:** Manual | Agent
+
+> `compress_tool_calls(name=)`, targeted compression by tool type
+
 ## Metadata
 
 ### 01 — Tags: Classify and Query
@@ -394,26 +402,26 @@ Open an in-memory tract. Commit messages using `InstructionContent` and `Dialogu
 
 > `configure_tool_summarization()`, auto-summarize hooks
 
-### 06 — Offline Tool Management
+### 06 — Tool Error Handling
 
-**File:** `developer/metadata/06_offline_tool_management.py`
+**File:** `developer/metadata/06_tool_error_handling.py`
 **Tiers:** Manual | Agent
 
-> `find_tool_results()`, `find_tool_calls()`, `find_tool_turns()`, `tool_result(edit=)`
+> `tool_result(is_error=True)`, `drop_failed_tool_turns()`, `ToolDropResult`
 
-### 07 — Reasoning Commits and Compile Control
+### 07 — Reasoning
 
 **File:** `developer/metadata/07_reasoning.py`
-**Tiers:** Manual
-
-> `t.reasoning()`, `ReasoningContent`, `format=`, `compile(include_reasoning=True)`, `annotate()` overrides
-
-### 08 — Reasoning Formatting and LLM Integration
-
-**File:** `developer/metadata/08_reasoning_llm.py`
 **Tiers:** Manual | Agent
 
-> `pprint()` reasoning styles, `to_dicts()`, `to_openai()`, `generate()` auto-extract, `reasoning=False`, `commit_reasoning=False`, `ChatResponse.reasoning`
+> `t.reasoning()`, `ReasoningContent`, `format=`, `compile(include_reasoning=True)`, `annotate()` overrides, `pprint()` reasoning styles, `to_dicts()`, `to_openai()`, `generate()` auto-extract, `reasoning=False`, `commit_reasoning=False`, `ChatResponse.reasoning`
+
+### 08 — Surgical Edits
+
+**File:** `developer/metadata/08_surgical_edits.py`
+**Tiers:** Manual | Agent
+
+> `tool_result(edit=)`, surgical replacement, token accounting before/after
 
 ## Config
 
@@ -459,39 +467,25 @@ Open an in-memory tract. Commit messages using `InstructionContent` and `Dialogu
 
 > `status()` in a loop, budget threshold check, `record_usage()`
 
-## Queries
+## Provenance
 
 ### 01 — Tool Queries
 
-**File:** `developer/queries/01_tool_queries.py`
+**File:** `developer/provenance/01_tool_queries.py`
 **Tiers:** Manual | Agent
 
 > `find_tool_results(name=, after=)`, `find_tool_calls(name=)`, `find_tool_turns(name=)`, `ToolTurn`
 
-### 02 — Surgical Edits
+### 02 — Config Provenance
 
-**File:** `developer/queries/02_surgical_edits.py`
-**Tiers:** Manual | Agent
-
-> `tool_result(edit=)`, surgical replacement
-
-### 03 — Selective Compression
-
-**File:** `developer/queries/03_selective_compression.py`
-**Tiers:** Manual | Agent
-
-> `compress_tool_calls(name=)`, targeted compression
-
-### 04 — Config Provenance
-
-**File:** `developer/queries/04_config_provenance.py`
+**File:** `developer/provenance/02_config_provenance.py`
 **Tiers:** Manual | Agent
 
 > `query_by_config(model=, temperature=)`, `generation_config`
 
-### 05 — Tool Provenance
+### 03 — Tool Provenance
 
-**File:** `developer/queries/05_tool_provenance.py`
+**File:** `developer/provenance/03_tool_provenance.py`
 **Tiers:** Manual | Agent
 
 > `set_tools()`, `get_commit_tools()`, `to_openai_params()`, `to_anthropic_params()`
@@ -658,6 +652,15 @@ The LLM exercises tract tools through genuine tool calls — no hardcoded simula
 
 > `commit` (with `operation='edit'`), `get_commit`, `diff`, `log`, `compile`, `annotate`
 
+### 06 — Branch Workflows
+
+**File:** `agentic/tool_use/06_branch_workflows.py`
+**Tiers:** Manual | Agent
+
+**Use case:** Agent isolates off-topic questions on branches, handles the full lifecycle: branch, answer, compress, switch back, merge summary.
+
+> `branch`, `switch`, `merge`, `compress`, `commit`, `status`, `log`, `ToolProfile` description overrides
+
 ## Multi-Agent
 
 Coordination across multiple agents with parent-child relationships.
@@ -794,7 +797,7 @@ End-to-end scenarios combining features from across the cookbook. Each scenario 
 
 ## self_correcting_agent.py — [self-managing]
 
-**Combines:** validation (retry) + metadata/priority (edit + annotations) + operations/compress + queries/provenance
+**Combines:** validation (retry) + metadata/priority (edit + annotations) + operations/compress + provenance
 
 An agent that validates its own JSON output, retries with steering, and annotates critical decisions with `retain_match=` so they survive compression.
 
@@ -806,7 +809,7 @@ A 50+ turn session with `CompressTrigger(threshold=0.8)`, PINNED alert preservat
 
 ## ab_testing.py — [developer]
 
-**Combines:** operations/branch + config + history/log_and_diff + queries/provenance
+**Combines:** operations/branch + config + history/log_and_diff + provenance
 
 Branch the same conversation, run identical prompts with different configs, diff results and `query_by_config()`.
 

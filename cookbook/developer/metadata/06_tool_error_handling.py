@@ -1,10 +1,10 @@
-"""Offline Tool Management
+"""Tool Error Handling
 
-Manual error handling, query API, and surgical edits -- no LLM needed.
+Mark tool results as errors and drop failed turns to reclaim tokens.
 
 Demonstrates: tool_result(is_error=True), drop_failed_tool_turns(),
-              find_tool_turns(), find_tool_results(), tool_result(edit=),
-              pprint(), log()
+              ToolDropResult, find_tool_turns(), find_tool_results(),
+              tool_result(edit=), pprint(), log()
 """
 
 from tract import Tract

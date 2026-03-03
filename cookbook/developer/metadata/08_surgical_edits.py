@@ -19,9 +19,9 @@ from tract import Tract
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from _providers import cerebras as llm  
 
-# Allow importing _helpers from the same directory when run as a script.
-sys.path.insert(0, str(Path(__file__).parent))
-from _helpers import build_agent_session  
+# Import shared helpers from the provenance directory.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "provenance"))
+from _helpers import build_agent_session
 
 MODEL_ID = llm.large
 

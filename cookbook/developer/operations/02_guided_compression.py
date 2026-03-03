@@ -13,7 +13,7 @@ from _providers import groq as llm
 
 MODEL_ID = llm.large
 
-CONTRACT_PATH = Path(__file__).parent / "sample_contract.md"
+CONTRACT_PATH = Path(__file__).parent / "_data" / "sample_contract.md"
 
 
 def main():
