@@ -2,13 +2,13 @@
 
 An LLM agent working on a design task autonomously branches when the user
 asks conceptual clarification questions that don't advance the project.
-After answering on the branch, the tangent is compressed into a one-line
-summary and merged back, keeping the main context focused.
+The agent handles the full lifecycle: branch, answer, compress, switch
+back to main, and merge the one-line summary.
 
 Key technique: custom tool descriptions via ToolProfile steer the LLM on
 *when* to branch, without any hardcoded trigger logic.
 
-Tools exercised: branch, switch, status, log
+Tools exercised: branch, switch, merge, compress, commit, status, log
 Demonstrates: description overrides for behavioral steering, agent-managed
               branch lifecycle, compress-then-merge pattern
 """
@@ -31,12 +31,21 @@ MODEL_ID = llm.large
 
 
 # =====================================================================
-# Tool profile: branching tools with steering descriptions
+# Tool profile: full tangent lifecycle tools with steering descriptions
 # =====================================================================
 
 TANGENT_PROFILE = ToolProfile(
     name="tangent-manager",
     tool_configs={
+        "commit": ToolConfig(
+            enabled=True,
+            description=(
+                "Record content into the conversation. Use this to commit your "
+                "answer as a dialogue message (content_type='dialogue', "
+                "role='assistant') instead of returning text directly. This "
+                "lets you continue making tool calls after answering."
+            ),
+        ),
         "branch": ToolConfig(
             enabled=True,
             description=(
@@ -50,7 +59,23 @@ TANGENT_PROFILE = ToolProfile(
             enabled=True,
             description=(
                 "Switch to a different branch. Use this to return to 'main' "
-                "after answering a tangent question on a branch."
+                "after compressing a tangent branch."
+            ),
+        ),
+        "merge": ToolConfig(
+            enabled=True,
+            description=(
+                "Merge a branch into the current branch. After compressing a "
+                "tangent branch, switch to main and merge the tangent so the "
+                "one-line summary is preserved in the main context."
+            ),
+        ),
+        "compress": ToolConfig(
+            enabled=True,
+            description=(
+                "Compress commits into a summary. Use content= to provide a "
+                "short one-sentence manual summary capturing only the key "
+                "takeaway from the tangent conversation."
             ),
         ),
         "status": ToolConfig(
@@ -59,13 +84,13 @@ TANGENT_PROFILE = ToolProfile(
         ),
         "log": ToolConfig(
             enabled=True,
-            description="View recent commits on the current branch.",
+            description="View recent commits to find hashes for compress range.",
         ),
     },
 )
 
 
-def run_agent_loop(t, executor, task, *, max_turns=10):
+def run_agent_loop(t, executor, task, *, max_turns=15):
     """Agentic loop: user task -> tool calls -> final response."""
     t.user(task)
 
@@ -92,28 +117,6 @@ def run_agent_loop(t, executor, task, *, max_turns=10):
     return None
 
 
-def compress_and_merge_tangent(t, tangent_branch, summary):
-    """Compress a tangent branch to a one-line summary and merge to main.
-
-    This is the programmatic cleanup after the LLM answers on a tangent.
-    In production, this could also be LLM-driven with a capable model.
-    """
-    print(f"\n  --- Cleanup: compress & merge '{tangent_branch}' ---")
-
-    # Compress everything on the tangent (except shared ancestry) into a summary
-    t.compress(content=summary)
-    print(f"    Compressed tangent to: \"{summary}\"")
-
-    # Switch to main and merge the compressed tangent
-    t.switch("main")
-    result = t.merge(tangent_branch, message=f"Merge tangent: {summary}")
-    print(f"    Merged to main ({result.merge_type})")
-
-    # Clean up the branch
-    t.delete_branch(tangent_branch, force=True)
-    print(f"    Deleted branch '{tangent_branch}'")
-
-
 def main():
     if not llm.api_key:
         print("SKIPPED (no API key)")
@@ -123,13 +126,12 @@ def main():
     print("Tangent Branching: Agent isolates off-topic questions on branches")
     print("=" * 70)
     print()
-    print("  The agent is helping design an API. When the user asks a")
-    print("  conceptual question ('what is REST?'), the agent should")
-    print("  autonomously branch to isolate the tangent.")
-    print()
-    print("  Steering is done purely through tool description overrides --")
-    print("  no triggers or hardcoded logic. The LLM reads the branch tool's")
-    print("  description and decides when branching is appropriate.")
+    print("  The agent handles the full tangent lifecycle via tool calls:")
+    print("    1. branch('tangent/<topic>', switch=true)")
+    print("    2. commit the answer as a dialogue message")
+    print("    3. compress the tangent to a one-line summary")
+    print("    4. switch back to main")
+    print("    5. merge the tangent branch")
     print()
 
     with Tract.open(
@@ -143,11 +145,18 @@ def main():
 
         t.system(
             "You are a senior API architect helping design a REST API for a "
-            "task management app. Stay focused on the design. When the user "
-            "asks conceptual questions that don't advance the design (e.g. "
-            "'what is REST?', 'explain HTTP methods'), use the branch tool "
-            "to isolate the tangent before answering. Keep the main branch "
-            "focused on design decisions only."
+            "task management app.\n\n"
+            "TANGENT PROTOCOL: When the user asks a conceptual question that "
+            "does not advance the design (e.g. 'what is REST?'), you must "
+            "handle it entirely through tool calls:\n"
+            "1. branch('tangent/<topic>', switch=true)\n"
+            "2. commit your answer as a dialogue message "
+            "(content_type='dialogue', role='assistant', text='...')\n"
+            "3. compress(content='<one-line summary>')\n"
+            "4. switch('main')\n"
+            "5. merge('<branch-name>')\n"
+            "6. Then respond with a short confirmation.\n\n"
+            "For design questions, answer normally without branching."
         )
 
         # --- Phase 1: Design question (should NOT branch) ---
@@ -161,32 +170,21 @@ def main():
         )
         print(f"\n  Branch: {t.current_branch}")
 
-        # --- Phase 2: Conceptual tangent (should branch) ---
-        print("\n\n=== Phase 2: Conceptual tangent (agent should branch) ===\n")
+        # --- Phase 2: Conceptual tangent (full LLM-driven lifecycle) ---
+        print("\n\n=== Phase 2: Conceptual tangent (full agent lifecycle) ===\n")
         run_agent_loop(
             t, executor,
             "Wait, quick question -- what actually is REST? I keep hearing "
             "the term but I don't fully understand the principles behind it.",
         )
+        print(f"\n  Branch: {t.current_branch}")
+        print(f"  Branches: {[b.name for b in t.list_branches()]}")
 
-        # Check if the agent branched
-        current = t.current_branch
-        print(f"\n  Branch after tangent: {current}")
+        # --- Phase 3: Resume design ---
+        if t.current_branch != "main":
+            print(f"  (agent didn't return to main -- switching manually)")
+            t.switch("main")
 
-        if current and current != "main":
-            # Agent successfully branched! Now compress and merge back.
-            # This is done programmatically for reliability. In production
-            # with a capable model (GPT-4, Claude), the LLM could do this
-            # via compress/switch/merge tool calls in a single loop.
-            compress_and_merge_tangent(
-                t, current,
-                "REST is an architectural style: stateless HTTP, resource URIs, "
-                "standard verbs (GET/POST/PUT/DELETE), and uniform interface.",
-            )
-        else:
-            print("  (Agent answered inline -- model didn't branch)")
-
-        # --- Phase 3: Resume design (back on main) ---
         print(f"\n\n=== Phase 3: Resume design (on {t.current_branch}) ===\n")
         run_agent_loop(
             t, executor,
@@ -202,9 +200,6 @@ def main():
         msgs = t.compile().to_dicts()
         print(f"\n  Branch: {t.current_branch}  |  Messages: {len(msgs)}  |  "
               f"All branches: {branches}")
-        print()
-        print("  The tangent was answered on a branch, compressed to one line,")
-        print("  and merged back. Main stayed focused on API design decisions.")
 
 
 if __name__ == "__main__":
