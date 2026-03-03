@@ -65,11 +65,13 @@ def main():
         status = t.status()
         print(status)
 
-        # Walk the log to see what's there — print(entry) gives "hash message" format
+        # Walk the log — each entry carries effective_priority showing what
+        # the compiler will do with it (pinned/normal/skip).
         history = t.log()
         print(f"\nHistory ({len(history)} commits):")
         for entry in reversed(history):
-            print(f"  {entry}")
+            pri = entry.effective_priority or "normal"
+            print(f"  {entry.commit_hash[:8]}  [{pri:<7}]  {entry.message or ''}")
 
         # Continue — chat() includes all prior context automatically
         response = t.chat("Show me a quick example of each.")

@@ -4,7 +4,8 @@ Control what the LLM sees without deleting history.
 
 Demonstrates: default PINNED on system(), annotate(NORMAL) to unpin,
               annotate(SKIP), annotate(NORMAL) to reset, compile()
-              reflects annotations, Priority enum values
+              reflects annotations, Priority enum values,
+              effective_priority on log entries, skipped(), pinned()
 """
 
 from tract import Priority, Tract
@@ -83,6 +84,35 @@ def annotations():
     ctx = t.compile()
     print(f"=== After reset: {len(ctx.messages)} messages (overview restored) ===\n")
     ctx.pprint()
+
+    # --- Inspect effective priorities via log() ---
+    # Every CommitInfo from log() has effective_priority: the resolved
+    # priority from explicit annotations or content-type defaults.
+
+    print("=== Effective priorities in log() ===\n")
+    for entry in reversed(t.log()):
+        print(f"  {entry.commit_hash[:8]}  {entry.effective_priority:<7}  {entry.message or ''}")
+
+    # --- Convenience filters: skipped() and pinned() ---
+    # Instead of manually filtering log(), use these to quickly see
+    # what's hidden from compile() or protected from compression.
+
+    print(f"\n=== t.skipped() — commits hidden from compile ===\n")
+    for entry in t.skipped():
+        print(f"  {entry.commit_hash[:8]}  {entry.message or ''}")
+    if not t.skipped():
+        print("  (none — all commits are visible)")
+
+    print(f"\n=== t.pinned() — commits protected from compression ===\n")
+    for entry in t.pinned():
+        print(f"  {entry.commit_hash[:8]}  {entry.message or ''}")
+    if not t.pinned():
+        print("  (none — no commits are pinned)")
+
+    # CLI equivalent:
+    #   tract log              # shows Pri column (S/P/!) for all commits
+    #   tract log --skipped    # show only SKIP commits
+    #   tract log --pinned     # show only PINNED commits
 
     t.close()
 

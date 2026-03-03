@@ -36,6 +36,11 @@ def main():
         print("\n  BEFORE compression:\n")
         t.compile().pprint(style="chat")
 
+        # Preview what will be preserved vs compressed
+        print(f"  Pinned (will survive): {len(t.pinned())} commits")
+        for entry in t.pinned():
+            print(f"    {entry.commit_hash[:8]}  {entry.message or ''}")
+
         # Manual summary -- no LLM needed
         result = t.compress(
             content=(
@@ -58,6 +63,10 @@ def main():
         print("\n  AFTER compression:\n")
         t.compile().pprint(style="compact")
         print(f"\n  3 Q&A pairs -> 1 summary. PINNED system prompt survived.")
+
+        # Post-compression: check what's pinned and skipped
+        print(f"\n  Pinned after compression: {len(t.pinned())} commits")
+        print(f"  Skipped after compression: {len(t.skipped())} commits")
 
 
 if __name__ == "__main__":

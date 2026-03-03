@@ -5,7 +5,8 @@ diff two points in the conversation, and view individual commits.
 
 Demonstrates: log(), show(), diff(), DiffResult.pprint(), stat_only mode,
               DiffResult.open() (VS Code diff), CommitInfo str/pprint,
-              reversed() for chronological order
+              reversed() for chronological order, effective_priority,
+              pinned(), skipped()
 """
 
 import sys
@@ -56,11 +57,27 @@ def log_and_diff():
         for entry in history:
             print(f"  {entry}")
 
-        # --- Log reversed: chronological order ---
+        # --- Log with effective priority ---
+        # Each CommitInfo carries effective_priority — the resolved priority
+        # from explicit annotations or content-type defaults (e.g. instruction
+        # defaults to "pinned", reasoning defaults to "skip").
 
-        print(f"\n=== Log (chronological, {len(history)} commits) ===\n")
+        print(f"\n=== Log with priorities ({len(history)} commits) ===\n")
         for entry in reversed(history):
-            print(f"  {entry}")
+            print(f"  {entry.commit_hash[:8]}  {entry.effective_priority:<7}  {entry}")
+
+        # --- Quick filters: pinned() and skipped() ---
+        # pinned() returns only commits that are always included in compile
+        # and survive compression. skipped() returns those hidden from compile.
+
+        print(f"\n=== Pinned commits (survive compression) ===\n")
+        for entry in t.pinned():
+            print(f"  {entry.commit_hash[:8]}  {entry.message or ''}")
+        print(f"\n=== Skipped commits (hidden from compile) ===\n")
+        skipped = t.skipped()
+        print(f"  {'(none)' if not skipped else ''}")
+        for entry in skipped:
+            print(f"  {entry.commit_hash[:8]}  {entry.message or ''}")
 
         # --- Show: inspect a single commit with full content ---
 

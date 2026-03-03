@@ -215,6 +215,14 @@ def part2_agent():
                 msg = (entry.message or entry.content_text or "")[:50]
                 print(f"    {entry.commit_hash[:8]}  tags={tags}  {msg}")
 
+        # Quick summary of what the agent pinned
+        pinned = t.pinned()
+        print(f"\n  Pinned by orchestrator ({len(pinned)} commits):")
+        for entry in pinned:
+            print(f"    {entry.commit_hash[:8]}  {entry.message or ''}")
+        if not pinned:
+            print("    (none)")
+
 
 def main():
     part1_manual()

@@ -149,6 +149,23 @@ def main():
 
         print("\n=== Conversation (after agent ops) ===\n")
         t.compile().pprint(style="chat")
+
+        # --- What did the agent decide? ---
+        # pinned() and skipped() show the agent's annotation decisions
+        # without digging through tool call logs.
+
+        print("=== Agent's annotation decisions ===\n")
+        pinned = t.pinned()
+        skipped = t.skipped()
+        print(f"  Pinned ({len(pinned)} commits — protected from compression):")
+        for entry in pinned:
+            print(f"    {entry.commit_hash[:8]}  {entry.message or ''}")
+        print(f"  Skipped ({len(skipped)} commits — hidden from compile):")
+        for entry in skipped:
+            print(f"    {entry.commit_hash[:8]}  {entry.message or ''}")
+        if not skipped:
+            print("    (none)")
+
         print()
         t.status().pprint()
 
