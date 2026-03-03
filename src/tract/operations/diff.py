@@ -101,10 +101,12 @@ class DiffResult:
         editor = editor or os.environ.get("TRACT_DIFF_EDITOR") or os.environ.get("EDITOR")
 
         # Auto-detect VS Code if no editor configured
+        auto_detected = False
         if not editor:
             code_path = shutil.which("code")
             if code_path:
                 editor = code_path
+                auto_detected = True
 
         if not editor:
             raise EnvironmentError(
@@ -124,16 +126,31 @@ class DiffResult:
         with open(path_b, "w", encoding="utf-8") as f:
             f.write(self._text_b)
 
-        # Launch editor
-        cmd_base = editor.split()
-        prog = cmd_base[0].lower()
+        # Build command list.  Auto-detected paths may contain spaces
+        # (e.g. "C:\Program Files\Microsoft VS Code\bin\code.CMD")
+        # so keep them as a single element; env-var editors may contain
+        # extra arguments (e.g. "code --wait") so split those.
+        cmd_base = [editor] if auto_detected else editor.split()
 
-        if prog == "code" or prog.endswith("code.cmd"):
+        # Resolve bare command names to full paths (needed on Windows
+        # where e.g. "code" is actually a .CMD wrapper).
+        resolved = shutil.which(cmd_base[0])
+        if resolved:
+            cmd_base[0] = resolved
+
+        prog = os.path.basename(cmd_base[0]).lower()
+
+        if prog in ("code", "code.cmd", "code.exe"):
             cmd = [*cmd_base, "--diff", path_a, path_b]
         else:
             cmd = [*cmd_base, path_a, path_b]
 
-        subprocess.Popen(cmd)  # noqa: S603
+        # On Windows, .cmd/.bat scripts require shell=True to execute
+        use_shell = (
+            os.name == "nt"
+            and cmd[0].lower().endswith((".cmd", ".bat"))
+        )
+        subprocess.Popen(cmd, shell=use_shell)  # noqa: S603
 
 
 def _serialize_message(msg: Message) -> str:
