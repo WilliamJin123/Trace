@@ -10,7 +10,7 @@ Demonstrates: tool_result(is_error=True), drop_failed_tool_turns(),
 from tract import Tract
 
 
-def part1_offline_management():
+def offline_management():
     # =================================================================
     # PART 1: Offline Tool Management (no LLM needed)
     # =================================================================
@@ -133,7 +133,7 @@ def part1_offline_management():
 # =============================================================================
 
 if __name__ == "__main__":
-    part1_offline_management()
+    offline_management()
     print("=" * 60)
     print("Done -- offline tool management demonstrated.")
     print("=" * 60)

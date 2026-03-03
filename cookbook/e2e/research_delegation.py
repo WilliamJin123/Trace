@@ -1,7 +1,7 @@
 """Research delegation: parallel sub-agents with merge.
 
   PART 1 -- Manual:      Deploy 3 children, each compresses, parent merges
-  PART 3 -- LLM / Agent:  Full session deploy + compress + collapse
+  PART 2 -- LLM / Agent:  Full session deploy + compress + collapse
 """
 
 import sys
@@ -95,18 +95,18 @@ def part1_manual():
 
 
 # =====================================================================
-# PART 3 -- LLM / Agent: deploy + compress + collapse
+# PART 2 -- LLM / Agent: deploy + compress + collapse
 # =====================================================================
 
-def part3_agent():
+def part2_agent():
     if not llm.api_key:
         print("\n" + "=" * 60)
-        print("PART 3: SKIPPED (no llm.api_key)")
+        print("PART 2: SKIPPED (no llm.api_key)")
         print("=" * 60)
         return
 
     print("\n" + "=" * 60)
-    print("PART 3 -- LLM / Agent: Deploy-Compress-Collapse")
+    print("PART 2 -- LLM / Agent: Deploy-Compress-Collapse")
     print("=" * 60)
 
     session = Session.open()
@@ -149,7 +149,7 @@ def part3_agent():
 
 def main():
     part1_manual()
-    part3_agent()
+    part2_agent()
 
 
 if __name__ == "__main__":

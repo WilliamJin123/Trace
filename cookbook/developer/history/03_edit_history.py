@@ -22,9 +22,9 @@ MODEL_ID = llm.large
 MODEL_ID_SMALL = llm.small
 
 
-def part3_edit_history():
+def edit_history():
     print(f"\n{'=' * 60}")
-    print("PART 3 -- Manual: EDIT HISTORY")
+    print("EDIT HISTORY")
     print("=" * 60)
     print()
 
@@ -138,14 +138,14 @@ def part3_edit_history():
 
 
 # =============================================================================
-# Part 3b -- Agent: Traces Own Edit History
+# Agent: Traces Own Edit History
 # =============================================================================
 # Agents can detect and understand their own corrections by walking
 # the edit chain. Useful for self-reflection and learning from mistakes.
 
-def part3b_agent():
+def agent_edit_history():
     print(f"\n{'=' * 60}")
-    print("PART 3b -- Agent: TRACES OWN EDIT HISTORY")
+    print("Agent: TRACES OWN EDIT HISTORY")
     print("=" * 60)
     print()
 
@@ -181,8 +181,8 @@ def part3b_agent():
 
 
 def main():
-    part3_edit_history()
-    part3b_agent()
+    edit_history()
+    agent_edit_history()
 
 
 if __name__ == "__main__":

@@ -20,12 +20,12 @@ MODEL_ID = llm.small
 
 
 # =============================================================================
-# Part 1: Log and Diff
+# Log and Diff
 # =============================================================================
 
-def part1_log_and_diff():
+def log_and_diff():
     print("=" * 60)
-    print("Part 1: LOG AND DIFF")
+    print("LOG AND DIFF")
     print("=" * 60)
     print()
     print("  Build a short conversation, walk the commit history, inspect")
@@ -128,4 +128,4 @@ def part1_log_and_diff():
 # For agent automation, see: agentic/sidecar/ (triggers, orchestrator)
 
 if __name__ == "__main__":
-    part1_log_and_diff()
+    log_and_diff()

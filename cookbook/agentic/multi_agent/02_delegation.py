@@ -1,6 +1,6 @@
 """Sub-agent delegation: branch, delegate, compress, merge.
 
-  PART 1 -- Manual:      Branch, child works, compress(content=...), parent.merge()
+Branch, child works, compress(content=...), parent.merge()
 
 Session management (deploy, collapse, merge) is a developer-side concern --
 the Orchestrator does not handle it.
@@ -10,12 +10,12 @@ from tract import Session
 
 
 # =====================================================================
-# PART 1 -- Manual: branch-delegate-compress-merge
+# Branch-delegate-compress-merge
 # =====================================================================
 
-def part1_manual():
+def manual():
     print("=" * 60)
-    print("PART 1 -- Manual: Branch-Delegate-Compress-Merge")
+    print("Branch-Delegate-Compress-Merge")
     print("=" * 60)
 
     session = Session.open()
@@ -65,9 +65,5 @@ def part1_manual():
     session.close()
 
 
-def main():
-    part1_manual()
-
-
 if __name__ == "__main__":
-    main()
+    manual()

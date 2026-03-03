@@ -23,7 +23,7 @@ Most cookbook files follow a two-tier pattern showing the same feature at differ
 | Tier | Label | Description |
 |------|-------|-------------|
 | **PART 1** | Manual | Direct API calls, no LLM, fully deterministic |
-| **PART 3** | Agent / Automated | Orchestrator, triggers, hooks auto-manage |
+| **PART 2** | Agent / Automated | Orchestrator, triggers, hooks auto-manage |
 
 For interactive (HITL) patterns, see `hooks/` — the hook system (`review=True`, `t.on()`) is the built-in interactivity mechanism. Every file is standalone.
 

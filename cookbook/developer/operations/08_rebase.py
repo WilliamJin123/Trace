@@ -4,7 +4,7 @@ Two tiers of rebase usage -- manual rebase with result inspection and
 trigger-driven auto-rebase.
 
 PART 1 -- Manual           Direct rebase(), inspect RebaseResult
-PART 3 -- Trigger-Driven    RebaseTrigger auto-rebase on divergence
+PART 2 -- Trigger-Driven    RebaseTrigger auto-rebase on divergence
 
 Demonstrates: rebase(), RebaseResult, replayed_commits, original_commits,
               new_head, RebaseTrigger
@@ -85,12 +85,12 @@ def part1_manual():
 
 
 # =============================================================================
-# PART 3 -- Trigger-Driven: RebaseTrigger auto-rebase on divergence
+# PART 2 -- Trigger-Driven: RebaseTrigger auto-rebase on divergence
 # =============================================================================
 
-def part3_trigger_driven():
+def part2_trigger_driven():
     print("=" * 60)
-    print("PART 3 -- Trigger-Driven: Auto-Rebase via RebaseTrigger")
+    print("PART 2 -- Trigger-Driven: Auto-Rebase via RebaseTrigger")
     print("=" * 60)
     print()
     print("  RebaseTrigger fires when branch diverges beyond a threshold.")
@@ -134,7 +134,7 @@ def part3_trigger_driven():
 
 def main():
     part1_manual()
-    part3_trigger_driven()
+    part2_trigger_driven()
 
 
 if __name__ == "__main__":

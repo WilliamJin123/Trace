@@ -4,7 +4,7 @@ Two tiers of conflict resolution -- programmatic resolution and
 automated LLM-driven resolution.
 
 PART 1 -- Manual           Detect conflicts, set_resolution(), commit_merge()
-PART 3 -- Automated         resolver="llm" for automatic conflict resolution
+PART 2 -- Automated         resolver="llm" for automatic conflict resolution
 
 Demonstrates: merge(), MergeResult, conflicts, set_resolution(),
               merge(review=True), PendingMerge, approve(),
@@ -113,12 +113,12 @@ def part1_manual():
 
 
 # =============================================================================
-# PART 3 -- Automated: LLM-driven conflict resolution
+# PART 2 -- Automated: LLM-driven conflict resolution
 # =============================================================================
 
-def part3_automated():
+def part2_automated():
     print("=" * 60)
-    print("PART 3 -- Automated: LLM-Driven Conflict Resolution")
+    print("PART 2 -- Automated: LLM-Driven Conflict Resolution")
     print("=" * 60)
     print()
     print("  Use resolver='llm' to let the LLM auto-resolve conflicts.")
@@ -161,7 +161,7 @@ def part3_automated():
 
 def main():
     part1_manual()
-    part3_automated()
+    part2_automated()
 
 
 if __name__ == "__main__":

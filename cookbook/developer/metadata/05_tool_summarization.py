@@ -4,7 +4,7 @@ Two tiers of tool result management: manual surgical edit and
 LLM-powered auto-summarization.
 
 PART 1 -- Manual           Direct API calls, no LLM, deterministic
-PART 3 -- Auto-Summarize    configure_tool_summarization(), LLM-driven
+PART 2 -- Auto-Summarize    configure_tool_summarization(), LLM-driven
 
 Demonstrates: tool_result(edit=), configure_tool_summarization(),
               include_context=True, get_content(), pprint()
@@ -86,18 +86,18 @@ def part1_manual_edit():
 
 
 # =============================================================================
-# Part 3: Auto-Summarization  (PART 3 — LLM-Powered)
+# Part 2: Auto-Summarization  (PART 2 — LLM-Powered)
 # =============================================================================
 
-def part3_auto_summarization():
+def part2_auto_summarization():
     if not llm.api_key:
         print("=" * 60)
-        print("Part 3: SKIPPED (no llm.api_key)")
+        print("Part 2: SKIPPED (no llm.api_key)")
         print("=" * 60)
         return
 
     print("=" * 60)
-    print("Part 3: CONTEXT-AWARE AUTO-SUMMARIZATION  [LLM-Powered]")
+    print("Part 2: CONTEXT-AWARE AUTO-SUMMARIZATION  [LLM-Powered]")
     print("=" * 60)
     print()
     print("  The user asks a specific question. Tools return intentionally")
@@ -191,7 +191,7 @@ def part3_auto_summarization():
 
 def main():
     part1_manual_edit()
-    part3_auto_summarization()
+    part2_auto_summarization()
     print("=" * 60)
     print("Done -- both parts of tool result management demonstrated.")
     print("=" * 60)

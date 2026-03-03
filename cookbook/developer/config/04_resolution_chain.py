@@ -28,14 +28,14 @@ MODEL_ID = llm.large
 
 
 # =============================================================================
-# Part 4 -- Manual: The Full Resolution Chain + Cross-Framework Config
+# The Full Resolution Chain + Cross-Framework Config
 # =============================================================================
 # Demonstrates all 4 levels firing together, and how configs from other
 # frameworks (OpenAI, Anthropic) are auto-translated via LLMConfig.from_dict().
 
-def part4_resolution_chain():
+def resolution_chain():
     print(f"\n{'=' * 60}")
-    print("PART 4 -- Manual: FULL RESOLUTION CHAIN + CROSS-FRAMEWORK CONFIG")
+    print("FULL RESOLUTION CHAIN + CROSS-FRAMEWORK CONFIG")
     print("=" * 60)
     print()
 
@@ -135,4 +135,4 @@ def part4_resolution_chain():
 
 
 if __name__ == "__main__":
-    part4_resolution_chain()
+    resolution_chain()

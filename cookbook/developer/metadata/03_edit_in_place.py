@@ -22,7 +22,7 @@ MODEL_ID = llm.large
 # Part 1: Edit in Place  (PART 1 — Manual, with LLM verification)
 # =============================================================================
 
-def part1_edit_in_place():
+def edit_in_place():
     print("=" * 60)
     print("Part 1: EDIT IN PLACE  [Manual Tier]")
     print("=" * 60)
@@ -96,7 +96,7 @@ def part1_edit_in_place():
 # =============================================================================
 
 if __name__ == "__main__":
-    part1_edit_in_place()
+    edit_in_place()
     print("=" * 60)
     print("Done -- edit-in-place demonstrated.")
     print("=" * 60)

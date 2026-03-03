@@ -21,9 +21,9 @@ from _providers import cerebras as llm
 MODEL_ID = llm.large
 
 
-def part1_config_provenance():
+def config_provenance():
     print("=" * 60)
-    print("PART 1 -- Manual: CONFIG PROVENANCE")
+    print("CONFIG PROVENANCE")
     print("=" * 60)
     print()
 
@@ -127,9 +127,5 @@ def part1_config_provenance():
                 print(f"  {entry.commit_hash[:8]}: {', '.join(parts)}")
 
 
-def main():
-    part1_config_provenance()
-
-
 if __name__ == "__main__":
-    main()
+    config_provenance()

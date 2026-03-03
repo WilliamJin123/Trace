@@ -79,14 +79,14 @@ def part1_manual():
 
 
 # =============================================================================
-# Part 3: Automated Budget Management via Triggers
+# Part 2: Automated Budget Management via Triggers
 # =============================================================================
 # CompressTrigger auto-compresses when budget fills past threshold.
 # The chat loop runs without manual intervention.
 
-def part3_automated():
+def part2_automated():
     print(f"\n{'=' * 60}")
-    print("Part 3: AUTOMATED BUDGET MANAGEMENT VIA TRIGGERS")
+    print("Part 2: AUTOMATED BUDGET MANAGEMENT VIA TRIGGERS")
     print("=" * 60)
     print()
 
@@ -134,7 +134,7 @@ def part3_automated():
 
 def main():
     part1_manual()
-    part3_automated()
+    part2_automated()
 
 
 if __name__ == "__main__":

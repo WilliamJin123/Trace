@@ -1,7 +1,7 @@
 """Orchestrator loop: autonomous context management.
 
   PART 1 -- Manual:      Manual assessment: status() + if/else decision tree
-  PART 3 -- LLM / Agent:  OrchestratorConfig(autonomy_ceiling=AUTONOMOUS, max_steps=20) + triggers
+  PART 2 -- LLM / Agent:  OrchestratorConfig(autonomy_ceiling=AUTONOMOUS, max_steps=20) + triggers
 """
 
 import sys
@@ -64,12 +64,12 @@ def part1_manual():
 
 
 # =====================================================================
-# PART 3 -- LLM / Agent: fully autonomous orchestrator with triggers
+# PART 2 -- LLM / Agent: fully autonomous orchestrator with triggers
 # =====================================================================
 
-def part3_agent():
+def part2_agent():
     print("\n" + "=" * 60)
-    print("PART 3 -- LLM / Agent: Autonomous Orchestrator")
+    print("PART 2 -- LLM / Agent: Autonomous Orchestrator")
     print("=" * 60)
 
     config = TractConfig(token_budget=TokenBudgetConfig(max_tokens=400))
@@ -115,7 +115,7 @@ def part3_agent():
 
 def main():
     part1_manual()
-    part3_agent()
+    part2_agent()
 
 
 if __name__ == "__main__":

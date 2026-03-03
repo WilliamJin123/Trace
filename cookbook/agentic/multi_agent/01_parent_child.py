@@ -1,6 +1,6 @@
 """Parent-child tract relationships.
 
-  PART 1 -- Manual:      session.spawn(), parent.children(), child.parent()
+session.spawn(), parent.children(), child.parent()
 
 Session management (spawn, deploy, collapse) is a developer-side concern --
 the Orchestrator does not handle it.
@@ -10,12 +10,12 @@ from tract import Session
 
 
 # =====================================================================
-# PART 1 -- Manual: spawn, navigate parent/child, import
+# Spawn, navigate parent/child, import
 # =====================================================================
 
-def part1_manual():
+def manual():
     print("=" * 60)
-    print("PART 1 -- Manual: Parent-Child Spawn")
+    print("Parent-Child Spawn")
     print("=" * 60)
 
     session = Session.open()
@@ -58,9 +58,5 @@ def part1_manual():
     session.close()
 
 
-def main():
-    part1_manual()
-
-
 if __name__ == "__main__":
-    main()
+    manual()

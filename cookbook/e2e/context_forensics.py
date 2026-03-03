@@ -1,7 +1,7 @@
 """Context forensics: investigate, isolate, and fix bad context.
 
   PART 1 -- Manual:      Walk log(), compile(at_commit=hash), branch + import_commit
-  PART 3 -- LLM / Agent:  Agent forensics via toolkit: log -> compile -> branch -> import
+  PART 2 -- LLM / Agent:  Agent forensics via toolkit: log -> compile -> branch -> import
 """
 
 from tract import Tract
@@ -60,12 +60,12 @@ def part1_manual():
 
 
 # =====================================================================
-# PART 3 -- LLM / Agent: toolkit-driven forensics
+# PART 2 -- LLM / Agent: toolkit-driven forensics
 # =====================================================================
 
-def part3_agent():
+def part2_agent():
     print("\n" + "=" * 60)
-    print("PART 3 -- LLM / Agent: Toolkit-Driven Forensics")
+    print("PART 2 -- LLM / Agent: Toolkit-Driven Forensics")
     print("=" * 60)
 
     with Tract.open() as t:
@@ -100,7 +100,7 @@ def part3_agent():
 
 def main():
     part1_manual()
-    part3_agent()
+    part2_agent()
 
 
 if __name__ == "__main__":

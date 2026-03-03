@@ -1,7 +1,7 @@
 """Long-running session: 50+ turns with auto-maintenance.
 
   PART 1 -- Manual:      Chat loop, check status(), manually compress/gc at intervals
-  PART 3 -- LLM / Agent:  CompressTrigger(0.8) + GCTrigger(20) + PinTrigger over 50+ turns
+  PART 2 -- LLM / Agent:  CompressTrigger(0.8) + GCTrigger(20) + PinTrigger over 50+ turns
 """
 
 import sys
@@ -65,12 +65,12 @@ def part1_manual():
 
 
 # =====================================================================
-# PART 3 -- LLM / Agent: fully automatic trigger-based maintenance
+# PART 2 -- LLM / Agent: fully automatic trigger-based maintenance
 # =====================================================================
 
-def part3_agent():
+def part2_agent():
     print("\n" + "=" * 60)
-    print("PART 3 -- LLM / Agent: 50+ Turns with Auto-Maintenance")
+    print("PART 2 -- LLM / Agent: 50+ Turns with Auto-Maintenance")
     print("=" * 60)
 
     config = TractConfig(token_budget=TokenBudgetConfig(max_tokens=800))
@@ -132,7 +132,7 @@ def part3_agent():
 
 def main():
     part1_manual()
-    part3_agent()
+    part2_agent()
 
 
 if __name__ == "__main__":

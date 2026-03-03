@@ -4,7 +4,7 @@ Two tiers of merge usage -- manual FF/clean/no_ff merges and automated
 hook-driven merge decisions.
 
 PART 1 -- Manual           Direct merge calls, no LLM, deterministic
-PART 3 -- Automated         Hook auto-manages merge decisions
+PART 2 -- Automated         Hook auto-manages merge decisions
 
 Demonstrates: merge(), merge_type, MergeResult, no_ff, delete_branch=True,
               t.on("merge", handler)
@@ -144,12 +144,12 @@ def part1_manual():
 
 
 # =============================================================================
-# PART 3 -- Automated: Hook auto-manages merge decisions
+# PART 2 -- Automated: Hook auto-manages merge decisions
 # =============================================================================
 
-def part3_automated():
+def part2_automated():
     print("=" * 60)
-    print("PART 3 -- Automated: Auto-Merge via Hook")
+    print("PART 2 -- Automated: Auto-Merge via Hook")
     print("=" * 60)
     print()
     print("  Register a merge hook that auto-approves fast-forwards")
@@ -193,7 +193,7 @@ def part3_automated():
 
 def main():
     part1_manual()
-    part3_automated()
+    part2_automated()
 
 
 if __name__ == "__main__":

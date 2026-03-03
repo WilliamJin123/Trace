@@ -105,9 +105,9 @@ def execute_tool(name: str, args: dict) -> str:
     return f"Unknown tool: {name}"
 
 
-def part2_tool_provenance():
+def tool_provenance():
     print(f"\n{'=' * 60}")
-    print("PART 2 -- Manual: TOOL PROVENANCE")
+    print("TOOL PROVENANCE")
     print("=" * 60)
     print()
 
@@ -277,9 +277,5 @@ def part2_tool_provenance():
         t.compile().pprint(style="chat")
 
 
-def main():
-    part2_tool_provenance()
-
-
 if __name__ == "__main__":
-    main()
+    tool_provenance()

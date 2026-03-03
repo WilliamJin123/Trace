@@ -1,7 +1,7 @@
 """Autonomous steering: triggers + orchestrator + hooks over many turns.
 
   PART 1 -- Manual:      Manual trigger evaluation: trigger.evaluate(t) -> inspect -> execute
-  PART 3 -- LLM / Agent:  All triggers active + autonomous orchestrator over 20+ turns
+  PART 2 -- LLM / Agent:  All triggers active + autonomous orchestrator over 20+ turns
 """
 
 import sys
@@ -68,12 +68,12 @@ def part1_manual():
 
 
 # =====================================================================
-# PART 3 -- LLM / Agent: all triggers + autonomous orchestrator
+# PART 2 -- LLM / Agent: all triggers + autonomous orchestrator
 # =====================================================================
 
-def part3_agent():
+def part2_agent():
     print("\n" + "=" * 60)
-    print("PART 3 -- LLM / Agent: Autonomous Steering Over 20+ Turns")
+    print("PART 2 -- LLM / Agent: Autonomous Steering Over 20+ Turns")
     print("=" * 60)
 
     config = TractConfig(token_budget=TokenBudgetConfig(max_tokens=500))
@@ -128,7 +128,7 @@ def part3_agent():
 
 def main():
     part1_manual()
-    part3_agent()
+    part2_agent()
 
 
 if __name__ == "__main__":

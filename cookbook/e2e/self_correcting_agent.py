@@ -1,7 +1,7 @@
 """Self-correcting agent: validation + retry + edit + provenance.
 
   PART 1 -- Manual:      generate() -> validate -> if fail: commit correction, retry loop
-  PART 3 -- LLM / Agent:  generate(validator=fn, max_retries=3, purify=True, provenance_note=True)
+  PART 2 -- LLM / Agent:  generate(validator=fn, max_retries=3, purify=True, provenance_note=True)
 """
 
 import json
@@ -53,12 +53,12 @@ def part1_manual():
 
 
 # =====================================================================
-# PART 3 -- LLM / Agent: built-in validation + retry
+# PART 2 -- LLM / Agent: built-in validation + retry
 # =====================================================================
 
-def part3_agent():
+def part2_agent():
     print("\n" + "=" * 60)
-    print("PART 3 -- LLM / Agent: Built-In Validator")
+    print("PART 2 -- LLM / Agent: Built-In Validator")
     print("=" * 60)
 
     def json_validator(text: str) -> tuple[bool, str | None]:
@@ -106,7 +106,7 @@ def part3_agent():
 
 def main():
     part1_manual()
-    part3_agent()
+    part2_agent()
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 """Toolkit: expose tract operations as LLM-callable tools.
 
   PART 1 -- Manual:      as_tools(profile="self"), 3 profiles, ToolExecutor.execute()
-  PART 3 -- LLM / Agent:  Orchestrator with custom ToolProfile for autonomous tool use
+  PART 2 -- LLM / Agent:  Orchestrator with custom ToolProfile for autonomous tool use
 """
 
 import sys
@@ -52,18 +52,18 @@ def part1_manual():
 
 
 # =====================================================================
-# PART 3 -- LLM / Agent: Orchestrator with custom profile
+# PART 2 -- LLM / Agent: Orchestrator with custom profile
 # =====================================================================
 
-def part3_agent():
+def part2_agent():
     if not llm.api_key:
         print("\n" + "=" * 60)
-        print("Part 3: SKIPPED (no llm.api_key)")
+        print("Part 2: SKIPPED (no llm.api_key)")
         print("=" * 60)
         return
 
     print("\n" + "=" * 60)
-    print("PART 3 -- LLM / Agent: Orchestrator-Driven Tool Loop")
+    print("PART 2 -- LLM / Agent: Orchestrator-Driven Tool Loop")
     print("=" * 60)
 
     # Custom profile: only expose inspection + maintenance tools
@@ -133,7 +133,7 @@ def part3_agent():
 
 def main():
     part1_manual()
-    part3_agent()
+    part2_agent()
 
 
 if __name__ == "__main__":

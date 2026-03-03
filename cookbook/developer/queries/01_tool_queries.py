@@ -31,9 +31,9 @@ from _helpers import build_agent_session
 MODEL_ID = llm.large
 
 
-def part1_query_api():
+def query_api():
     print("=" * 60)
-    print("PART 1 -- Manual: QUERY API")
+    print("QUERY API")
     print("=" * 60)
     print()
 
@@ -130,9 +130,5 @@ def part1_query_api():
     t.close()
 
 
-def main():
-    part1_query_api()
-
-
 if __name__ == "__main__":
-    main()
+    query_api()

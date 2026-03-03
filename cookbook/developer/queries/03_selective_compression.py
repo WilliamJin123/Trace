@@ -26,15 +26,15 @@ from _helpers import build_agent_session
 MODEL_ID = llm.large
 
 
-def part3_selective_compression():
+def selective_compression():
     if not llm.api_key:
         print(f"\n{'=' * 60}")
-        print("PART 3 -- Manual: SKIPPED (no llm.api_key)")
+        print("SELECTIVE COMPRESSION: SKIPPED (no llm.api_key)")
         print("=" * 60)
         return
 
     print(f"\n{'=' * 60}")
-    print("PART 3 -- Manual: SELECTIVE COMPRESSION (compress_tool_calls(name=))")
+    print("SELECTIVE COMPRESSION (compress_tool_calls(name=))")
     print("=" * 60)
     print()
 
@@ -95,9 +95,5 @@ def part3_selective_compression():
         ctx_after_both.pprint(style="compact")
 
 
-def main():
-    part3_selective_compression()
-
-
 if __name__ == "__main__":
-    main()
+    selective_compression()

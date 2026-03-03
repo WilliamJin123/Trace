@@ -14,7 +14,7 @@ from tract import Priority, Tract
 # Part 1: Annotations — Pin, Skip, and Reset
 # =============================================================================
 
-def part1_annotations():
+def annotations():
     print("=" * 60)
     print("Part 1: ANNOTATIONS — Pin, Skip, Reset  [Manual Tier]")
     print("=" * 60)
@@ -92,7 +92,7 @@ def part1_annotations():
 # =============================================================================
 
 if __name__ == "__main__":
-    part1_annotations()
+    annotations()
     print("=" * 60)
     print("Done -- priority management demonstrated.")
     print("=" * 60)

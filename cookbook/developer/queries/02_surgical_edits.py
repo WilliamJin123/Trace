@@ -26,9 +26,9 @@ from _helpers import build_agent_session
 MODEL_ID = llm.large
 
 
-def part2_surgical_edits():
+def surgical_edits():
     print(f"\n{'=' * 60}")
-    print("PART 2 -- Manual: SURGICAL EDITS (tool_result(edit=))")
+    print("SURGICAL EDITS (tool_result(edit=))")
     print("=" * 60)
     print()
 
@@ -96,9 +96,5 @@ def part2_surgical_edits():
     t.close()
 
 
-def main():
-    part2_surgical_edits()
-
-
 if __name__ == "__main__":
-    main()
+    surgical_edits()

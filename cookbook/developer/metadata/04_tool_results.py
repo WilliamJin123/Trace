@@ -29,7 +29,7 @@ execute_tool = partial(_execute_tool, cookbook_dir=COOKBOOK_DIR, exclude_file=_S
 # Part 1: Manual Tool Commits  (PART 1 — Manual)
 # =============================================================================
 
-def part1_manual_tools():
+def manual_tools():
     """Manually commit tool calls and results — no LLM needed."""
     print("=" * 60)
     print("Part 1: MANUAL TOOL COMMITS  [Manual Tier]")
@@ -71,7 +71,7 @@ def part1_manual_tools():
 
 
 if __name__ == "__main__":
-    part1_manual_tools()
+    manual_tools()
     print("=" * 60)
     print("Done -- manual tool commits demonstrated.")
     print("=" * 60)

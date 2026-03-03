@@ -99,19 +99,19 @@ def part1_manual():
 
 
 # =====================================================================
-# PART 3 -- Agent: Orchestrator autonomously tags and pins
+# PART 2 -- Agent: Orchestrator autonomously tags and pins
 # =====================================================================
 
-def part3_agent():
+def part2_agent():
     """Orchestrator autonomously tags and pins conversation content."""
     if not llm.api_key:
         print(f"\n{'=' * 60}")
-        print("PART 3: SKIPPED (no llm.api_key)")
+        print("PART 2: SKIPPED (no llm.api_key)")
         print("=" * 60)
         return
 
     print(f"\n{'=' * 60}")
-    print("PART 3 -- Agent: Orchestrator Tags and Pins Inline")
+    print("PART 2 -- Agent: Orchestrator Tags and Pins Inline")
     print("=" * 60)
     print()
     print("  The Orchestrator gets tag, annotate, and status tools.")
@@ -218,7 +218,7 @@ def part3_agent():
 
 def main():
     part1_manual()
-    part3_agent()
+    part2_agent()
 
 
 if __name__ == "__main__":

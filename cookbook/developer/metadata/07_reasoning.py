@@ -6,7 +6,7 @@ Demonstrates: t.reasoning(), log(), compile(), get_content(), get_metadata()
 from tract import Tract
 
 
-def part1_manual_reasoning():
+def manual_reasoning():
     print("=" * 60)
     print("Part 1: MANUAL REASONING COMMITS")
     print("=" * 60)
@@ -68,7 +68,7 @@ def part1_manual_reasoning():
 # =============================================================================
 
 if __name__ == "__main__":
-    part1_manual_reasoning()
+    manual_reasoning()
     print("=" * 60)
     print("Done -- manual reasoning commits demonstrated.")
     print("=" * 60)

@@ -4,7 +4,7 @@ Two tiers of GC retention -- manual conservative/aggressive policies and
 automated GCTrigger with hooks.
 
 PART 1 -- Manual           gc() with archive_retention_days, no interaction
-PART 3 -- Automated         GCTrigger with auto-approve hook
+PART 2 -- Automated         GCTrigger with auto-approve hook
 
 Demonstrates: gc(), archive_retention_days, compress(),
               GCTrigger, t.on("gc", handler)
@@ -64,12 +64,12 @@ def part1_manual():
 
 
 # =============================================================================
-# PART 3 -- Automated: GCTrigger with auto-approve hook
+# PART 2 -- Automated: GCTrigger with auto-approve hook
 # =============================================================================
 
-def part3_automated():
+def part2_automated():
     print("=" * 60)
-    print("PART 3 -- Automated: Auto-GC via Trigger + Hook")
+    print("PART 2 -- Automated: Auto-GC via Trigger + Hook")
     print("=" * 60)
     print()
     print("  GCTrigger fires when dead commits exceed a threshold.")
@@ -124,7 +124,7 @@ def part3_automated():
 
 def main():
     part1_manual()
-    part3_automated()
+    part2_automated()
 
 
 if __name__ == "__main__":

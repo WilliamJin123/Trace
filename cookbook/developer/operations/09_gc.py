@@ -4,7 +4,7 @@ Two tiers of garbage collection -- manual compress+gc and trigger-driven
 auto-maintenance.
 
 PART 1 -- Manual           compress(content=) + gc(), inspect GCResult
-PART 3 -- Trigger-Driven    CompressTrigger + GCTrigger compound auto-maintenance
+PART 2 -- Trigger-Driven    CompressTrigger + GCTrigger compound auto-maintenance
 
 Demonstrates: gc(), GCResult, compress(content=),
               CompressTrigger, GCTrigger, configure_triggers()
@@ -85,12 +85,12 @@ def part1_manual():
 
 
 # =============================================================================
-# PART 3 -- Trigger-Driven: CompressTrigger + GCTrigger compound auto-maintenance
+# PART 2 -- Trigger-Driven: CompressTrigger + GCTrigger compound auto-maintenance
 # =============================================================================
 
-def part3_trigger_driven():
+def part2_trigger_driven():
     print("=" * 60)
-    print("PART 3 -- Trigger-Driven: Auto-Maintenance via Triggers")
+    print("PART 2 -- Trigger-Driven: Auto-Maintenance via Triggers")
     print("=" * 60)
     print()
     print("  CompressTrigger fires when budget fills up. GCTrigger fires")
@@ -144,7 +144,7 @@ def part3_trigger_driven():
 
 def main():
     part1_manual()
-    part3_trigger_driven()
+    part2_trigger_driven()
 
 
 if __name__ == "__main__":

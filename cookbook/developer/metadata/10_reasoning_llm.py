@@ -4,7 +4,7 @@ Two tiers: manual reasoning commits and LLM-powered reasoning
 extraction via generate().
 
 PART 1 -- Manual           Direct API calls, no LLM, deterministic
-PART 3 -- LLM-Powered       generate() with reasoning extraction
+PART 2 -- LLM-Powered       generate() with reasoning extraction
 
 Demonstrates: t.reasoning() manual, generate() with reasoning,
               ChatResponse.reasoning, ChatResponse.reasoning_commit,
@@ -64,24 +64,24 @@ def part1_manual_reasoning():
 
 
 # =============================================================================
-# Part 3: LLM Reasoning via generate()
+# Part 2: LLM Reasoning via generate()
 # =============================================================================
 
-def part3_llm_integration():
+def part2_llm_integration():
     if not llm.api_key:
         print(f"\n{'=' * 60}")
-        print("Part 3: SKIPPED (no llm.api_key)")
+        print("Part 2: SKIPPED (no llm.api_key)")
         print("=" * 60)
         return
 
     print(f"\n{'=' * 60}")
-    print("Part 3: LLM REASONING VIA GENERATE()  [LLM-Powered]")
+    print("Part 2: LLM REASONING VIA GENERATE()  [LLM-Powered]")
     print("=" * 60)
     print()
 
-    # --- 3a: generate() with reasoning ---
+    # --- 2a: generate() with reasoning ---
 
-    print("  3a: generate() auto-commits reasoning traces\n")
+    print("  2a: generate() auto-commits reasoning traces\n")
 
     with Tract.open(
         api_key=llm.api_key,
@@ -104,9 +104,9 @@ def part3_llm_integration():
         ctx = t.compile(include_reasoning=True)
         ctx.pprint(style="chat")
 
-    # --- 3b: Per-call opt-out ---
+    # --- 2b: Per-call opt-out ---
 
-    print(f"\n  3b: reasoning=False skips the commit\n")
+    print(f"\n  2b: reasoning=False skips the commit\n")
 
     with Tract.open(
         api_key=llm.api_key,
@@ -127,9 +127,9 @@ def part3_llm_integration():
         print(f"  content types in log: {log_types}")
         print(f"  'reasoning' in log: {'reasoning' in log_types}")
 
-    # --- 3c: Global opt-out ---
+    # --- 2c: Global opt-out ---
 
-    print(f"\n  3c: Tract.open(commit_reasoning=False) disables globally\n")
+    print(f"\n  2c: Tract.open(commit_reasoning=False) disables globally\n")
 
     with Tract.open(
         api_key=llm.api_key,
@@ -157,7 +157,7 @@ def part3_llm_integration():
 
 def main():
     part1_manual_reasoning()
-    part3_llm_integration()
+    part2_llm_integration()
     print("=" * 60)
     print("Done -- both parts of LLM reasoning integration demonstrated.")
     print("=" * 60)

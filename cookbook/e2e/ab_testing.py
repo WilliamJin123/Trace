@@ -1,7 +1,7 @@
 """A/B testing: branch, compare configs, pick winner.
 
   PART 1 -- Manual:      Branch, chat with different configs, diff() + query_by_config()
-  PART 3 -- LLM / Agent:  Orchestrator compares branches, merges winner
+  PART 2 -- LLM / Agent:  Orchestrator compares branches, merges winner
 """
 
 import sys
@@ -64,12 +64,12 @@ def part1_manual():
 
 
 # =====================================================================
-# PART 3 -- LLM / Agent: automated comparison
+# PART 2 -- LLM / Agent: automated comparison
 # =====================================================================
 
-def part3_agent():
+def part2_agent():
     print("\n" + "=" * 60)
-    print("PART 3 -- LLM / Agent: Automated A/B Comparison")
+    print("PART 2 -- LLM / Agent: Automated A/B Comparison")
     print("=" * 60)
 
     with Tract.open(
@@ -114,7 +114,7 @@ def part3_agent():
 
 def main():
     part1_manual()
-    part3_agent()
+    part2_agent()
 
 
 if __name__ == "__main__":

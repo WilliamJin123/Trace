@@ -167,19 +167,19 @@ def part1_manual():
 
 
 # =====================================================================
-# PART 3 -- Agent: Orchestrator with observer profile (read-only)
+# PART 2 -- Agent: Orchestrator with observer profile (read-only)
 # =====================================================================
 
-def part3_agent():
+def part2_agent():
     """Orchestrator with observer profile inspects but cannot modify."""
     if not llm.api_key:
         print(f"\n{'=' * 60}")
-        print("PART 3: SKIPPED (no llm.api_key)")
+        print("PART 2: SKIPPED (no llm.api_key)")
         print("=" * 60)
         return
 
     print(f"\n{'=' * 60}")
-    print("PART 3 -- Agent: Orchestrator with Observer Profile")
+    print("PART 2 -- Agent: Orchestrator with Observer Profile")
     print("=" * 60)
     print()
     print("  An observer orchestrator can inspect context but cannot modify it.")
@@ -253,7 +253,7 @@ def part3_agent():
 
 def main():
     part1_manual()
-    part3_agent()
+    part2_agent()
 
 
 if __name__ == "__main__":

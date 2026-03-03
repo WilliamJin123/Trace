@@ -9,7 +9,7 @@ Demonstrates: compile(include_reasoning=True), annotate() overrides,
 from tract import Priority, Tract
 
 
-def part1_compile_control():
+def compile_control():
     print(f"\n{'=' * 60}")
     print("Part 1: COMPILE CONTROL  [Manual Tier]")
     print("=" * 60)
@@ -84,7 +84,7 @@ def part1_compile_control():
 # =============================================================================
 
 if __name__ == "__main__":
-    part1_compile_control()
+    compile_control()
     print("=" * 60)
     print("Done -- compile control demonstrated.")
     print("=" * 60)

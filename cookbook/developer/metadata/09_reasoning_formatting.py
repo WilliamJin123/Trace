@@ -3,7 +3,7 @@
 Two parts: pprint styles and format output for API consumption.
 
 PART 1 -- Manual           Direct API calls, no LLM, deterministic
-PART 3 -- API Formats       to_dicts(), to_openai() serialization
+PART 2 -- API Formats       to_dicts(), to_openai() serialization
 
 Demonstrates: pprint() reasoning style (table, chat, compact),
               compile(include_reasoning=True), to_dicts(), to_openai()
@@ -45,12 +45,12 @@ def part1_formatting():
 
 
 # =============================================================================
-# Part 3: Format Output for APIs
+# Part 2: Format Output for APIs
 # =============================================================================
 
-def part3_format_output():
+def part2_format_output():
     print("=" * 60)
-    print("Part 3: FORMAT OUTPUT FOR APIS")
+    print("Part 2: FORMAT OUTPUT FOR APIS")
     print("=" * 60)
     print()
     print("  to_dicts() and to_openai() include reasoning when compiled")
@@ -86,7 +86,7 @@ def part3_format_output():
 
 def main():
     part1_formatting()
-    part3_format_output()
+    part2_format_output()
     print("=" * 60)
     print("Done -- both parts of formatting demonstrated.")
     print("=" * 60)

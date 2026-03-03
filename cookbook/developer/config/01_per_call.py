@@ -28,15 +28,15 @@ MODEL_ID = llm.large
 
 
 # =============================================================================
-# Part 1 -- Manual: Per-Call Config (sugar params + LLMConfig)
+# Per-Call Config (sugar params + LLMConfig)
 # =============================================================================
 # Override model, temperature, or any LLM setting for a single call —
 # without changing your defaults. Two styles: sugar params for quick tweaks,
 # LLMConfig for full control.
 
-def part1_per_call_config():
+def main():
     print("=" * 60)
-    print("PART 1 -- Manual: PER-CALL CONFIG")
+    print("PER-CALL CONFIG")
     print("=" * 60)
     print()
 
@@ -99,10 +99,6 @@ def part1_per_call_config():
         gc = response.generation_config
         print(f"  temperature={gc.temperature}, max_tokens={gc.max_tokens}")
         response.pprint()
-
-
-def main():
-    part1_per_call_config()
 
 
 if __name__ == "__main__":

@@ -25,7 +25,7 @@ MODEL_ID = llm.large
 
 
 # =============================================================================
-# Part 3 -- Manual: Per-Operation LLM Clients
+# Per-Operation LLM Clients
 # =============================================================================
 # Use a different LLM *client* for each operation — e.g. OpenAI for chat,
 # a local Ollama for compression, Anthropic for merge conflict resolution.
@@ -34,9 +34,9 @@ MODEL_ID = llm.large
 # send the request*. They're fully decoupled: you can use temperature=0.1
 # with either OpenAI or Ollama.
 
-def part3_per_operation_clients():
+def per_operation_clients():
     print(f"\n{'=' * 60}")
-    print("PART 3 -- Manual: PER-OPERATION LLM CLIENTS")
+    print("PER-OPERATION LLM CLIENTS")
     print("=" * 60)
     print()
 
@@ -137,4 +137,4 @@ def part3_per_operation_clients():
 
 
 if __name__ == "__main__":
-    part3_per_operation_clients()
+    per_operation_clients()

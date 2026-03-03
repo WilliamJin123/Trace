@@ -4,7 +4,7 @@ Two tiers of auto-tagging: manual heuristics and fully autonomous
 LLM-driven tagging via the orchestrator.
 
 PART 1 -- Manual           Direct API calls, no LLM, deterministic
-PART 3 -- LLM / Agent      Orchestrator, triggers, hooks auto-manage
+PART 2 -- LLM / Agent      Orchestrator, triggers, hooks auto-manage
 
 The key difference from 01_classify_and_query.py: here the focus is on
 *automated* tagging strategies rather than explicit tag management.
@@ -78,13 +78,13 @@ def part1_manual_heuristics():
 
 
 # =============================================================================
-# Part 3: LLM-Driven Auto-Tagging  (PART 3 — LLM / Agent)
+# Part 2: LLM-Driven Auto-Tagging  (PART 2 — LLM / Agent)
 # =============================================================================
 
-def part3_agent():
+def part2_agent():
     if not llm.api_key:
         print("=" * 60)
-        print("Part 3: SKIPPED (no llm.api_key)")
+        print("Part 2: SKIPPED (no llm.api_key)")
         print("=" * 60)
         return
 
@@ -93,7 +93,7 @@ def part3_agent():
     # -----------------------------------------------------------------
 
     print("=" * 60)
-    print("Part 3: LLM-DRIVEN AUTO-TAGGING  [Agent Tier]")
+    print("Part 2: LLM-DRIVEN AUTO-TAGGING  [Agent Tier]")
     print("=" * 60)
     print()
 
@@ -238,7 +238,7 @@ def part3_agent():
 
 def main():
     part1_manual_heuristics()
-    part3_agent()
+    part2_agent()
     print("=" * 60)
     print("Done -- manual and agent tiers of auto-tagging demonstrated.")
     print("=" * 60)

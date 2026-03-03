@@ -27,14 +27,14 @@ MODEL_ID = llm.large
 
 
 # =============================================================================
-# Part 1 -- Manual: Defaults and Per-Operation Config
+# Defaults and Per-Operation Config
 # =============================================================================
 # Set a tract-level default (every call inherits it), then override per
 # operation so chat is creative and compression is deterministic.
 
-def part1_defaults_and_operations():
+def defaults_and_operations():
     print(f"\n{'=' * 60}")
-    print("PART 1 -- Manual: DEFAULTS AND PER-OPERATION CONFIG")
+    print("DEFAULTS AND PER-OPERATION CONFIG")
     print("=" * 60)
     print()
 
@@ -98,4 +98,4 @@ def part1_defaults_and_operations():
 
 
 if __name__ == "__main__":
-    part1_defaults_and_operations()
+    defaults_and_operations()

@@ -3,7 +3,7 @@
 Two ways to automate compression in pipelines:
 
   PART 1 -- Manual:      ToolExecutor(t).execute("compress", {...}) direct tool call
-  PART 3 -- Trigger-Driven:  CompressTrigger(threshold=0.7) + budget auto-manages compression
+  PART 2 -- Trigger-Driven:  CompressTrigger(threshold=0.7) + budget auto-manages compression
 """
 
 import sys
@@ -58,9 +58,9 @@ def part1_manual():
         t.compile().pprint(style="compact")
 
 
-def part3_trigger_driven():
+def part2_trigger_driven():
     print("=" * 60)
-    print("PART 3 -- Trigger-Driven: CompressTrigger auto-manages budget")
+    print("PART 2 -- Trigger-Driven: CompressTrigger auto-manages budget")
     print("=" * 60)
 
     # Open with a token budget so the trigger has a threshold to watch
@@ -104,7 +104,7 @@ def part3_trigger_driven():
 
 def main():
     part1_manual()
-    part3_trigger_driven()
+    part2_trigger_driven()
 
 
 if __name__ == "__main__":
