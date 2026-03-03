@@ -47,6 +47,9 @@ def part1_manual():
             t.user(f"Sample {i}: granite composition analysis from site Alpha.")
             t.assistant(f"Analysis {i}: 60% feldspar, 25% quartz, 15% mica.")
 
+        print("\n  Conversation before trigger evaluation:")
+        t.compile().pprint(style="compact")
+
         # Evaluate each trigger manually -- no auto-fire
         for trigger in [compress_trigger, gc_trigger, pin_trigger]:
             action = trigger.evaluate(t)

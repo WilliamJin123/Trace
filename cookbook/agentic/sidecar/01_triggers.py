@@ -48,7 +48,8 @@ def trigger_basics() -> None:
 
         # compile() fires the trigger; default_handler auto-approves compression
         ctx = t.compile()
-        print(f"  After compile: {ctx.token_count} tokens, {len(ctx.messages)} msgs")
+        print(f"\n  After compile: {ctx.token_count} tokens, {len(ctx.messages)} msgs")
+        ctx.pprint(style="compact")
 
     print("\n  Flow: evaluate() -> TriggerAction -> PendingTrigger -> hook -> approve/reject")
 

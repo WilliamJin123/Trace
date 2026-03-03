@@ -49,6 +49,9 @@ def part1_manual():
         usage_pct = status.token_count / budget_max
         print(f"\n  Tokens: {status.token_count}/{budget_max} ({usage_pct:.0%})")
 
+        print("\n  Conversation before maintenance:")
+        t.compile().pprint(style="compact")
+
         # Manual decision tree
         if usage_pct > 0.8:
             print("  Action: compressing (over 80% budget)")

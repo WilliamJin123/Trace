@@ -63,6 +63,9 @@ def part1_manual():
                     print(f"  Compressed + GC: {status.token_count}/{budget_max} "
                           f"({status.token_count / budget_max:.0%})")
 
+        print("\n  Final conversation state:")
+        t.compile().pprint(style="compact")
+
         final = t.status()
         print(f"\n  Final: {final.token_count} tokens, {final.commit_count} commits")
 

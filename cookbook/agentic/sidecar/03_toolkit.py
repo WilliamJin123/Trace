@@ -33,6 +33,9 @@ def part1_manual():
         t.assistant("A solar eclipse occurs when the Moon passes between "
                     "Earth and the Sun, casting a shadow on Earth.")
 
+        print("\n  Conversation:")
+        t.compile().pprint(style="compact")
+
         # Three built-in profiles control which tools are exposed
         for profile in ["self", "supervisor", "full"]:
             tools = t.as_tools(profile=profile, format="openai")

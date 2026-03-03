@@ -230,6 +230,9 @@ def part2_agent():
         if not models_by_type:
             print("    (No generation configs -- manual commits used small model via configure_operations)")
 
+        print(f"\n  Final compiled context:")
+        t.compile().pprint(style="compact")
+
         final = t.status()
         budget_max = final.token_budget_max or 1
         print(f"\n  Final: {final.token_count}/{budget_max} tokens "

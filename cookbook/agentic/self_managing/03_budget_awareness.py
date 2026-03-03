@@ -46,6 +46,9 @@ def part1_manual():
             t.user(f"Sprint {i} update: completed 3 stories, 2 carry-overs.")
             t.assistant(f"Noted sprint {i}. Velocity trending at 5 pts/sprint.")
 
+        print("\n  Conversation before budget check:")
+        t.compile().pprint(style="compact")
+
         executor = ToolExecutor(t)
 
         # Step 1: Check status via tool

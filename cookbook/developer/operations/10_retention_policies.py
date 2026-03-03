@@ -59,6 +59,9 @@ def part1_manual():
         print(f"    commits_removed: {gc2.commits_removed}")
         print(f"    tokens_freed:    {gc2.tokens_freed}")
 
+        print("\n  Conversation after GC:")
+        t.compile().pprint(style="compact")
+
         print(f"\n  In production, use archive_retention_days=30 (or similar)")
         print(f"  so you can still audit pre-compression history for a month.")
 

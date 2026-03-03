@@ -129,6 +129,9 @@ def part1_manual():
         print(f"    Current (after compress): {ctx_now.commit_count} msgs, "
               f"{ctx_now.token_count} tokens")
 
+        print("\n  --- Current Compiled Context ---")
+        ctx_now.pprint(style="compact")
+
         # --- AUDIT: Status summary ---
 
         status = t.status()
