@@ -639,15 +639,9 @@ def compress_range(
 
     # f. Generate summaries
     if content is not None:
-        # Manual mode: single summary for all groups
-        if len(groups) > 1:
-            raise CompressionError(
-                f"Manual mode provides a single summary but PINNED commits "
-                f"create {len(groups)} separate groups. Use LLM mode "
-                f"(configure_llm()) for multi-group compression, or remove "
-                f"PINNED annotations from interleaving commits."
-            )
-        summaries = [content]
+        # Manual mode: single summary placed at group 0, subsequent groups
+        # are absorbed (their commits replaced without a separate summary).
+        summaries = [content] + [None] * (len(groups) - 1)  # type: ignore[list-item]
     elif llm_client is not None:
         # LLM mode: one summary per group
         summaries = []
@@ -759,7 +753,9 @@ def compress_range(
 
     # g. Calculate token counts (both normal + important are "source" commits)
     original_tokens = sum(c.token_count for c in compressible_commits)
-    estimated_tokens = sum(token_counter.count_text(s) for s in summaries)
+    estimated_tokens = sum(
+        token_counter.count_text(s) for s in summaries if s is not None
+    )
 
     # h. Always build and return PendingCompress -- the caller (Tract.compress)
     #    handles three-tier routing: review=True returns to caller, hook fires
@@ -912,8 +908,13 @@ def _commit_compression(
             if gidx not in emitted_groups:
                 emitted_groups.add(gidx)
 
-                # Determine which summary to use
+                # Determine which summary to use (None = absorbed by
+                # an earlier summary, e.g. manual single-summary mode)
                 summary_text = summaries[gidx]
+                if summary_text is None:
+                    # Group absorbed into an earlier summary; skip commit
+                    seen_normal.add(h)
+                    continue
 
                 # Create summary commit.
                 # Summaries use role="assistant" by design: the LLM generates
@@ -940,7 +941,7 @@ def _commit_compression(
 
     # e. Calculate compressed tokens
     compressed_tokens = sum(
-        token_counter.count_text(s) for s in summaries
+        token_counter.count_text(s) for s in summaries if s is not None
     )
     # Add pinned commit tokens
     for pc in pinned_commits:

@@ -587,16 +587,67 @@ class TestLLMErrorPaths:
 # ===========================================================================
 
 
-class TestManualModePinnedError:
-    """Tests for manual mode behavior with and without PINNED interleaving."""
+class TestManualModeWithPinned:
+    """Tests for manual content mode with and without PINNED interleaving."""
 
-    def test_manual_with_pinned_interleaving_raises(self):
-        """Manual mode with PINNED interleaving raises CompressionError."""
+    def test_manual_with_pinned_interleaving_absorbs_groups(self):
+        """Manual content with PINNED interleaving absorbs all groups."""
         t, hashes = make_tract_with_commits(5)
+        # Pin the middle commit -> creates 2 groups: [0,1] and [3,4]
         t.annotate(hashes[2], Priority.PINNED, reason="important")
 
-        with pytest.raises(CompressionError, match="Manual mode.*separate groups"):
-            t.compress(content="my summary")
+        result = t.compress(content="my summary of everything")
+
+        assert isinstance(result, CompressResult)
+        # One summary commit (group 0), group 1 absorbed
+        assert len(result.summary_commits) == 1
+        # 4 compressible commits (all except the pinned one)
+        assert len(result.source_commits) == 4
+        # Pinned commit preserved
+        assert len(result.preserved_commits) == 1
+
+        # Verify compiled output: summary + pinned, nothing else
+        msgs = t.compile().to_dicts()
+        assert len(msgs) == 2
+        assert msgs[0]["content"] == "my summary of everything"
+        assert msgs[1]["content"] == "Message 3"  # the pinned commit
+
+    def test_manual_with_multiple_pinned_absorbs_all(self):
+        """Manual content with multiple PINNED commits creates 3+ groups."""
+        t, hashes = make_tract_with_commits(7)
+        # Pin commits 1 and 4 -> groups: [0], [2,3], [5,6]
+        t.annotate(hashes[1], Priority.PINNED)
+        t.annotate(hashes[4], Priority.PINNED)
+
+        result = t.compress(content="single manual summary")
+
+        assert len(result.summary_commits) == 1
+        assert len(result.preserved_commits) == 2
+        # 5 compressible commits absorbed
+        assert len(result.source_commits) == 5
+
+        msgs = t.compile().to_dicts()
+        # summary + 2 pinned
+        assert len(msgs) == 3
+        assert msgs[0]["content"] == "single manual summary"
+        assert msgs[1]["content"] == "Message 2"  # first pinned
+        assert msgs[2]["content"] == "Message 5"  # second pinned
+
+    def test_manual_with_preserve_kwarg_absorbs(self):
+        """Manual content + preserve= (runtime PINNED) absorbs groups."""
+        t, hashes = make_tract_with_commits(5)
+
+        result = t.compress(
+            content="my summary",
+            preserve=[hashes[2]],
+        )
+
+        assert len(result.summary_commits) == 1
+        assert len(result.preserved_commits) == 1
+        msgs = t.compile().to_dicts()
+        assert len(msgs) == 2
+        assert msgs[0]["content"] == "my summary"
+        assert msgs[1]["content"] == "Message 3"
 
     def test_manual_without_interleaving_works(self):
         """Manual mode without PINNED interleaving succeeds."""
