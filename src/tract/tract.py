@@ -22,7 +22,7 @@ from tract.engine.cache import CacheManager
 from tract.engine.commit import CommitEngine
 from tract.engine.compiler import DefaultContextCompiler
 from tract.engine.tokens import TiktokenCounter
-from tract.models.annotations import Priority, PriorityAnnotation, RetentionCriteria
+from tract.models.annotations import DEFAULT_TYPE_PRIORITIES, Priority, PriorityAnnotation, RetentionCriteria
 from tract.models.commit import CommitInfo, CommitMetadata, CommitOperation
 from tract.models.config import LLMConfig, Operator, OperationClients, OperationConfigs, OperationPrompts, TractConfig
 from tract.models.content import validate_content
@@ -2988,6 +2988,28 @@ class Tract:
         message = self._auto_message(content_type, text)
         return message, tags
 
+    def _enrich_with_priorities(self, entries: list[CommitInfo]) -> list[CommitInfo]:
+        """Enrich CommitInfo entries with effective_priority.
+
+        Resolves each commit's effective priority by checking explicit
+        annotations first, then falling back to DEFAULT_TYPE_PRIORITIES.
+        """
+        if not entries:
+            return entries
+        hashes = [e.commit_hash for e in entries]
+        annotations = self._annotation_repo.batch_get_latest(hashes)
+        enriched: list[CommitInfo] = []
+        for entry in entries:
+            ann = annotations.get(entry.commit_hash)
+            if ann is not None:
+                priority = ann.priority
+            else:
+                priority = DEFAULT_TYPE_PRIORITIES.get(
+                    entry.content_type, Priority.NORMAL,
+                )
+            enriched.append(entry.model_copy(update={"effective_priority": priority.value}))
+        return enriched
+
     def log(
         self,
         limit: int = 20,
@@ -2997,6 +3019,9 @@ class Tract:
         tag_match: str = "any",
     ) -> list[CommitInfo]:
         """Walk commit history from HEAD backward.
+
+        Each returned :class:`CommitInfo` has ``effective_priority`` set
+        (``"skip"``, ``"normal"``, ``"important"``, or ``"pinned"``).
 
         Args:
             limit: Maximum number of commits to return.  Default 20.
@@ -3019,7 +3044,8 @@ class Tract:
             ancestors = self._commit_repo.get_ancestors(
                 current_head, limit=limit, op_filter=op_filter,
             )
-            return [self._commit_engine._row_to_info(row) for row in ancestors]
+            entries = [self._commit_engine._row_to_info(row) for row in ancestors]
+            return self._enrich_with_priorities(entries)
 
         # Tag filtering: walk more commits and filter
         ancestors = self._commit_repo.get_ancestors(
@@ -3043,7 +3069,38 @@ class Tract:
 
             if len(results) >= limit:
                 break
-        return results
+        return self._enrich_with_priorities(results)
+
+    def skipped(self, limit: int = 100) -> list[CommitInfo]:
+        """Return commits with effective priority SKIP.
+
+        These commits are excluded from :meth:`compile` output.
+
+        Args:
+            limit: Maximum number of commits to scan. Default 100.
+
+        Returns:
+            List of :class:`CommitInfo` with ``effective_priority == "skip"``,
+            in reverse chronological order.
+        """
+        entries = self.log(limit=limit)
+        return [e for e in entries if e.effective_priority == Priority.SKIP.value]
+
+    def pinned(self, limit: int = 100) -> list[CommitInfo]:
+        """Return commits with effective priority PINNED.
+
+        These commits are always included in :meth:`compile` output and
+        preserved during compression.
+
+        Args:
+            limit: Maximum number of commits to scan. Default 100.
+
+        Returns:
+            List of :class:`CommitInfo` with ``effective_priority == "pinned"``,
+            in reverse chronological order.
+        """
+        entries = self.log(limit=limit)
+        return [e for e in entries if e.effective_priority == Priority.PINNED.value]
 
     def status(self) -> StatusInfo:
         """Get current tract status.

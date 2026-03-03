@@ -1472,3 +1472,126 @@ class TestAnnotateNoOpSkipsClear:
             t.annotate(c1.commit_hash, Priority.NORMAL)
             assert len(t._cache._cache) == cache_size_before
             assert t._cache.get(h) is not None
+
+
+# ===========================================================================
+# Priority enrichment in log() and convenience filters
+# ===========================================================================
+
+
+class TestLogEffectivePriority:
+    """log() populates effective_priority on each CommitInfo."""
+
+    def test_log_default_priorities(self, tract_with_commits):
+        """Commits without explicit annotations get type-based defaults."""
+        tract, c1, c2, c3 = tract_with_commits
+        entries = tract.log()
+        by_hash = {e.commit_hash: e for e in entries}
+
+        # instruction defaults to pinned
+        assert by_hash[c1.commit_hash].effective_priority == "pinned"
+        # dialogue defaults to normal
+        assert by_hash[c2.commit_hash].effective_priority == "normal"
+        assert by_hash[c3.commit_hash].effective_priority == "normal"
+
+    def test_log_explicit_annotation_overrides_default(self, tract_with_commits):
+        """Explicit SKIP annotation overrides type-based default."""
+        tract, c1, c2, c3 = tract_with_commits
+        tract.annotate(c2.commit_hash, Priority.SKIP, reason="not needed")
+
+        entries = tract.log()
+        by_hash = {e.commit_hash: e for e in entries}
+        assert by_hash[c2.commit_hash].effective_priority == "skip"
+
+    def test_log_explicit_pinned_annotation(self, tract_with_commits):
+        """Explicit PINNED annotation on a dialogue commit."""
+        tract, c1, c2, c3 = tract_with_commits
+        tract.annotate(c3.commit_hash, Priority.PINNED, reason="important")
+
+        entries = tract.log()
+        by_hash = {e.commit_hash: e for e in entries}
+        assert by_hash[c3.commit_hash].effective_priority == "pinned"
+
+    def test_log_with_tag_filter_still_enriched(self):
+        """Tag-filtered log path also enriches with priorities."""
+        with Tract.open() as t:
+            t.register_tag("important")
+            c1 = t.commit(
+                InstructionContent(text="System"),
+                message="system",
+                tags=["important"],
+            )
+            t.commit(DialogueContent(role="user", text="Hi"), message="user")
+            entries = t.log(tags=["important"])
+            assert len(entries) == 1
+            assert entries[0].effective_priority == "pinned"
+
+    def test_log_reasoning_defaults_to_skip(self):
+        """Reasoning content type defaults to SKIP priority."""
+        with Tract.open() as t:
+            t.commit(InstructionContent(text="System"))
+            t.commit(ReasoningContent(text="thinking..."), message="think")
+            entries = t.log()
+            reasoning = [e for e in entries if e.content_type == "reasoning"]
+            assert len(reasoning) == 1
+            assert reasoning[0].effective_priority == "skip"
+
+
+class TestSkippedAndPinned:
+    """Tract.skipped() and Tract.pinned() convenience filters."""
+
+    def test_skipped_returns_skip_commits(self, tract_with_commits):
+        tract, c1, c2, c3 = tract_with_commits
+        tract.annotate(c2.commit_hash, Priority.SKIP)
+
+        skipped = tract.skipped()
+        assert len(skipped) == 1
+        assert skipped[0].commit_hash == c2.commit_hash
+        assert skipped[0].effective_priority == "skip"
+
+    def test_skipped_includes_default_skip_types(self):
+        """Reasoning commits (default SKIP) appear in skipped()."""
+        with Tract.open() as t:
+            t.commit(InstructionContent(text="System"))
+            t.commit(ReasoningContent(text="thinking..."))
+            skipped = t.skipped()
+            assert len(skipped) == 1
+            assert skipped[0].content_type == "reasoning"
+
+    def test_skipped_empty_when_none(self, tract_with_commits):
+        tract, c1, c2, c3 = tract_with_commits
+        assert tract.skipped() == []
+
+    def test_pinned_returns_pinned_commits(self, tract_with_commits):
+        tract, c1, c2, c3 = tract_with_commits
+        # c1 is instruction, defaults to PINNED
+        pinned = tract.pinned()
+        assert len(pinned) == 1
+        assert pinned[0].commit_hash == c1.commit_hash
+        assert pinned[0].effective_priority == "pinned"
+
+    def test_pinned_includes_explicit_annotations(self, tract_with_commits):
+        tract, c1, c2, c3 = tract_with_commits
+        tract.annotate(c3.commit_hash, Priority.PINNED)
+
+        pinned = tract.pinned()
+        hashes = {e.commit_hash for e in pinned}
+        assert c1.commit_hash in hashes  # default pinned (instruction)
+        assert c3.commit_hash in hashes  # explicit pinned
+        assert len(pinned) == 2
+
+    def test_pinned_empty_when_none(self):
+        """Tract with no pinned commits returns empty list."""
+        with Tract.open() as t:
+            t.commit(DialogueContent(role="user", text="Hi"))
+            assert t.pinned() == []
+
+    def test_skipped_respects_limit(self):
+        """limit param controls how many commits are scanned."""
+        with Tract.open() as t:
+            # Create 5 reasoning commits (default SKIP)
+            for i in range(5):
+                t.commit(ReasoningContent(text=f"thought {i}"))
+            # Scan only 3 commits => at most 3 skipped
+            skipped = t.skipped(limit=3)
+            assert len(skipped) == 3

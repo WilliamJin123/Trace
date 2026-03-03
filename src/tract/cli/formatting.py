@@ -31,6 +31,15 @@ def get_console() -> Console:
     return Console(stderr=False)
 
 
+_PRIORITY_BADGES: dict[str | None, str] = {
+    "skip": "[red]S[/red]",
+    "pinned": "[magenta]P[/magenta]",
+    "important": "[blue]![/blue]",
+    "normal": "[dim]·[/dim]",
+    None: "[dim]·[/dim]",
+}
+
+
 def format_log_compact(entries: list[CommitInfo], console: Console) -> None:
     """Display commit log in compact table format."""
     if not entries:
@@ -39,6 +48,7 @@ def format_log_compact(entries: list[CommitInfo], console: Console) -> None:
 
     table = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
     table.add_column("Hash", style="yellow", width=8)
+    table.add_column("Pri", width=1, justify="center")
     table.add_column("Time", style="dim")
     table.add_column("Op", style="cyan", width=6)
     table.add_column("Tokens", justify="right", style="green")
@@ -47,8 +57,10 @@ def format_log_compact(entries: list[CommitInfo], console: Console) -> None:
     for entry in entries:
         time_str = entry.created_at.strftime("%Y-%m-%d %H:%M")
         msg = escape(entry.message) if entry.message else ""
+        badge = _PRIORITY_BADGES.get(entry.effective_priority, "[dim]·[/dim]")
         table.add_row(
             entry.commit_hash[:8],
+            badge,
             time_str,
             entry.operation.value,
             str(entry.token_count),
@@ -73,6 +85,10 @@ def format_log_verbose(entries: list[CommitInfo], console: Console) -> None:
         console.print(f"  Type:      {escape(entry.content_type)}")
         console.print(f"  Tokens:    [green]{entry.token_count}[/green]")
         console.print(f"  Date:      {entry.created_at.strftime('%Y-%m-%d %H:%M:%S')}")
+        if entry.effective_priority and entry.effective_priority != "normal":
+            pri = entry.effective_priority.upper()
+            color = {"SKIP": "red", "PINNED": "magenta", "IMPORTANT": "blue"}.get(pri, "dim")
+            console.print(f"  Priority:  [{color}]{pri}[/{color}]")
 
         if entry.parent_hash:
             console.print(f"  Parent:    {entry.parent_hash[:8]}")

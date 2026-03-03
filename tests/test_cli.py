@@ -54,6 +54,28 @@ def _setup_empty_tract(db_path: str, *, tract_id: str = "test-tract") -> None:
     t.close()
 
 
+def _setup_tract_with_skip(db_path: str, *, tract_id: str = "test-tract") -> None:
+    """Create a tract with a skipped commit."""
+    from tract.models.annotations import Priority
+    from tract.tract import Tract
+
+    t = Tract.open(path=db_path, tract_id=tract_id)
+    t.commit(
+        InstructionContent(text="You are a helpful assistant."),
+        message="system prompt",
+    )
+    c2 = t.commit(
+        DialogueContent(role="user", text="Hello, how are you?"),
+        message="skipped msg",
+    )
+    t.annotate(c2.commit_hash, Priority.SKIP, reason="not needed")
+    t.commit(
+        DialogueContent(role="assistant", text="I am doing well, thank you!"),
+        message="assistant reply",
+    )
+    t.close()
+
+
 
 # ---------------------------------------------------------------------------
 # Log command tests
@@ -89,6 +111,36 @@ class TestLogCommand:
             assert "Operation:" in result.output
             assert "append" in result.output.lower()
 
+    def test_log_shows_priority_badge(self, runner: CliRunner):
+        with runner.isolated_filesystem():
+            _setup_tract("test.db")
+            result = runner.invoke(cli, ["--db", "test.db", "--tract-id", "test-tract", "log"])
+            assert result.exit_code == 0
+            # instruction commit shows P badge for PINNED
+            assert "P" in result.output
+
+    def test_log_verbose_shows_pinned_priority(self, runner: CliRunner):
+        with runner.isolated_filesystem():
+            _setup_tract("test.db")
+            result = runner.invoke(cli, ["--db", "test.db", "--tract-id", "test-tract", "log", "-v"])
+            assert result.exit_code == 0
+            # instruction commit defaults to PINNED
+            assert "PINNED" in result.output
+
+    def test_log_skipped_flag(self, runner: CliRunner):
+        with runner.isolated_filesystem():
+            _setup_tract_with_skip("test.db")
+            result = runner.invoke(cli, ["--db", "test.db", "--tract-id", "test-tract", "log", "--skipped"])
+            assert result.exit_code == 0
+            assert "skipped msg" in result.output
+
+    def test_log_pinned_flag(self, runner: CliRunner):
+        with runner.isolated_filesystem():
+            _setup_tract("test.db")
+            result = runner.invoke(cli, ["--db", "test.db", "--tract-id", "test-tract", "log", "--pinned"])
+            assert result.exit_code == 0
+            # instruction commit defaults to PINNED
+            assert "system prompt" in result.output
 
 
 # ---------------------------------------------------------------------------

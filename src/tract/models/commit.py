@@ -63,6 +63,7 @@ class CommitInfo(BaseModel):
     metadata: Optional[dict] = None
     generation_config: Optional[LLMConfig] = None
     tags: list[str] = []
+    effective_priority: Optional[str] = None
     created_at: datetime
 
     model_config = {"arbitrary_types_allowed": True}
