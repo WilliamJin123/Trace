@@ -1,12 +1,12 @@
-"""Chat Validation (chat(validator=), purify, provenance_note)
+"""Chat Validation (chat(validator=), hide_retries, retry_metadata)
 
 chat() and generate() accept a validator= parameter that wraps the LLM call
 in retry_with_steering automatically. On failure, a steering message is
 committed as a user message so the LLM sees its own mistake in context.
-purify=True resets HEAD after success and re-commits only the clean result.
-provenance_note=True records the retry count.
+hide_retries=True resets HEAD after success and re-commits only the clean result.
+retry_metadata=True attaches retry attempt count and history as commit metadata.
 
-Demonstrates: chat(validator=, max_retries=, purify=, provenance_note=,
+Demonstrates: chat(validator=, max_retries=, hide_retries=, retry_metadata=,
               retry_prompt=), generate(validator=), RetryExhaustedError
 """
 
@@ -115,12 +115,12 @@ def part2_basic_validation():
 
 
 # =============================================================================
-# Part 3: purify=True — clean history after retries
+# Part 3: hide_retries=True — clean history after retries
 # =============================================================================
-# Without purify, failed responses + steering messages stay in the chain.
-# With purify=True, HEAD resets and only the clean result is re-committed.
+# Without hide_retries, failed responses + steering messages stay in the chain.
+# With hide_retries=True, HEAD resets and only the clean result is re-committed.
 
-def part3_purify():
+def part3_hide_retries():
     def must_contain_scala(text: str) -> tuple[bool, str | None]:
         if "scala" not in text.lower():
             return (False, "Response must mention scala")
@@ -137,24 +137,24 @@ def part3_purify():
             "Name your favorite programming language and explain why in one sentence.",
             validator=must_contain_scala,
             max_retries=3,
-            purify=True,
+            hide_retries=True,
         )
 
         response.pprint()
 
-        # With purify, chain is clean — system + user + assistant, no retries
-        print("Purified chain (no retry artifacts):")
+        # With hide_retries, chain is clean — system + user + assistant, no retries
+        print("Clean chain (no retry artifacts):")
         for entry in reversed(t.log()):
             print(f"  {entry}")
 
 
 # =============================================================================
-# Part 4: provenance_note=True — record retry metadata
+# Part 4: retry_metadata=True — record retry info as commit metadata
 # =============================================================================
-# Auto-commits "[retry] Succeeded on attempt 2/3. Previous failures: ..."
-# after success. Survives in the log for auditing.
+# Attaches retry_attempts and retry_history to the successful commit's
+# metadata. No synthetic messages pollute the context window.
 
-def part4_provenance():
+def part4_retry_metadata():
     call_count = 0
 
     def flaky_validator(text: str) -> tuple[bool, str | None]:
@@ -176,13 +176,16 @@ def part4_provenance():
             "When was the first computer invented?",
             validator=flaky_validator,
             max_retries=3,
-            provenance_note=True,
+            retry_metadata=True,
         )
 
         response.pprint()
 
-        # The "[retry]" provenance note appears as a user commit in the log
-        print("Log (look for the [retry] provenance note):")
+        # retry_metadata is on the commit, not in the conversation
+        commit = response.commit_info
+        print(f"Commit metadata: {commit.metadata}")
+
+        print("Log (no synthetic retry messages — metadata is on the commit):")
         for entry in reversed(t.log()):
             print(f"  {entry}")
 
@@ -251,11 +254,11 @@ def main():
     print(f"\n=== Part 2: chat(validator=) ===\n")
     part2_basic_validation()
 
-    print(f"\n=== Part 3: purify=True ===\n")
-    part3_purify()
+    print(f"\n=== Part 3: hide_retries=True ===\n")
+    part3_hide_retries()
 
-    print(f"\n=== Part 4: provenance_note=True ===\n")
-    part4_provenance()
+    print(f"\n=== Part 4: retry_metadata=True ===\n")
+    part4_retry_metadata()
 
     print(f"\n=== Part 5: generate(validator=) + retry_prompt= ===\n")
     part5_custom_steering()

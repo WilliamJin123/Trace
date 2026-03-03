@@ -2,7 +2,7 @@
 
 Verifies backward compatibility (no validator = unchanged behavior),
 retry flow (steering commits, successful retry), exhaustion, custom
-retry prompts, purification, and provenance notes.
+retry prompts, hide_retries, and retry_metadata.
 """
 
 from __future__ import annotations
@@ -229,46 +229,31 @@ class TestChatCustomRetryPrompt:
         )
 
 
-class TestChatProvenanceNote:
-    """Provenance note committed after successful retry."""
+class TestChatRetryMetadata:
+    """retry_metadata=True requires hide_retries=True."""
 
-    def test_chat_provenance_note(self):
-        """provenance_note=True commits a meta user message after retries."""
+    def test_retry_metadata_requires_hide_retries(self):
+        """retry_metadata=True without hide_retries=True raises TraceError."""
+        from tract.exceptions import TraceError
+
         t = Tract.open()
-        mock = MockLLMClient(responses=["bad", "good"])
+        mock = MockLLMClient(responses=["good"])
         t.configure_llm(mock)
         t.system("System.")
 
-        call_count = 0
-
-        def validate(text):
-            nonlocal call_count
-            call_count += 1
-            return (True, None) if call_count > 1 else (False, "format error")
-
-        resp = t.chat(
-            "Hello",
-            validator=validate,
-            provenance_note=True,
-        )
-
-        assert resp.text == "good"
-
-        # Check that a provenance note was committed as a user message
-        # The compiled context should include a "[retry]" message
-        compiled = t.compile()
-        messages_text = [m.content for m in compiled.messages]
-        retry_note_found = any("[retry]" in msg for msg in messages_text)
-        assert retry_note_found, (
-            f"Provenance note not found in messages: {messages_text}"
-        )
+        with pytest.raises(TraceError, match="retry_metadata=True requires hide_retries=True"):
+            t.chat(
+                "Hello",
+                validator=lambda text: (True, None),
+                retry_metadata=True,
+            )
 
 
-class TestChatPurify:
-    """purify=True resets history and re-commits clean result."""
+class TestChatHideRetries:
+    """hide_retries=True resets history and re-commits clean result."""
 
-    def test_chat_purify_cleans_history(self):
-        """purify=True removes steering artifacts from commit history."""
+    def test_chat_hide_retries_cleans_history(self):
+        """hide_retries=True removes steering artifacts from commit history."""
         t = Tract.open()
         mock = MockLLMClient(responses=["bad", "good"])
         t.configure_llm(mock)
@@ -284,19 +269,54 @@ class TestChatPurify:
         resp = t.chat(
             "Hello",
             validator=validate,
-            purify=True,
+            hide_retries=True,
         )
 
         assert resp.text == "good"
 
-        # After purification, the compiled context should NOT contain
+        # After hiding retries, the compiled context should NOT contain
         # steering messages (the "wrong" diagnosis user message)
         compiled = t.compile()
         messages_text = [m.content for m in compiled.messages]
         diagnosis_found = any("wrong" in msg and "Diagnosis:" in msg for msg in messages_text)
         assert not diagnosis_found, (
-            f"Steering artifacts should be purified but found: {messages_text}"
+            f"Steering artifacts should be hidden but found: {messages_text}"
         )
+
+    def test_chat_hide_retries_with_retry_metadata(self):
+        """hide_retries + retry_metadata attaches metadata to re-committed result."""
+        t = Tract.open()
+        mock = MockLLMClient(responses=["bad", "good"])
+        t.configure_llm(mock)
+        t.system("System.")
+
+        call_count = 0
+
+        def validate(text):
+            nonlocal call_count
+            call_count += 1
+            return (True, None) if call_count > 1 else (False, "wrong format")
+
+        resp = t.chat(
+            "Hello",
+            validator=validate,
+            hide_retries=True,
+            retry_metadata=True,
+        )
+
+        assert resp.text == "good"
+
+        # History should be clean (no steering artifacts)
+        compiled = t.compile()
+        messages_text = [m.content for m in compiled.messages]
+        diagnosis_found = any("Diagnosis:" in msg for msg in messages_text)
+        assert not diagnosis_found
+
+        # But retry metadata is on the commit
+        commit = resp.commit_info
+        assert commit.metadata is not None
+        assert commit.metadata["retry_attempts"] == 2
+        assert commit.metadata["retry_history"] == ["wrong format"]
 
 
 class TestChatMaxRetries:

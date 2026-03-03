@@ -1799,8 +1799,8 @@ class Tract:
         reasoning: bool = True,
         validator: Callable[[str], tuple[bool, str | None]] | None = None,
         max_retries: int = 3,
-        purify: bool = False,
-        provenance_note: bool = False,
+        hide_retries: bool = False,
+        retry_metadata: bool = False,
         retry_prompt: str | None = None,
         **kwargs: object,
     ) -> ChatResponse:
@@ -1824,9 +1824,11 @@ class Tract:
                 Takes the response text, returns (ok, diagnosis). When provided,
                 the generate call is wrapped with retry_with_steering.
             max_retries: Maximum retry attempts when validator is set (default 3).
-            purify: If True, reset to pre-retry state on success and re-commit
-                clean results (no retry artifacts in history).
-            provenance_note: If True, commit a meta note recording retry count.
+            hide_retries: If True, reset to pre-retry state on success and
+                re-commit clean results (no retry artifacts in history).
+            retry_metadata: If True, attach retry attempt count and failure
+                history as metadata on the re-committed clean result.
+                Requires ``hide_retries=True``.
             retry_prompt: Custom steering prompt template. The diagnosis string
                 is appended to this. Defaults to a standard steering message.
             **kwargs: Extra provider-specific parameters passed through to the
@@ -1838,7 +1840,8 @@ class Tract:
 
         Raises:
             LLMConfigError: If no LLM client is configured.
-            TraceError: If called inside batch().
+            TraceError: If called inside batch(), or if retry_metadata=True
+                without hide_retries=True.
             RetryExhaustedError: If all retry attempts fail validation.
         """
         if not self._has_llm_client("chat"):
@@ -1851,6 +1854,13 @@ class Tract:
 
         if self._in_batch:
             raise TraceError("chat()/generate() cannot be used inside batch()")
+
+        if retry_metadata and not hide_retries:
+            raise TraceError(
+                "retry_metadata=True requires hide_retries=True. "
+                "Without hide_retries, retry artifacts are already "
+                "visible in the commit chain."
+            )
 
         if validator is None:
             return self._generate_once(
@@ -1885,12 +1895,15 @@ class Tract:
             if restore_point:
                 self.reset(restore_point)
 
-        def _provenance(attempts: int, history: list[str]) -> None:
-            if provenance_note and attempts > 1:
-                note = f"[retry] Succeeded on attempt {attempts}/{max_retries}"
-                if history:
-                    note += f". Previous failures: {'; '.join(history)}"
-                self.user(note, message="retry provenance note")
+        # retry_metadata callback is a no-op here; the actual metadata
+        # is attached below after the (possibly re-committed) response.
+        _retry_attempts: int = 0
+        _retry_history: list[str] = []
+
+        def _record_retry_info(attempts: int, history: list[str]) -> None:
+            nonlocal _retry_attempts, _retry_history
+            _retry_attempts = attempts
+            _retry_history = list(history)
 
         retry_result: RetryResult[ChatResponse] = retry_with_steering(
             attempt=_attempt,
@@ -1899,18 +1912,24 @@ class Tract:
             head_fn=_head_fn,
             reset_fn=_reset_fn,
             max_retries=max_retries,
-            purify=purify,
-            provenance_note=_provenance if provenance_note else None,
+            hide_retries=hide_retries,
+            retry_metadata=_record_retry_info if retry_metadata else None,
         )
 
         chat_response = retry_result.value
 
-        # If purify was active and we had retries, re-commit clean result
-        if purify and retry_result.attempts > 1:
+        # Build combined metadata for the (possibly re-committed) result
+        commit_metadata = dict(metadata) if metadata else {}
+        if retry_metadata and _retry_attempts > 1:
+            commit_metadata["retry_attempts"] = _retry_attempts
+            commit_metadata["retry_history"] = _retry_history
+
+        # If hide_retries was active and we had retries, re-commit clean result
+        if hide_retries and retry_result.attempts > 1:
             commit_info = self.assistant(
                 chat_response.text,
                 message=message,
-                metadata=metadata,
+                metadata=commit_metadata or None,
                 generation_config=(
                     chat_response.generation_config.to_dict()
                     if chat_response.generation_config
@@ -2064,8 +2083,8 @@ class Tract:
         reasoning: bool = True,
         validator: Callable[[str], tuple[bool, str | None]] | None = None,
         max_retries: int = 3,
-        purify: bool = False,
-        provenance_note: bool = False,
+        hide_retries: bool = False,
+        retry_metadata: bool = False,
         retry_prompt: str | None = None,
         **kwargs: object,
     ) -> ChatResponse:
@@ -2093,9 +2112,11 @@ class Tract:
                 Takes the response text, returns (ok, diagnosis). When provided,
                 the generate call is wrapped with retry_with_steering.
             max_retries: Maximum retry attempts when validator is set (default 3).
-            purify: If True, reset to pre-retry state on success and re-commit
-                clean results (no retry artifacts in history).
-            provenance_note: If True, commit a meta note recording retry count.
+            hide_retries: If True, reset to pre-retry state on success and
+                re-commit clean results (no retry artifacts in history).
+            retry_metadata: If True, attach retry attempt count and failure
+                history as metadata on the re-committed clean result.
+                Requires ``hide_retries=True``.
             retry_prompt: Custom steering prompt template. The diagnosis string
                 is appended to this. Defaults to a standard steering message.
             **kwargs: Extra provider-specific parameters passed through to the
@@ -2108,7 +2129,8 @@ class Tract:
         Raises:
             LLMConfigError: If no LLM client is configured.
             DetachedHeadError: If HEAD is detached.
-            TraceError: If called inside batch().
+            TraceError: If called inside batch(), or if retry_metadata=True
+                without hide_retries=True.
             RetryExhaustedError: If all retry attempts fail validation.
         """
         # Commit user message
@@ -2123,8 +2145,8 @@ class Tract:
             reasoning=reasoning,
             validator=validator,
             max_retries=max_retries,
-            purify=purify,
-            provenance_note=provenance_note,
+            hide_retries=hide_retries,
+            retry_metadata=retry_metadata,
             retry_prompt=retry_prompt,
             **kwargs,
         )

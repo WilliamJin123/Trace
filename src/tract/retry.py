@@ -1,8 +1,8 @@
 """Unified retry protocol for Trace operations.
 
 Provides retry_with_steering() -- a generic retry loop that validates
-results, steers the LLM via diagnosis feedback, and optionally purifies
-the commit history on success.
+results, steers the LLM via diagnosis feedback, and optionally hides
+failed attempts from the commit history on success.
 
 The retry protocol works for any operation that produces a result that
 can be validated: chat/generate (validate response text), compression
@@ -42,22 +42,24 @@ def retry_with_steering(
     head_fn: callable,
     reset_fn: callable,
     max_retries: int = 3,
-    purify: bool = False,
-    provenance_note: callable | None = None,
+    hide_retries: bool = False,
+    retry_metadata: callable | None = None,
 ) -> RetryResult:
-    """Execute an operation with validation, steering, and optional purification.
+    """Execute an operation with validation, steering, and optional retry hiding.
 
     Flow:
         1. Save restore_point = head_fn()
         2. result = attempt()
         3. (ok, diagnosis) = validate(result)
-        4. If ok: optionally call provenance_note, return RetryResult
+        4. If ok: optionally hide retries, then record retry_metadata, return
         5. If attempts >= max_retries: raise RetryExhaustedError
         6. steer(diagnosis) -- inject steering feedback
         7. Goto 2
 
-    If purify=True AND success: calls reset_fn(restore_point) before
-    returning. The CALLER is responsible for re-committing clean results.
+    If hide_retries=True AND success after retries: calls
+    reset_fn(restore_point) before returning. The CALLER is responsible
+    for re-committing clean results. retry_metadata runs AFTER the
+    reset so it can attach metadata to the re-committed result.
 
     Args:
         attempt: Callable that produces a result (e.g. LLM call + commit).
@@ -68,10 +70,11 @@ def retry_with_steering(
         head_fn: Callable returning the current HEAD hash (restore point).
         reset_fn: Callable taking a hash, resets HEAD to that point.
         max_retries: Maximum total attempts (default 3).
-        purify: If True, reset to restore_point on success so caller
-            can re-commit clean results without retry artifacts.
-        provenance_note: Optional callable(attempts, history) called on
-            success to record retry metadata.
+        hide_retries: If True, reset to restore_point on success so
+            caller can re-commit clean results without retry artifacts.
+        retry_metadata: Optional callable(attempts, history) called on
+            success to record retry metadata. Runs AFTER hide_retries
+            reset so it can attach to the re-committed result.
 
     Returns:
         RetryResult with the successful value, attempt count, and history.
@@ -88,11 +91,12 @@ def retry_with_steering(
         ok, diagnosis = validate(result)
 
         if ok:
-            if provenance_note is not None:
-                provenance_note(attempt_num, history if history else [])
-
-            if purify and attempt_num > 1:
+            # Reset first (caller re-commits clean), then record metadata
+            if hide_retries and attempt_num > 1:
                 reset_fn(restore_point)
+
+            if retry_metadata is not None:
+                retry_metadata(attempt_num, history if history else [])
 
             return RetryResult(
                 value=result,

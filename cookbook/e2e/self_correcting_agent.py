@@ -1,7 +1,7 @@
-"""Self-correcting agent: validation + retry + edit + provenance.
+"""Self-correcting agent: validation + retry + edit + metadata.
 
   PART 1 -- Manual:      generate() -> validate -> if fail: commit correction, retry loop
-  PART 2 -- LLM / Agent:  generate(validator=fn, max_retries=3, purify=True, provenance_note=True)
+  PART 2 -- LLM / Agent:  generate(validator=fn, max_retries=3, hide_retries=True, retry_metadata=True)
 """
 
 import json
@@ -83,8 +83,8 @@ def part2_agent():
         response = t.generate(
             validator=json_validator,
             max_retries=3,
-            purify=True,
-            provenance_note=True,
+            hide_retries=True,
+            retry_metadata=True,
         )
 
         print(f"\n  Final response: {response.text[:120]}")
@@ -99,9 +99,8 @@ def part2_agent():
         except json.JSONDecodeError:
             print("  Still invalid after retries.")
 
-        # Check provenance -- log shows validation attempts
-        log = t.log(limit=10)
-        print(f"\n  Total commits (shows retry provenance): {len(log)}")
+        # Check retry metadata on the commit
+        print(f"\n  Retry metadata: {response.commit_info.metadata}")
 
 
 def main():

@@ -1,7 +1,7 @@
 """Tests for the core retry protocol (retry_with_steering).
 
-Tests the generic retry loop, validation, steering, purification,
-provenance notes, and error handling -- independent of any specific
+Tests the generic retry loop, validation, steering, retry hiding,
+retry metadata, and error handling -- independent of any specific
 Tract operation (chat, compression, etc.).
 """
 
@@ -34,7 +34,7 @@ class CallTracker:
         self.steer_calls: list[str] = []
         self.head_calls: int = 0
         self.reset_calls: list[str] = []
-        self.provenance_calls: list[tuple[int, list[str]]] = []
+        self.retry_metadata_calls: list[tuple[int, list[str]]] = []
 
     def attempt(self):
         idx = min(self._attempt_count, len(self.results) - 1)
@@ -58,8 +58,8 @@ class CallTracker:
     def reset_fn(self, target: str):
         self.reset_calls.append(target)
 
-    def provenance_note(self, attempts: int, history: list[str]):
-        self.provenance_calls.append((attempts, list(history)))
+    def retry_metadata(self, attempts: int, history: list[str]):
+        self.retry_metadata_calls.append((attempts, list(history)))
 
 
 # ---------------------------------------------------------------------------
@@ -163,8 +163,8 @@ class TestRetryWithSteering:
         assert err.last_result == "bad"
         assert "All 3 retry attempts failed" in str(err)
 
-    def test_purify_calls_reset(self):
-        """purify=True calls reset_fn on success after retries."""
+    def test_hide_retries_calls_reset(self):
+        """hide_retries=True calls reset_fn on success after retries."""
         tracker = CallTracker(
             results=["bad", "good"],
             validations=[
@@ -179,7 +179,7 @@ class TestRetryWithSteering:
             steer=tracker.steer,
             head_fn=tracker.head_fn,
             reset_fn=tracker.reset_fn,
-            purify=True,
+            hide_retries=True,
         )
 
         assert result.value == "good"
@@ -187,8 +187,8 @@ class TestRetryWithSteering:
         # reset_fn called with the restore point from head_fn
         assert tracker.reset_calls == ["restore-abc123"]
 
-    def test_purify_no_reset_on_first_success(self):
-        """purify=True does NOT reset if first attempt succeeds (nothing to purify)."""
+    def test_hide_retries_no_reset_on_first_success(self):
+        """hide_retries=True does NOT reset if first attempt succeeds."""
         tracker = CallTracker(
             results=["good"],
             validations=[(True, None)],
@@ -200,15 +200,15 @@ class TestRetryWithSteering:
             steer=tracker.steer,
             head_fn=tracker.head_fn,
             reset_fn=tracker.reset_fn,
-            purify=True,
+            hide_retries=True,
         )
 
         assert result.value == "good"
         assert result.attempts == 1
         assert tracker.reset_calls == []
 
-    def test_provenance_note_called(self):
-        """provenance_note receives correct attempts and history."""
+    def test_retry_metadata_called(self):
+        """retry_metadata receives correct attempts and history."""
         tracker = CallTracker(
             results=["bad", "good"],
             validations=[
@@ -223,17 +223,17 @@ class TestRetryWithSteering:
             steer=tracker.steer,
             head_fn=tracker.head_fn,
             reset_fn=tracker.reset_fn,
-            provenance_note=tracker.provenance_note,
+            retry_metadata=tracker.retry_metadata,
         )
 
         assert result.attempts == 2
-        assert len(tracker.provenance_calls) == 1
-        attempts, history = tracker.provenance_calls[0]
+        assert len(tracker.retry_metadata_calls) == 1
+        attempts, history = tracker.retry_metadata_calls[0]
         assert attempts == 2
         assert history == ["quality issue"]
 
-    def test_provenance_note_on_first_success(self):
-        """provenance_note is also called when first attempt succeeds."""
+    def test_retry_metadata_on_first_success(self):
+        """retry_metadata is also called when first attempt succeeds."""
         tracker = CallTracker(
             results=["good"],
             validations=[(True, None)],
@@ -245,11 +245,11 @@ class TestRetryWithSteering:
             steer=tracker.steer,
             head_fn=tracker.head_fn,
             reset_fn=tracker.reset_fn,
-            provenance_note=tracker.provenance_note,
+            retry_metadata=tracker.retry_metadata,
         )
 
-        assert len(tracker.provenance_calls) == 1
-        attempts, history = tracker.provenance_calls[0]
+        assert len(tracker.retry_metadata_calls) == 1
+        attempts, history = tracker.retry_metadata_calls[0]
         assert attempts == 1
         assert history == []
 
