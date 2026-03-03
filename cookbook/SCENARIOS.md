@@ -51,7 +51,7 @@ cookbook/
 │   │
 │   ├── history/                               # Inspecting and navigating the past
 │   │   ├── 01_log_and_diff.py                   # log, show, diff, compile(at_commit=), compile(at_time=)
-│   │   ├── 02_rollback.py                       # checkout, reset, compile(at_commit=)
+│   │   ├── 02_reset.py                           # reset, ORIG_HEAD undo, compile(at_commit=)
 │   │   └── 03_edit_history.py                   # log(include_edits=True), edit chain tracking
 │   │
 │   ├── operations/                            # Context-shaping operations
@@ -114,10 +114,17 @@ cookbook/
 │   │   ├── 03_toolkit.py                        # as_tools, profiles, agent registers own triggers
 │   │   └── 04_auto_tagger.py                    # Orchestrator-driven retrospective tagging
 │   │
-│   └── multi_agent/                           # Coordination across agents
-│       ├── 01_parent_child.py                   # Child tracts, provenance, parent()
-│       ├── 02_delegation.py                     # Branch-delegate-merge, compress-and-ingest
-│       └── 03_curated_deploy.py                 # session.deploy(), curation, merge-back
+│   ├── multi_agent/                           # Coordination across agents
+│   │   ├── 01_parent_child.py                   # Child tracts, provenance, parent()
+│   │   ├── 02_delegation.py                     # Branch-delegate-merge, compress-and-ingest
+│   │   └── 03_curated_deploy.py                 # session.deploy(), curation, merge-back
+│   │
+│   └── tool_use/                              # LLM exercises tools via genuine tool calls
+│       ├── 01_history_navigation.py             # log, diff, get_commit, reset, checkout
+│       ├── 02_branch_and_merge.py               # branch, switch, list_branches, merge
+│       ├── 03_context_management.py             # compress, annotate, gc, configure_model, status
+│       ├── 04_tagging_and_search.py             # register_tag, tag, untag, query_by_tags, list_tags
+│       └── 05_self_reflection.py                # commit(edit), get_commit, diff, log — agent edits own work
 │
 ├── integrations/                              # External framework integration (requires extra deps)
 │   ├── 01_callable_tools.py                     # as_callable_tools() -- framework-agnostic export [Coming Soon]
@@ -255,13 +262,13 @@ Open an in-memory tract. Commit messages using `InstructionContent` and `Dialogu
 
 > `log()`, `diff(hash_a, hash_b)`, `compile(at_commit=)`, `compile(at_time=)`
 
-### 02 — Rollback
+### 02 — Reset
 
-**File:** `developer/history/02_rollback.py`
+**File:** `developer/history/02_reset.py`
 
-**Use case:** Undo recent changes and go back to a known good state.
+**Use case:** Undo recent changes and go back to a known good state, then recover via ORIG_HEAD.
 
-> `checkout()`, `reset()`
+> `reset()`, `ORIG_HEAD` undo, `compile()`
 
 ### 03 — Edit History
 
@@ -601,6 +608,55 @@ A companion agent (possibly cheaper/smaller model) handles tract operations whil
 **Use case:** LLM agent retrospectively tags a conversation using the orchestrator.
 
 > `Orchestrator`, `OrchestratorConfig`, orchestrator-driven tagging
+
+## Tool Use
+
+The LLM exercises tract tools through genuine tool calls — no hardcoded simulations. Each cookbook focuses on a tool cluster, showing the agent making real decisions about when and how to use each tool.
+
+### 01 — History Navigation
+
+**File:** `agentic/tool_use/01_history_navigation.py`
+**Tiers:** Manual | Agent
+
+**Use case:** Agent inspects and navigates conversation history — finding commits, comparing states, rewinding, and recovering.
+
+> `log`, `diff`, `get_commit`, `reset`, `checkout`, `ORIG_HEAD`, `compile`, `status`
+
+### 02 — Branch and Merge
+
+**File:** `agentic/tool_use/02_branch_and_merge.py`
+**Tiers:** Manual | Agent
+
+**Use case:** Agent explores alternative conversation paths on branches, then merges the best one back.
+
+> `branch`, `switch`, `list_branches`, `merge`, `status`, `compile`, `log`
+
+### 03 — Context Management
+
+**File:** `agentic/tool_use/03_context_management.py`
+**Tiers:** Manual | Agent
+
+**Use case:** Agent monitors and maintains context health — compressing when budget is high, pinning important content, running GC, switching models.
+
+> `status`, `compile`, `compress`, `annotate`, `gc`, `configure_model`, `log`
+
+### 04 — Tagging and Search
+
+**File:** `agentic/tool_use/04_tagging_and_search.py`
+**Tiers:** Manual | Agent
+
+**Use case:** Agent creates a tag taxonomy, tags commits by topic, and uses tag queries to find related content.
+
+> `register_tag`, `tag`, `untag`, `get_tags`, `list_tags`, `query_by_tags`, `log`, `get_commit`
+
+### 05 — Self-Reflection
+
+**File:** `agentic/tool_use/05_self_reflection.py`
+**Tiers:** Manual | Agent
+
+**Use case:** Agent inspects its own previous output, identifies issues, and corrects them using edit operations. The "agent traces own edit history" pattern done properly.
+
+> `commit` (with `operation='edit'`), `get_commit`, `diff`, `log`, `compile`, `annotate`
 
 ## Multi-Agent
 

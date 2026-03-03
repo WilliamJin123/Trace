@@ -49,7 +49,8 @@ def resolve_commit(
     Resolution order:
     1. Full commit hash (exact match)
     2. Branch name (refs/heads/{name})
-    3. Hash prefix (min 4 chars, via get_by_prefix)
+    3. Named ref (e.g. ORIG_HEAD, PREV_HEAD)
+    4. Hash prefix (min 4 chars, via get_by_prefix)
 
     Args:
         ref_or_prefix: A commit hash, branch name, or hash prefix.
@@ -74,7 +75,12 @@ def resolve_commit(
     if branch_hash is not None:
         return branch_hash
 
-    # 3. Hash prefix (min 4 chars)
+    # 3. Named ref (e.g. ORIG_HEAD, PREV_HEAD)
+    ref_hash = ref_repo.get_ref(tract_id, ref_or_prefix)
+    if ref_hash is not None:
+        return ref_hash
+
+    # 4. Hash prefix (min 4 chars)
     if len(ref_or_prefix) >= 4:
         row = commit_repo.get_by_prefix(ref_or_prefix, tract_id=tract_id)
         if row is not None:

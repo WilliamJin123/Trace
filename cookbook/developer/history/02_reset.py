@@ -1,8 +1,8 @@
-"""Rollback
+"""Reset and Undo Reset
 
-Manual reset -- permanently rolls back, no interaction.
+Manual reset -- permanently rolls back, then undo via ORIG_HEAD.
 
-Demonstrates: reset(), compile(), pprint(style="chat")
+Demonstrates: reset(), ORIG_HEAD undo, compile(), pprint(style="chat")
 """
 
 import sys
@@ -11,7 +11,7 @@ from pathlib import Path
 from tract import Tract
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from _providers import cerebras as llm  
+from _providers import groq as llm  
 
 MODEL_ID = llm.small
 
@@ -52,6 +52,24 @@ def manual_rollback():
         ctx = t.compile()
         ctx.pprint(style="chat")
         print(f"\n  {len(ctx.messages)} messages -- turns 2-3 are orphaned.")
+
+        # --- Undo the reset via ORIG_HEAD ---
+
+        print("\n  Undoing reset via ORIG_HEAD...\n")
+        t.reset("ORIG_HEAD")
+
+        print("  After undo:")
+        ctx = t.compile()
+        ctx.pprint(style="chat")
+        print(f"\n  {len(ctx.messages)} messages -- all turns restored.")
+
+        # --- Continue the conversation from the restored state ---
+
+        print("\n  Continuing with one more question...\n")
+        t.chat("What language is most widely spoken there?")
+
+        ctx = t.compile()
+        ctx.pprint(style="chat")
 
 
 if __name__ == "__main__":

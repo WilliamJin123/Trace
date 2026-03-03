@@ -13,13 +13,12 @@ Demonstrates: t.assistant(edit=), edit_history(), restore(),
 import sys
 from pathlib import Path
 
-from tract import Priority, Tract, ToolCall
+from tract import Priority, Tract
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from _providers import cerebras as llm  
 
-MODEL_ID = llm.large
-MODEL_ID_SMALL = llm.small
+MODEL_ID = llm.small
 
 
 def edit_history():
@@ -31,7 +30,7 @@ def edit_history():
     with Tract.open(
         api_key=llm.api_key,
         base_url=llm.base_url,
-        model=MODEL_ID_SMALL,
+        model=MODEL_ID,
     ) as t:
 
         t.system("You are a concise writing assistant. Keep answers under 2 sentences.")
@@ -137,52 +136,8 @@ def edit_history():
         print(f"  Only the black hole definition was rolled back to v1.")
 
 
-# =============================================================================
-# Agent: Traces Own Edit History
-# =============================================================================
-# Agents can detect and understand their own corrections by walking
-# the edit chain. Useful for self-reflection and learning from mistakes.
-
-def agent_edit_history():
-    print(f"\n{'=' * 60}")
-    print("Agent: TRACES OWN EDIT HISTORY")
-    print("=" * 60)
-    print()
-
-    from tract.toolkit import ToolExecutor
-
-    with Tract.open(
-        api_key=llm.api_key,
-        base_url=llm.base_url,
-        model=MODEL_ID,
-    ) as t:
-        t.system("You are a concise assistant.")
-        executor = ToolExecutor(t)
-
-        # Initial response
-        r1 = t.chat("Define entropy.")
-        original_hash = r1.commit_info.commit_hash
-
-        # Edit the response
-        t.assistant("Entropy is a measure of disorder or randomness "
-                    "in a thermodynamic system.", edit=original_hash)
-
-        # Agent traces edit history
-        history = t.edit_history(original_hash)
-        print(f"  Edit chain for {original_hash[:8]}:")
-        for i, version in enumerate(history):
-            label = "ORIGINAL" if i == 0 else f"EDIT {i}"
-            content = t.get_content(version)
-            print(f"    v{i} ({label}): {str(content)[:60]}...")
-
-    # Note: Agents can detect and understand their own corrections
-    # by walking the edit chain. This enables self-reflection patterns
-    # where the agent reasons about why it needed to revise an answer.
-
-
 def main():
     edit_history()
-    agent_edit_history()
 
 
 if __name__ == "__main__":
