@@ -48,11 +48,13 @@ def _format_value_for_display(value: Any) -> str:
         return repr(value)
     if isinstance(value, list):
         if len(value) == 0:
-            return "[]"
+            return "(empty)"
+        if len(value) == 1:
+            return _format_value_for_display(value[0])
         if len(value) > 5:
-            return f"[{len(value)} items]"
-        items = [repr(v) if isinstance(v, str) and len(str(v)) < 40 else str(v) for v in value]
-        return "[" + ", ".join(items) + "]"
+            return f"({len(value)} items)"
+        items = [_format_value_for_display(v) for v in value]
+        return ", ".join(items)
     if isinstance(value, dict):
         if len(value) == 0:
             return "{}"
