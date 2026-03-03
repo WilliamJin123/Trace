@@ -1,19 +1,20 @@
 """Merge Strategies
 
-Two tiers of merge usage -- manual FF/clean/no_ff merges and automated
-hook-driven merge decisions.
+Three tiers of merge usage -- manual FF/clean/no_ff merges, hook-driven
+merge decisions, and trigger-based completion detection.
 
 PART 1 -- Manual           Direct merge calls, no LLM, deterministic
-PART 2 -- Automated         Hook auto-manages merge decisions
+PART 2 -- Hooks            Hook auto-manages merge decisions
+PART 3 -- Triggers         MergeTrigger fires on branch completion
 
 Demonstrates: merge(), merge_type, MergeResult, no_ff, delete_branch=True,
-              t.on("merge", handler)
+              t.on("merge", handler), MergeTrigger, configure_triggers()
 """
 
 import sys
 from pathlib import Path
 
-from tract import Tract
+from tract import Tract, MergeTrigger
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from _providers import cerebras as llm
@@ -188,12 +189,73 @@ def part2_automated():
 
 
 # =============================================================================
+# PART 3 -- Triggers: MergeTrigger fires on branch completion
+# =============================================================================
+
+def part3_trigger():
+    print("=" * 60)
+    print("PART 3 -- Triggers: Completion-Based Auto-Merge")
+    print("=" * 60)
+    print()
+    print("  MergeTrigger evaluates on every commit. When a feature branch")
+    print("  has enough commits and has been idle long enough, it fires.")
+    print("  idle_seconds=0 for demo purposes (normally 300s).")
+    print()
+
+    # Low thresholds for demo
+    trigger = MergeTrigger(target_branch="main", completion_commits=3, idle_seconds=0)
+
+    with Tract.open() as t:
+        t.system("You are a helpful assistant.")
+        t.user("Initial work on main.")
+
+        t.branch("feature-auth")
+        t.switch("feature-auth")
+
+        # Build up commits on the feature branch
+        print("  Building feature branch...")
+        for i in range(4):
+            t.user(f"Auth feature work item {i}")
+            print(f"    commit {i+1}: auth work")
+
+        # Manual evaluate to show when trigger fires
+        action = trigger.evaluate(t)
+        if action:
+            print(f"\n  Trigger fired!")
+            print(f"    action_type: {action.action_type}")
+            print(f"    source: {action.params['source']} -> target: {action.params['target']}")
+            print(f"    reason: {action.reason}")
+        print()
+
+        # Now show it working via configure_triggers + hook
+        print("  --- With configure_triggers + hook ---")
+        merged = []
+
+        def on_trigger(pending):
+            print(f"  [trigger] {pending.trigger_name}: {pending.reason}")
+            merged.append(pending.action_params)
+            pending.approve()
+
+        t.on("trigger", on_trigger, name="auto-merge")
+        t.configure_triggers([trigger])
+
+        # One more commit to trip the trigger via configure_triggers
+        t.user("Final auth cleanup")
+
+        if merged:
+            print(f"  Auto-merged: {merged[0]}")
+        print(f"  Current branch: {t.current_branch}")
+        print(f"  Branches: {[b.name for b in t.list_branches()]}")
+
+
+# =============================================================================
 # main
 # =============================================================================
 
 def main():
     part1_manual()
     part2_automated()
+    part3_trigger()
 
 
 if __name__ == "__main__":

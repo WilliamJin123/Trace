@@ -5,6 +5,8 @@ or collaboratively.  This cookbook covers all built-in triggers and hook interce
 """
 
 from tract import (
+    ArchiveTrigger,
+    BranchTrigger,
     CompressTrigger,
     GCTrigger,
     MergeTrigger,
@@ -52,9 +54,9 @@ def trigger_basics() -> None:
 
 
 def new_triggers() -> None:
-    """Part 2: Demonstrate RebaseTrigger, GCTrigger, and MergeTrigger."""
+    """Part 2: Demonstrate RebaseTrigger, GCTrigger, MergeTrigger, BranchTrigger, ArchiveTrigger."""
     print("\n" + "=" * 60)
-    print("PART 2 -- New Triggers: Rebase, GC, Merge")
+    print("PART 2 -- More Triggers: Rebase, GC, Merge, Branch, Archive")
     print("=" * 60)
 
     # -- RebaseTrigger: fires when branch diverges from target --------
@@ -101,6 +103,41 @@ def new_triggers() -> None:
         if action:
             print(f"  Fired: params={action.params}")
             print(f"  Reason: {action.reason}")
+
+    # -- BranchTrigger: fires when content types switch rapidly ----
+    print(f"\n  BranchTrigger(content_type_window=5, switch_threshold=2)")
+    branch_trigger = BranchTrigger(content_type_window=5, switch_threshold=2)
+    with Tract.open() as t:
+        # Mix content types to trigger tangent detection
+        t.system("You are a helpful assistant.")          # instruction
+        t.user("What is Python?")                         # dialogue
+        t.assistant("Python is a programming language.")   # dialogue
+        t.tool_result("def hello(): pass", tool_call_id="t1", name="code_gen")  # tool_io
+        t.user("Now explain decorators.")                  # dialogue
+        action = branch_trigger.evaluate(t)
+        if action:
+            print(f"  Fired: {action.action_type}, autonomy={action.autonomy}")
+            print(f"  Reason: {action.reason}")
+            print(f"  Proposed branch: {action.params.get('name', '?')}")
+        else:
+            print(f"  Not fired (transitions below threshold)")
+
+    # -- ArchiveTrigger: fires when branch is stale ----------------
+    print(f"\n  ArchiveTrigger(stale_days=0, min_commits=5)")
+    archive = ArchiveTrigger(stale_days=0, min_commits=5)
+    with Tract.open() as t:
+        t.user("Start on main")
+        t.branch("experiment")
+        t.switch("experiment")
+        t.user("Quick note on experiment branch.")
+        # Branch has 1 commit and stale_days=0 -> should fire
+        action = archive.evaluate(t)
+        if action:
+            print(f"  Fired: {action.action_type}")
+            print(f"  Reason: {action.reason}")
+            print(f"  Archive to: {action.params.get('archive_name', '?')}")
+        else:
+            print(f"  Not fired (branch not stale enough or too many commits)")
 
 
 def hook_interception() -> None:

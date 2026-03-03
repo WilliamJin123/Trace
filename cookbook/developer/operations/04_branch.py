@@ -1,15 +1,19 @@
 """Branch Lifecycle -- Create, Switch, List, Delete
 
+Two tiers of branch usage: manual lifecycle and automated tangent detection.
+
 PART 1 -- Manual           Direct branch/switch/list/delete calls
+PART 2 -- Automated        BranchTrigger detects content type tangents
 
 Demonstrates: branch(), switch(), list_branches(), current_branch,
-              branch(switch=False), delete_branch(force=True)
+              branch(switch=False), delete_branch(force=True),
+              BranchTrigger, configure_triggers(), t.on("trigger", handler)
 """
 
 import sys
 from pathlib import Path
 
-from tract import Tract
+from tract import Tract, BranchTrigger
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from _providers import cerebras as llm
@@ -21,7 +25,7 @@ MODEL_ID = llm.large
 # PART 1 -- Manual: Direct API calls, no LLM, deterministic
 # =============================================================================
 
-def main():
+def part1_manual():
     print("=" * 60)
     print("PART 1 -- Manual: Branch Lifecycle")
     print("=" * 60)
@@ -108,6 +112,69 @@ def main():
 
         remaining = [b.name for b in t.list_branches()]
         print(f"  Remaining branches: {remaining}")
+
+
+# =============================================================================
+# PART 2 -- Automated: BranchTrigger detects content type tangents
+# =============================================================================
+
+def part2_automated():
+    print("\n" + "=" * 60)
+    print("PART 2 -- Automated: Tangent Detection via BranchTrigger")
+    print("=" * 60)
+    print()
+    print("  BranchTrigger watches for rapid content type switching.")
+    print("  When the conversation tangents (e.g., dialogue -> artifact ->")
+    print("  dialogue), it proposes a branch to isolate the tangent.")
+    print()
+
+    # Low threshold so our short demo triggers it
+    trigger = BranchTrigger(content_type_window=5, switch_threshold=2)
+
+    with Tract.open() as t:
+        t.configure_triggers([trigger])
+
+        # Hook to intercept the trigger proposal
+        proposals = []
+
+        def on_trigger(pending):
+            proposals.append(pending)
+            print(f"  [trigger] {pending.trigger_name}: {pending.reason}")
+            print(f"  [trigger] proposed branch: {pending.action_params.get('name', '?')}")
+            pending.approve()
+
+        t.on("trigger", on_trigger, name="tangent-detector")
+
+        # Build a conversation with mixed content types
+        t.system("You are a helpful assistant.")
+        t.user("What is Python?")
+        t.assistant("Python is a programming language.")
+        t.tool_result("def hello(): pass", tool_call_id="t1", name="code_gen")
+        t.user("Now explain decorators.")
+
+        print(f"\n  Trigger fired {len(proposals)} time(s)")
+        print(f"  Branches: {[b.name for b in t.list_branches()]}")
+
+        # Manual evaluate to show the API
+        print("\n  --- Manual evaluate() ---")
+        action = trigger.evaluate(t)
+        if action:
+            print(f"  action_type={action.action_type}")
+            print(f"  reason: {action.reason}")
+            print(f"  autonomy: {action.autonomy}")
+        else:
+            print(f"  No tangent detected (already handled by trigger)")
+
+
+# --- Tier notes ---
+# Commits and compile are primitives; they don't have review=True variants.
+# For HITL patterns, see: hooks/ (t.on(), review=True)
+# For agent automation, see: agentic/sidecar/ (triggers, orchestrator)
+
+
+def main():
+    part1_manual()
+    part2_automated()
 
 
 if __name__ == "__main__":

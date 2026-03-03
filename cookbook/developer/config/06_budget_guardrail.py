@@ -90,7 +90,7 @@ def part2_automated():
     print("=" * 60)
     print()
 
-    from tract.orchestrator import CompressTrigger
+    from tract import CompressTrigger
 
     config = TractConfig(
         token_budget=TokenBudgetConfig(max_tokens=4096),

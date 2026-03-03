@@ -56,8 +56,8 @@ cookbook/
 │   │   ├── 01_compress.py                       # Manual, interactive, and LLM compression
 │   │   ├── 02_guided_compression.py             # Priorities, retention guarantees, retain_match
 │   │   ├── 03_autonomous_compression.py         # ToolExecutor, hooks, CompressTrigger automation
-│   │   ├── 04_branch.py                         # branch, switch, list, delete, create without switch
-│   │   ├── 05_merge_strategies.py               # FF merge, clean merge, no_ff, delete_branch
+│   │   ├── 04_branch.py                         # branch, switch, list, delete, BranchTrigger tangent detection
+│   │   ├── 05_merge_strategies.py               # FF merge, clean merge, no_ff, MergeTrigger completion
 │   │   ├── 06_merge_conflicts.py                # ConflictInfo, edit_resolution, commit_merge
 │   │   ├── 07_import_commit.py                  # import_commit (cherry-pick), ImportResult
 │   │   ├── 08_rebase.py                         # rebase, RebaseResult, replayed_commits
@@ -304,14 +304,14 @@ Open an in-memory tract. Commit messages using `InstructionContent` and `Dialogu
 **File:** `developer/operations/04_branch.py`
 **Tiers:** Manual | Agent
 
-> `branch()`, `switch()`, `list_branches()`, `current_branch`, `delete_branch(force=True)`
+> `branch()`, `switch()`, `list_branches()`, `current_branch`, `delete_branch(force=True)`, `BranchTrigger`, `configure_triggers()`
 
 ### 05 — Merge Strategies
 
 **File:** `developer/operations/05_merge_strategies.py`
 **Tiers:** Manual | Agent
 
-> `merge()`, `MergeResult`, `merge_type`, `no_ff`, `delete_branch=True`
+> `merge()`, `MergeResult`, `merge_type`, `no_ff`, `delete_branch=True`, `MergeTrigger`, `configure_triggers()`
 
 ### 06 — Merge Conflicts
 
@@ -592,7 +592,7 @@ A companion agent (possibly cheaper/smaller model) handles tract operations whil
 
 7 built-in triggers: `CompressTrigger`, `PinTrigger`, `RebaseTrigger`, `GCTrigger`, `MergeTrigger`, `BranchTrigger`, `ArchiveTrigger`. Autonomy spectrum from fully autonomous to collaborative.
 
-> `CompressTrigger`, `PinTrigger`, `configure_triggers()`, `PendingTrigger`, autonomy spectrum
+> `CompressTrigger`, `PinTrigger`, `BranchTrigger`, `ArchiveTrigger`, `configure_triggers()`, `PendingTrigger`, autonomy spectrum
 
 ### 02 — Assessment Loop
 
