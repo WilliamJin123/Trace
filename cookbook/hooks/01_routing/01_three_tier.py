@@ -57,6 +57,9 @@ def three_tier_routing() -> None:
         )
         print(f"\n  tool_result returned: {type(result).__name__}")
 
+        print("\n  Context after auto-approved tool_result:\n")
+        t.compile().pprint(style="chat")
+
         # hook_log captures the auto-approve even with no handler
         last_event: HookEvent = t.hook_log[-1]
         print(f"  hook_log: handler={last_event.handler_name}, result={last_event.result}")
@@ -90,7 +93,8 @@ def three_tier_routing() -> None:
         t.chat("What's the best strategy for running tests in parallel?", max_tokens=500)
 
         ctx_before: CompiledContext = t.compile()
-        print(f"\n  Before compress: {len(ctx_before.messages)} messages, {ctx_before.token_count} tokens")
+        print(f"\n  BEFORE compress: {len(ctx_before.messages)} messages, {ctx_before.token_count} tokens\n")
+        ctx_before.pprint(style="compact")
 
         # Register a compress hook that inspects and approves
         def review_compress(pending: PendingCompress) -> None:
@@ -117,7 +121,8 @@ def three_tier_routing() -> None:
         print(f"  hook_log: handler={last_event.handler_name}, result={last_event.result}")
 
         ctx_after: CompiledContext = t.compile()
-        print(f"  After compress: {len(ctx_after.messages)} messages, {ctx_after.token_count} tokens")
+        print(f"\n  AFTER compress: {len(ctx_after.messages)} messages, {ctx_after.token_count} tokens\n")
+        ctx_after.pprint(style="compact")
 
     # -----------------------------------------------------------------
     # Tier 1 (review=True): tool_result with manual control
@@ -168,6 +173,9 @@ def three_tier_routing() -> None:
         result: CommitInfo = pending.approve()
         print(f"\n  After approve(): status={pending.status}")
         print(f"  Committed: {type(result).__name__}")
+
+        print("\n  Context after manual approval:\n")
+        t.compile().pprint(style="chat")
 
         t.print_hooks()
 

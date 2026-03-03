@@ -63,6 +63,9 @@ def catch_all() -> None:
             "src/app.py:88: # FIXME handle timeout\nlib/cache.py:12: # FIXME eviction policy",
         )
 
+        print("\n  Context after tool_result:\n")
+        t.compile().pprint(style="compact")
+
         # -- 2. Trigger compress --------------------------------------
         print("\n--- Step 2: compress ---")
 
@@ -73,6 +76,9 @@ def catch_all() -> None:
         t.chat("What's the best strategy for running tests in parallel?", max_tokens=500)
 
         t.compress(target_tokens=200)
+
+        print("\n  Context after compress:\n")
+        t.compile().pprint(style="compact")
 
         # -- 3. Trigger gc --------------------------------------------
         print("\n--- Step 3: gc ---")
@@ -148,6 +154,9 @@ def catch_all() -> None:
         print(f"  ('*' handled tool_result + gc, specific handler handled compress)")
 
         t.print_hooks()
+
+        print("\n  Final context:\n")
+        t.compile().pprint(style="compact")
 
         # Show full hook_log
         print("\n--- Full hook log ---")

@@ -56,7 +56,8 @@ def recursion_guard() -> None:
         })
 
         ctx_before: CompiledContext = t.compile()
-        print(f"\n  Before: {len(ctx_before.messages)} messages, {ctx_before.token_count} tokens")
+        print(f"\n  BEFORE compress: {len(ctx_before.messages)} messages, {ctx_before.token_count} tokens\n")
+        ctx_before.pprint(style="compact")
 
         inner_results: list[Any] = []
 
@@ -104,7 +105,8 @@ def recursion_guard() -> None:
         print(f"\n  tool_result_hook fired? {bool(tool_hook_fired)} (should be False -- recursion guard)")
 
         ctx_after: CompiledContext = t.compile()
-        print(f"  After: {len(ctx_after.messages)} messages, {ctx_after.token_count} tokens")
+        print(f"\n  AFTER compress + nested tool_result: {len(ctx_after.messages)} messages, {ctx_after.token_count} tokens\n")
+        ctx_after.pprint(style="compact")
 
         # hook_log shows both entries: outer compress handled by hook,
         # inner tool_result auto-approved by recursion guard
