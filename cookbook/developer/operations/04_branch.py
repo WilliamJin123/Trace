@@ -13,7 +13,8 @@ Demonstrates: branch(), switch(), list_branches(), current_branch,
 import sys
 from pathlib import Path
 
-from tract import Tract, BranchTrigger
+from tract import Tract, ArtifactContent, BranchTrigger
+from tract.hooks.trigger import PendingTrigger
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from _providers import cerebras as llm
@@ -124,12 +125,14 @@ def part2_automated():
     print("=" * 60)
     print()
     print("  BranchTrigger watches for rapid content type switching.")
-    print("  When the conversation tangents (e.g., dialogue -> artifact ->")
-    print("  dialogue), it proposes a branch to isolate the tangent.")
+    print("  When the conversation veers through dialogue -> artifact ->")
+    print("  dialogue, it proposes a branch to isolate the tangent.")
     print()
 
-    # Low threshold so our short demo triggers it
-    trigger = BranchTrigger(content_type_window=5, switch_threshold=2)
+    # Low threshold so our short demo triggers it.
+    # Default ignore_transitions skips dialogue<->tool_io (normal agent chatter),
+    # so we need transitions between dialogue, artifact, and reasoning types.
+    trigger = BranchTrigger(content_type_window=6, switch_threshold=2)
 
     with Tract.open() as t:
         t.configure_triggers([trigger])
@@ -137,20 +140,41 @@ def part2_automated():
         # Hook to intercept the trigger proposal
         proposals = []
 
-        def on_trigger(pending):
+        def on_trigger(pending: PendingTrigger):
             proposals.append(pending)
             print(f"  [trigger] {pending.trigger_name}: {pending.reason}")
-            print(f"  [trigger] proposed branch: {pending.action_params.get('name', '?')}")
-            pending.approve()
+            if len(proposals) == 1:
+                print(f"  [trigger] approved -> branch: {pending.action_params.get('name', '?')}")
+                pending.approve()
+            else:
+                print(f"  [trigger] skipped (already branched)")
+                pending.reject("Already branched for this tangent")
 
         t.on("trigger", on_trigger, name="tangent-detector")
 
-        # Build a conversation with mixed content types
-        t.system("You are a helpful assistant.")
-        t.user("What is Python?")
-        t.assistant("Python is a programming language.")
-        t.tool_result("t1", "code_gen", "def hello(): pass")
-        t.user("Now explain decorators.")
+        # Build a conversation that tangents through content types:
+        #   instruction -> dialogue -> artifact -> dialogue
+        # The instruction->dialogue and dialogue->artifact transitions
+        # are both non-ignored, hitting the threshold of 2.
+        print("=== Building conversation with mixed content types ===\n")
+
+        t.system("You are a Python tutor.")
+        t.user("Write me a fibonacci function.")
+        t.assistant("Sure, here's a fibonacci implementation.")
+        # Tangent: agent produces a code artifact mid-conversation
+        t.commit(
+            ArtifactContent(
+                artifact_type="code",
+                content="def fib(n):\n    a, b = 0, 1\n    for _ in range(n):\n        a, b = b, a + b\n    return a",
+                language="python",
+            ),
+            message="Generated fibonacci code artifact",
+        )
+        # Back to dialogue -- this is the transition that should tip the trigger
+        t.user("Great, now explain how recursion works in general.")
+
+        print()
+        t.compile().pprint(style="compact")
 
         print(f"\n  Trigger fired {len(proposals)} time(s)")
         print(f"  Branches: {[b.name for b in t.list_branches()]}")
@@ -163,7 +187,7 @@ def part2_automated():
             print(f"  reason: {action.reason}")
             print(f"  autonomy: {action.autonomy}")
         else:
-            print(f"  No tangent detected (already handled by trigger)")
+            print("  No tangent detected (already handled or below threshold)")
 
 
 # --- Tier notes ---
