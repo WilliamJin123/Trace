@@ -38,8 +38,8 @@ def part1_manual():
         model=MODEL_ID,
     ) as t:
         t.system("You are a database architecture assistant.")
-        t.chat("Explain the difference between B-trees and LSM-trees.")
-        t.chat("When should I use PostgreSQL vs ClickHouse?")
+        t.chat("Explain the difference between B-trees and LSM-trees.", max_tokens=400)
+        t.chat("When should I use PostgreSQL vs ClickHouse?", max_tokens=400)
 
         before = t.compile()
         print(f"  Before compression: {before.token_count} tokens")
@@ -78,9 +78,9 @@ def part3_compress_validator():
     ) as t:
         t.system("You are a database architecture assistant.")
 
-        t.chat("Explain the difference between B-trees and LSM-trees for indexing.")
-        t.chat("When should I use PostgreSQL vs ClickHouse for analytics?")
-        t.chat("How does write-ahead logging work in crash recovery?")
+        t.chat("Explain the difference between B-trees and LSM-trees for indexing.", max_tokens=400)
+        t.chat("When should I use PostgreSQL vs ClickHouse for analytics?", max_tokens=400)
+        t.chat("How does write-ahead logging work in crash recovery?", max_tokens=400)
 
         print("Before compression:")
         t.compile().pprint(style="compact")
@@ -120,7 +120,7 @@ def part4_combined_validation():
         base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
-        t.system("You are a financial analysis assistant.")
+        t.system("You are a financial analysis assistant. Keep things brief.")
 
         report_ci = t.user(
             "Q3 Revenue Report:\n"
@@ -185,7 +185,7 @@ def part5_guided_and_validated():
         base_url=llm.base_url,
         model=MODEL_ID,
     ) as t:
-        t.system("You are a security audit assistant.")
+        t.system("You are a security audit assistant. Keep messages concise but informative.")
 
         t.chat("Review our authentication flow: we use JWT with RS256, "
                "refresh tokens with 7-day expiry, and rate limit to 100 req/min.")

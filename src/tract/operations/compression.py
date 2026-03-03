@@ -501,9 +501,6 @@ def compress_range(
     llm_kwargs: dict | None = None,
     generation_config: dict | None = None,
     type_registry: dict[str, type] | None = None,
-    validator: object | None = None,
-    max_retries: int = 3,
-    token_tolerance: int | None = None,
     triggered_by: str | None = None,
     two_stage: bool = False,
 ) -> PendingCompress:
@@ -540,9 +537,6 @@ def compress_range(
         llm_kwargs: Optional per-operation LLM config (model, temperature, etc.).
         generation_config: Optional generation config to record on summary commits.
         type_registry: Optional custom content type registry.
-        token_tolerance: Additive token tolerance for summary validation.
-            When set, summaries up to target_tokens + token_tolerance are
-            accepted. Defaults to 500 when None. Use 0 for strict mode.
         triggered_by: Optional provenance string (e.g. "trigger:auto_compress").
 
     Returns:
@@ -647,104 +641,17 @@ def compress_range(
         summaries = []
         for gidx, group in enumerate(groups):
             text = _build_messages_text(group, blob_repo)
-            g_retention = group_retention[gidx]
             g_ret_instructions = group_retention_instructions[gidx]
 
-            # Check if this group has deterministic retention criteria
-            has_deterministic = any(
-                rc.match_patterns for rc in g_retention
+            summary = _summarize_group(
+                text, llm_client, token_counter,
+                target_tokens=target_tokens,
+                instructions=instructions,
+                system_prompt=system_prompt,
+                llm_kwargs=llm_kwargs,
+                retention_instructions=g_ret_instructions or None,
             )
-
-            # Build a combined validator: user-supplied + retention + token count
-            def _make_combined_validator(
-                user_validator, retention_criteria,
-                target_tok, tok_counter, tok_tolerance,
-            ):
-                """Build a validator that checks user + retention + token count."""
-                def _combined(result: str) -> tuple[bool, str | None]:
-                    # Check retention criteria first
-                    ok, diag = _validate_retention(result, retention_criteria)
-                    if not ok:
-                        return (False, diag)
-                    # Then check user-supplied validator
-                    if user_validator is not None:
-                        uok, udiag = user_validator(result)
-                        if not uok:
-                            return (False, udiag)
-                    # Then check token count if target_tokens is set
-                    if target_tok is not None:
-                        actual = tok_counter.count_text(result)
-                        tol = tok_tolerance if tok_tolerance is not None else 500
-                        limit = target_tok + tol
-                        if actual > limit:
-                            return (
-                                False,
-                                f"Summary is ~{actual} tokens "
-                                f"(target: {target_tok}). "
-                                f"Condense to ~{target_tok} tokens.",
-                            )
-                    return (True, None)
-                return _combined
-
-            needs_retry = (
-                validator is not None
-                or has_deterministic
-                or target_tokens is not None
-            )
-
-            if needs_retry:
-                from tract.retry import retry_with_steering
-
-                combined_validator = _make_combined_validator(
-                    validator, g_retention,
-                    target_tokens, token_counter, token_tolerance,
-                )
-
-                # Mutable instructions for steering
-                current_instructions = instructions
-
-                def _attempt_summarize(
-                    _text=text,
-                    _ret_inst=g_ret_instructions,
-                ) -> str:
-                    return _summarize_group(
-                        _text, llm_client, token_counter,
-                        target_tokens=target_tokens,
-                        instructions=current_instructions,
-                        system_prompt=system_prompt,
-                        llm_kwargs=llm_kwargs,
-                        retention_instructions=_ret_inst or None,
-                    )
-
-                def _validate_summary(result: str) -> tuple[bool, str | None]:
-                    return combined_validator(result)
-
-                def _steer_summary(diagnosis: str) -> None:
-                    nonlocal current_instructions
-                    base = current_instructions or ""
-                    current_instructions = (
-                        f"{base}\n\nPrevious summary was rejected: {diagnosis}"
-                    ).strip()
-
-                retry_result = retry_with_steering(
-                    attempt=_attempt_summarize,
-                    validate=_validate_summary,
-                    steer=_steer_summary,
-                    head_fn=lambda: "n/a",
-                    reset_fn=lambda _h: None,
-                    max_retries=max_retries,
-                )
-                summaries.append(retry_result.value)
-            else:
-                summary = _summarize_group(
-                    text, llm_client, token_counter,
-                    target_tokens=target_tokens,
-                    instructions=instructions,
-                    system_prompt=system_prompt,
-                    llm_kwargs=llm_kwargs,
-                    retention_instructions=g_ret_instructions or None,
-                )
-                summaries.append(summary)
+            summaries.append(summary)
     else:
         raise CompressionError(
             "No LLM client configured and no manual content provided. "
@@ -784,6 +691,7 @@ def compress_range(
     pending._head_hash = head_hash
     pending._generation_config = generation_config
     pending._two_stage = two_stage
+    pending._retention_criteria = group_retention
     if two_stage and guidance_text is not None:
         pending.guidance = guidance_text
         pending.guidance_source = "llm"

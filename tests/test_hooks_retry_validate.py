@@ -124,13 +124,14 @@ class TestPendingCompressValidate:
             t.close()
 
     def test_validate_fails_token_ratio(self):
-        """validate() fails if summary exceeds target_tokens * 1.5."""
+        """validate() fails if summary exceeds target_tokens + token_tolerance."""
         t = _make_compressible_tract()
         try:
             pending = t.compress(content="placeholder", review=True)
             assert isinstance(pending, PendingCompress)
-            # Set a very low target so any real text exceeds it
+            # Set a very low target and strict tolerance so any real text exceeds it
             pending._target_tokens = 2
+            pending._token_tolerance = 0  # strict: limit = 2 tokens
             pending.summaries[0] = "This is a summary that definitely has more than three tokens in it."
             result = pending.validate()
             assert result.passed is False
@@ -140,7 +141,7 @@ class TestPendingCompressValidate:
             t.close()
 
     def test_validate_passes_within_token_ratio(self):
-        """validate() passes if summary is within target_tokens * 1.5."""
+        """validate() passes if summary is within target_tokens + token_tolerance."""
         t = _make_compressible_tract()
         try:
             pending = t.compress(content="placeholder", review=True)

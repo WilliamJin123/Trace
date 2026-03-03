@@ -24,6 +24,7 @@ from tract.hooks.compress import PendingCompress
 from tract.hooks.dynamic import ActionDef, OperationSpec
 from tract.hooks.event import HookEvent
 from tract.hooks.gc import PendingGC
+from tract.hooks.generation import PendingGeneration
 from tract.hooks.guidance import GuidanceMixin
 from tract.hooks.merge import PendingMerge
 from tract.hooks.pending import Pending, PendingStatus
@@ -39,6 +40,7 @@ __all__ = [
     "PendingStatus",
     "PendingCompress",
     "PendingGC",
+    "PendingGeneration",
     "PendingRebase",
     "PendingMerge",
     "PendingTrigger",

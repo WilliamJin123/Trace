@@ -6,6 +6,7 @@ Pending objects that support validate() and retry() methods.
 Supported types:
 - PendingCompress: per-summary validate->retry loop
 - PendingMerge: single-shot validate->retry->validate
+- PendingGeneration: validate->retry->validate with RetryExhaustedError
 - Generic fallback: validate once, approve or reject
 """
 
@@ -14,6 +15,7 @@ from __future__ import annotations
 from typing import Any
 
 from tract.hooks.compress import PendingCompress
+from tract.hooks.generation import PendingGeneration
 from tract.hooks.merge import PendingMerge
 from tract.hooks.validation import HookRejection
 
@@ -46,6 +48,9 @@ def auto_retry(pending: Any, *, max_retries: int = 3) -> Any:
 
     if isinstance(pending, PendingMerge):
         return _auto_retry_merge(pending, max_retries=max_retries)
+
+    if isinstance(pending, PendingGeneration):
+        return _auto_retry_generation(pending, max_retries=max_retries)
 
     # Generic fallback for future Pending types with validate/retry
     if not hasattr(pending, "validate"):
@@ -154,4 +159,46 @@ def _auto_retry_merge(
         pending=pending,
         rejection_source="validation",
         metadata={"max_retries": max_retries},
+    )
+
+
+def _auto_retry_generation(
+    pending: PendingGeneration, *, max_retries: int = 3
+) -> Any:
+    """Validate-and-retry loop for PendingGeneration.
+
+    On failure, commits the failed response + steering with SKIP annotations,
+    then re-generates. On exhaustion, raises RetryExhaustedError.
+
+    Args:
+        pending: The PendingGeneration to validate and retry.
+        max_retries: Maximum total attempts (including first).
+
+    Returns:
+        ChatResponse from approve() if validation passes.
+
+    Raises:
+        RetryExhaustedError: If all attempts fail.
+    """
+    from tract.exceptions import RetryExhaustedError
+
+    last_diagnosis: str | None = None
+
+    for attempt in range(max_retries):
+        validation = pending.validate()
+
+        if validation.passed:
+            return pending.approve()
+
+        last_diagnosis = validation.diagnosis
+
+        if attempt < max_retries - 1:
+            # Not the last attempt -- retry with steering
+            pending.retry(guidance=validation.diagnosis or "")
+
+    # Exhausted -- raise RetryExhaustedError (not HookRejection)
+    raise RetryExhaustedError(
+        attempts=max_retries,
+        last_diagnosis=last_diagnosis or "validation failed",
+        last_result=pending.response_text,
     )

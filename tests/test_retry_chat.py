@@ -2,7 +2,7 @@
 
 Verifies backward compatibility (no validator = unchanged behavior),
 retry flow (steering commits, successful retry), exhaustion, custom
-retry prompts, hide_retries, and retry_metadata.
+retry prompts, and hide_retries with auto-attached retry metadata.
 """
 
 from __future__ import annotations
@@ -229,26 +229,6 @@ class TestChatCustomRetryPrompt:
         )
 
 
-class TestChatRetryMetadata:
-    """retry_metadata=True requires hide_retries=True."""
-
-    def test_retry_metadata_requires_hide_retries(self):
-        """retry_metadata=True without hide_retries=True raises TraceError."""
-        from tract.exceptions import TraceError
-
-        t = Tract.open()
-        mock = MockLLMClient(responses=["good"])
-        t.configure_llm(mock)
-        t.system("System.")
-
-        with pytest.raises(TraceError, match="retry_metadata=True requires hide_retries=True"):
-            t.chat(
-                "Hello",
-                validator=lambda text: (True, None),
-                retry_metadata=True,
-            )
-
-
 class TestChatHideRetries:
     """hide_retries=True resets history and re-commits clean result."""
 
@@ -283,8 +263,8 @@ class TestChatHideRetries:
             f"Steering artifacts should be hidden but found: {messages_text}"
         )
 
-    def test_chat_hide_retries_with_retry_metadata(self):
-        """hide_retries + retry_metadata attaches metadata to re-committed result."""
+    def test_chat_hide_retries_auto_retry_metadata(self):
+        """hide_retries auto-attaches retry metadata to final commit."""
         t = Tract.open()
         mock = MockLLMClient(responses=["bad", "good"])
         t.configure_llm(mock)
@@ -301,7 +281,6 @@ class TestChatHideRetries:
             "Hello",
             validator=validate,
             hide_retries=True,
-            retry_metadata=True,
         )
 
         assert resp.text == "good"

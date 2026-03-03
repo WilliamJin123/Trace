@@ -76,6 +76,12 @@ class PendingCompress(GuidanceMixin, Pending):
     _generation_config: dict | None = field(default=None, repr=False)
     _two_stage: bool = field(default=False, repr=False)
 
+    # -- Fields threaded from Tract.compress() for hook-layer validation --
+    _user_validator: Callable[[str], tuple[bool, str | None]] | None = field(default=None, repr=False)
+    _user_max_retries: int = field(default=3, repr=False)
+    _retention_criteria: list[list] | None = field(default=None, repr=False)
+    _token_tolerance: int | None = field(default=None, repr=False)
+
     # -- Whitelist for agent dispatch -----------------------------------
 
     _public_actions: frozenset[str] = field(
@@ -214,8 +220,12 @@ class PendingCompress(GuidanceMixin, Pending):
         Checks each summary for:
         1. Non-empty (no blank summaries)
         2. Not trivially short (< 10 chars = suspiciously truncated)
-        3. Token ratio: if _target_tokens is set, individual summary
-           should not exceed _target_tokens * 1.5
+        3. Token tolerance: if _target_tokens is set and _token_tolerance
+           is configured, summary tokens must not exceed
+           target_tokens + token_tolerance (default tolerance 500)
+        4. Retention criteria: deterministic match_patterns from IMPORTANT
+           commits must appear in the summary
+        5. User validator: custom callable threaded from compress(validator=)
 
         Returns:
             ValidationResult indicating whether all summaries pass.
@@ -241,18 +251,42 @@ class PendingCompress(GuidanceMixin, Pending):
                     index=i,
                 )
 
-            # Check token ratio if target set
+            # Check token tolerance if target set
             if self._target_tokens is not None:
                 token_count = self.tract._token_counter.count_text(summary)
-                max_tokens = int(self._target_tokens * 1.5)
-                if token_count > max_tokens:
+                tol = self._token_tolerance if self._token_tolerance is not None else 500
+                limit = self._target_tokens + tol
+                if token_count > limit:
                     return ValidationResult(
                         passed=False,
                         diagnosis=(
-                            f"Summary at index {i} exceeds token budget: "
-                            f"{token_count} tokens > {max_tokens} "
-                            f"(target={self._target_tokens} * 1.5)."
+                            f"Summary is ~{token_count} tokens "
+                            f"(target: {self._target_tokens}). "
+                            f"Condense to ~{self._target_tokens} tokens."
                         ),
+                        index=i,
+                    )
+
+            # Check retention criteria (deterministic match_patterns)
+            if self._retention_criteria is not None and i < len(self._retention_criteria):
+                from tract.operations.compression import _validate_retention
+                criteria = self._retention_criteria[i]
+                if criteria:
+                    ok, diag = _validate_retention(summary, criteria)
+                    if not ok:
+                        return ValidationResult(
+                            passed=False,
+                            diagnosis=diag or "Retention criteria not met",
+                            index=i,
+                        )
+
+            # Check user-supplied validator (threaded from compress(validator=))
+            if self._user_validator is not None:
+                ok, diag = self._user_validator(summary)
+                if not ok:
+                    return ValidationResult(
+                        passed=False,
+                        diagnosis=diag or "User validator failed",
                         index=i,
                     )
 

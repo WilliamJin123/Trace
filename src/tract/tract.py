@@ -1799,8 +1799,7 @@ class Tract:
         reasoning: bool = True,
         validator: Callable[[str], tuple[bool, str | None]] | None = None,
         max_retries: int = 3,
-        hide_retries: bool = False,
-        retry_metadata: bool = False,
+        hide_retries: bool = True,
         retry_prompt: str | None = None,
         **kwargs: object,
     ) -> ChatResponse:
@@ -1808,6 +1807,13 @@ class Tract:
 
         Assumes the conversation context (system prompt, user messages) has
         already been committed. Use :meth:`chat` for the all-in-one path.
+
+        When ``validator`` is provided, the generation is routed through the
+        hook system via :class:`PendingGeneration`. Failed attempts are
+        committed and SKIP-annotated (if ``hide_retries=True``), so they
+        exist in the chain for audit/debugging but don't pollute the
+        compiled context. Retry metadata (attempt count, failure history)
+        is automatically attached to the final commit.
 
         Args:
             model: Model override for this call.
@@ -1821,14 +1827,13 @@ class Tract:
                 reasoning commits for this call. Global opt-out via
                 ``commit_reasoning=False`` on ``Tract.open()``.
             validator: Optional callable that validates the response text.
-                Takes the response text, returns (ok, diagnosis). When provided,
-                the generate call is wrapped with retry_with_steering.
+                Takes the response text, returns (ok, diagnosis). When
+                provided, generates a :class:`PendingGeneration` that is
+                routed through hooks or auto_retry.
             max_retries: Maximum retry attempts when validator is set (default 3).
-            hide_retries: If True, reset to pre-retry state on success and
-                re-commit clean results (no retry artifacts in history).
-            retry_metadata: If True, attach retry attempt count and failure
-                history as metadata on the re-committed clean result.
-                Requires ``hide_retries=True``.
+            hide_retries: If True (default), SKIP-annotate failed attempts
+                and steering messages so they don't appear in compiled
+                context. If False, all retry artifacts remain visible.
             retry_prompt: Custom steering prompt template. The diagnosis string
                 is appended to this. Defaults to a standard steering message.
             **kwargs: Extra provider-specific parameters passed through to the
@@ -1840,8 +1845,7 @@ class Tract:
 
         Raises:
             LLMConfigError: If no LLM client is configured.
-            TraceError: If called inside batch(), or if retry_metadata=True
-                without hide_retries=True.
+            TraceError: If called inside batch().
             RetryExhaustedError: If all retry attempts fail validation.
         """
         if not self._has_llm_client("chat"):
@@ -1855,13 +1859,6 @@ class Tract:
         if self._in_batch:
             raise TraceError("chat()/generate() cannot be used inside batch()")
 
-        if retry_metadata and not hide_retries:
-            raise TraceError(
-                "retry_metadata=True requires hide_retries=True. "
-                "Without hide_retries, retry artifacts are already "
-                "visible in the commit chain."
-            )
-
         if validator is None:
             return self._generate_once(
                 model=model, temperature=temperature,
@@ -1870,10 +1867,37 @@ class Tract:
                 reasoning=reasoning, **kwargs,
             )
 
-        # Retry-guarded path
-        from tract.retry import RetryResult, retry_with_steering
+        # Hook-based validation path: build PendingGeneration
+        from tract.hooks.generation import PendingGeneration
 
-        def _attempt() -> ChatResponse:
+        # Initial generation (produces ChatResponse with committed response)
+        initial_response = self._generate_once(
+            model=model, temperature=temperature,
+            max_tokens=max_tokens, llm_config=llm_config,
+            message=message, metadata=metadata,
+            reasoning=reasoning, **kwargs,
+        )
+
+        # Track intermediate commit hashes for deferred SKIP annotation.
+        # During retry, the LLM needs to see the failed response + steering
+        # so it can course-correct. SKIP annotations are applied only after
+        # the final response is approved.
+        intermediate_hashes: list[str] = []
+
+        # Closure: steer by committing steering user message.
+        # Failed response is already committed by _generate_once.
+        # We record hashes but defer SKIP annotations to approve time.
+        def _steer_fn(guidance_text: str) -> None:
+            # Record the failed response hash
+            failed_hash = self.head
+            if failed_hash:
+                intermediate_hashes.append(failed_hash)
+            # Commit steering user message
+            steering_info = self.user(guidance_text)
+            intermediate_hashes.append(steering_info.commit_hash)
+
+        # Closure: re-generate (compile + LLM call + commit)
+        def _generate_fn() -> ChatResponse:
             return self._generate_once(
                 model=model, temperature=temperature,
                 max_tokens=max_tokens, llm_config=llm_config,
@@ -1881,71 +1905,66 @@ class Tract:
                 reasoning=reasoning, **kwargs,
             )
 
-        def _validate(resp: ChatResponse) -> tuple[bool, str | None]:
-            return validator(resp.text)
+        # Closure: finalize the approved response.
+        # 1. SKIP-annotate all intermediate commits (if hide_retries)
+        # 2. Attach retry metadata to the final commit (if retries occurred)
+        def _commit_response_fn(
+            chat_resp: ChatResponse, retry_meta: dict | None
+        ) -> ChatResponse:
+            import dataclasses as _dc
 
-        def _steer(diagnosis: str) -> None:
-            prompt = retry_prompt or "The previous response did not pass validation."
-            self.user(f"{prompt}\nDiagnosis: {diagnosis}")
+            # SKIP-annotate intermediate commits (deferred from retry time)
+            if hide_retries and intermediate_hashes:
+                for h in intermediate_hashes:
+                    self.annotate(h, Priority.SKIP,
+                                  reason="retry: hidden intermediate")
 
-        def _head_fn() -> str:
-            return self.head or ""
+            # Attach retry metadata to the final commit
+            if retry_meta and chat_resp.commit_info:
+                existing = chat_resp.commit_info.metadata or {}
+                merged = {**existing, **retry_meta}
+                self._commit_repo.update_metadata(
+                    chat_resp.commit_info.commit_hash, merged
+                )
+                self._session.commit()
+                # CommitInfo is Pydantic (model_copy), ChatResponse is frozen dataclass
+                updated_info = chat_resp.commit_info.model_copy(
+                    update={"metadata": merged}
+                )
+                return _dc.replace(chat_resp, commit_info=updated_info)
+            return chat_resp
 
-        def _reset_fn(restore_point: str) -> None:
-            if restore_point:
-                self.reset(restore_point)
-
-        # retry_metadata callback is a no-op here; the actual metadata
-        # is attached below after the (possibly re-committed) response.
-        _retry_attempts: int = 0
-        _retry_history: list[str] = []
-
-        def _record_retry_info(attempts: int, history: list[str]) -> None:
-            nonlocal _retry_attempts, _retry_history
-            _retry_attempts = attempts
-            _retry_history = list(history)
-
-        retry_result: RetryResult[ChatResponse] = retry_with_steering(
-            attempt=_attempt,
-            validate=_validate,
-            steer=_steer,
-            head_fn=_head_fn,
-            reset_fn=_reset_fn,
-            max_retries=max_retries,
+        pending = PendingGeneration(
+            operation="generate",
+            tract=self,
+            response_text=initial_response.text,
+            validator=validator,
+            retry_prompt=retry_prompt,
             hide_retries=hide_retries,
-            retry_metadata=_record_retry_info if retry_metadata else None,
+            _chat_response=initial_response,
+            _generate_fn=_generate_fn,
+            _steer_fn=_steer_fn,
+            _commit_response_fn=_commit_response_fn,
         )
 
-        chat_response = retry_result.value
-
-        # Build combined metadata for the (possibly re-committed) result
-        commit_metadata = dict(metadata) if metadata else {}
-        if retry_metadata and _retry_attempts > 1:
-            commit_metadata["retry_attempts"] = _retry_attempts
-            commit_metadata["retry_history"] = _retry_history
-
-        # If hide_retries was active and we had retries, re-commit clean result
-        if hide_retries and retry_result.attempts > 1:
-            commit_info = self.assistant(
-                chat_response.text,
-                message=message,
-                metadata=commit_metadata or None,
-                generation_config=(
-                    chat_response.generation_config.to_dict()
-                    if chat_response.generation_config
-                    else None
-                ),
-            )
-            from tract.protocols import ChatResponse as _CR
-
-            chat_response = _CR(
-                text=chat_response.text,
-                usage=chat_response.usage,
-                commit_info=commit_info,
-                generation_config=chat_response.generation_config,
-            )
-
-        return chat_response
+        # Route through hooks or auto_retry
+        if self._hooks.get("generate") or self._hooks.get("*"):
+            self._fire_hook(pending)
+            if pending.status == "approved" and pending._result is not None:
+                return pending._result
+            # If hook rejected, raise (caller needs a ChatResponse)
+            if pending.status == "rejected":
+                from tract.exceptions import RetryExhaustedError
+                raise RetryExhaustedError(
+                    attempts=pending.retry_count + 1,
+                    last_diagnosis=pending.rejection_reason or "rejected by hook",
+                    last_result=pending.response_text,
+                )
+            return initial_response
+        else:
+            # No hook registered: use auto_retry for validation
+            from tract.hooks.retry import auto_retry
+            return auto_retry(pending, max_retries=max_retries)
 
     def _generate_once(
         self,
@@ -2083,8 +2102,7 @@ class Tract:
         reasoning: bool = True,
         validator: Callable[[str], tuple[bool, str | None]] | None = None,
         max_retries: int = 3,
-        hide_retries: bool = False,
-        retry_metadata: bool = False,
+        hide_retries: bool = True,
         retry_prompt: str | None = None,
         **kwargs: object,
     ) -> ChatResponse:
@@ -2095,6 +2113,9 @@ class Tract:
 
             t.user(text, message=message, name=name, metadata=metadata)
             response = t.generate(model=model, temperature=temperature, ...)
+
+        When ``validator`` is provided, the generation is routed through
+        the hook system. See :meth:`generate` for details on retry behavior.
 
         Args:
             text: The user message text.
@@ -2109,14 +2130,12 @@ class Tract:
                 extracted from the LLM response. Set to False to skip
                 reasoning commits for this call.
             validator: Optional callable that validates the response text.
-                Takes the response text, returns (ok, diagnosis). When provided,
-                the generate call is wrapped with retry_with_steering.
+                Takes the response text, returns (ok, diagnosis). When
+                provided, generates a :class:`PendingGeneration` routed
+                through hooks or auto_retry.
             max_retries: Maximum retry attempts when validator is set (default 3).
-            hide_retries: If True, reset to pre-retry state on success and
-                re-commit clean results (no retry artifacts in history).
-            retry_metadata: If True, attach retry attempt count and failure
-                history as metadata on the re-committed clean result.
-                Requires ``hide_retries=True``.
+            hide_retries: If True (default), SKIP-annotate failed attempts
+                and steering messages so they don't appear in compiled context.
             retry_prompt: Custom steering prompt template. The diagnosis string
                 is appended to this. Defaults to a standard steering message.
             **kwargs: Extra provider-specific parameters passed through to the
@@ -2129,8 +2148,7 @@ class Tract:
         Raises:
             LLMConfigError: If no LLM client is configured.
             DetachedHeadError: If HEAD is detached.
-            TraceError: If called inside batch(), or if retry_metadata=True
-                without hide_retries=True.
+            TraceError: If called inside batch().
             RetryExhaustedError: If all retry attempts fail validation.
         """
         # Commit user message
@@ -2146,7 +2164,6 @@ class Tract:
             validator=validator,
             max_retries=max_retries,
             hide_retries=hide_retries,
-            retry_metadata=retry_metadata,
             retry_prompt=retry_prompt,
             **kwargs,
         )
@@ -4583,7 +4600,8 @@ class Tract:
             llm_config: Full LLMConfig override for this call.
             validator: Optional callable that validates the summary text.
                 Takes the summary text, returns (ok, diagnosis). When provided,
-                each LLM summarization is wrapped with retry_with_steering.
+                validation is handled by the hook layer: summaries are validated
+                via ``PendingCompress.validate()`` and retried via ``auto_retry``.
             max_retries: Maximum retry attempts when validator is set (default 3).
             token_tolerance: Additive token tolerance for summary validation.
                 When set, summaries up to ``target_tokens + token_tolerance``
@@ -4599,13 +4617,12 @@ class Tract:
 
         Returns:
             :class:`CompressResult` (if auto-approved or hook approves) or
-            :class:`PendingCompress` (if ``review=True``).
+            :class:`PendingCompress` (if ``review=True`` or validation exhausted).
 
         Raises:
             DetachedHeadError: If HEAD is detached.
             CompressionError: On various error conditions.
             LLMConfigError: If explicit LLM params given without client.
-            RetryExhaustedError: If all retry attempts fail validation.
         """
         from tract.hooks.compress import PendingCompress as _PendingCompress
         from tract.operations.compression import compress_range
@@ -4671,9 +4688,6 @@ class Tract:
             instructions=instructions,
             system_prompt=effective_system_prompt,
             type_registry=self._custom_type_registry,
-            validator=validator,
-            max_retries=max_retries,
-            token_tolerance=token_tolerance,
             triggered_by=triggered_by,
             two_stage=two_stage or False,
         )
@@ -4682,16 +4696,42 @@ class Tract:
         pending.tract = self  # type: ignore[assignment]
         pending._execute_fn = self._finalize_compression
 
+        # Thread user validator into PendingCompress for hook-layer validation
+        if validator is not None:
+            pending._user_validator = validator
+            pending._user_max_retries = max_retries
+        if token_tolerance is not None:
+            pending._token_tolerance = token_tolerance
+
         # Three-tier routing:
         # 1. review=True: return to caller for manual inspection
         if review:
             return pending
 
         # 2. Fire hook system (handles stacked handlers, auto-approve, logging)
-        self._fire_hook(pending)
-        if pending.status == "approved" and pending._result is not None:
-            return pending._result
-        return pending
+        # If validation is needed (validator, target_tokens, or retention criteria)
+        # but no hook registered, use auto_retry as the default handler.
+        # Manual mode (content=) skips auto_retry since there's no LLM to retry.
+        has_retention = (
+            pending._retention_criteria is not None
+            and any(bool(criteria) for criteria in pending._retention_criteria)
+        )
+        needs_validation = (
+            content is None
+            and (validator is not None or target_tokens is not None or has_retention)
+        )
+        has_hook = self._hooks.get("compress") or self._hooks.get("*")
+        if needs_validation and not has_hook:
+            from tract.hooks.retry import auto_retry
+            auto_retry(pending, max_retries=max_retries)
+            if pending.status == "approved" and pending._result is not None:
+                return pending._result
+            return pending
+        else:
+            self._fire_hook(pending)
+            if pending.status == "approved" and pending._result is not None:
+                return pending._result
+            return pending
 
     def _finalize_compression(
         self, pending: PendingCompress,

@@ -97,7 +97,7 @@ cookbook/
 │   │
 │   └── validation/                            # Retry and validation patterns
 │       ├── 01_core_retry.py                     # retry_with_steering, RetryResult, RetryExhaustedError
-│       ├── 02_chat_validation.py                # chat(validator=), hide_retries=, retry_metadata=
+│       ├── 02_chat_validation.py                # chat(validator=), hide_retries=
 │       └── 03_compress_validation.py            # compress(validator=), retain_match= combo
 │
 ├── agentic/                                 # Your agent drives the context
@@ -504,7 +504,7 @@ Open an in-memory tract. Commit messages using `InstructionContent` and `Dialogu
 **File:** `developer/validation/02_chat_validation.py`
 **Tiers:** Manual | Agent
 
-> `chat(validator=, max_retries=, hide_retries=, retry_metadata=, retry_prompt=)`
+> `chat(validator=, max_retries=, hide_retries=, retry_prompt=)`
 
 ### 03 — Compress Validation
 

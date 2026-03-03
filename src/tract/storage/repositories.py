@@ -145,6 +145,18 @@ class CommitRepository(ABC):
         ...
 
     @abstractmethod
+    def update_metadata(self, commit_hash: str, metadata: dict) -> None:
+        """Update the metadata_json field on an existing commit.
+
+        Replaces the entire metadata dict (caller should merge if needed).
+
+        Args:
+            commit_hash: The commit to update.
+            metadata: New metadata dict to store.
+        """
+        ...
+
+    @abstractmethod
     def delete(self, commit_hash: str) -> None:
         """Delete a commit by hash. Also cleans up CommitParentRow entries."""
         ...

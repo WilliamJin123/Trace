@@ -1,13 +1,14 @@
-"""Chat Validation (chat(validator=), hide_retries, retry_metadata)
+"""Chat Validation (chat(validator=), hide_retries)
 
 chat() and generate() accept a validator= parameter that wraps the LLM call
 in retry_with_steering automatically. On failure, a steering message is
 committed as a user message so the LLM sees its own mistake in context.
-hide_retries=True resets HEAD after success and re-commits only the clean result.
-retry_metadata=True attaches retry attempt count and history as commit metadata.
+hide_retries=True (the default) resets HEAD after success and re-commits only
+the clean result. Retry metadata (attempt count, history) is auto-attached by
+the hook layer when retries occur — no explicit parameter needed.
 
-Demonstrates: chat(validator=, max_retries=, hide_retries=, retry_metadata=,
-              retry_prompt=), generate(validator=), RetryExhaustedError
+Demonstrates: chat(validator=, max_retries=, hide_retries=, retry_prompt=),
+              generate(validator=), RetryExhaustedError
 """
 
 import json
@@ -149,10 +150,11 @@ def part3_hide_retries():
 
 
 # =============================================================================
-# Part 4: retry_metadata=True — record retry info as commit metadata
+# Part 4: Auto-attached retry metadata (via hook layer)
 # =============================================================================
-# Attaches retry_attempts and retry_history to the successful commit's
-# metadata. No synthetic messages pollute the context window.
+# When retries occur, the hook layer automatically attaches retry_attempts and
+# retry_history to the successful commit's metadata. No explicit parameter
+# needed — just use validator= and the metadata appears if retries happened.
 
 def part4_retry_metadata():
     call_count = 0
@@ -172,16 +174,17 @@ def part4_retry_metadata():
     ) as t:
         t.system("You are a history assistant. Be specific with dates.")
 
+        # No retry_metadata= parameter needed — the hook layer auto-attaches
+        # retry metadata to the commit when retries occur
         response = t.chat(
             "When was the first computer invented?",
             validator=flaky_validator,
             max_retries=3,
-            retry_metadata=True,
         )
 
         response.pprint()
 
-        # retry_metadata is on the commit, not in the conversation
+        # Retry metadata is auto-attached to the commit by the hook layer
         commit = response.commit_info
         print(f"Commit metadata: {commit.metadata}")
 
@@ -257,7 +260,7 @@ def main():
     print(f"\n=== Part 3: hide_retries=True ===\n")
     part3_hide_retries()
 
-    print(f"\n=== Part 4: retry_metadata=True ===\n")
+    print(f"\n=== Part 4: Auto-attached retry metadata ===\n")
     part4_retry_metadata()
 
     print(f"\n=== Part 5: generate(validator=) + retry_prompt= ===\n")

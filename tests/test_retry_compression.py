@@ -1,15 +1,14 @@
 """Tests for retry protocol integration with compression.
 
 Verifies backward compatibility (no validator = unchanged behavior),
-retry flow (steering via instruction amendment), and exhaustion.
+retry flow (steering via hook-layer auto_retry), and exhaustion.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from tract import CompressResult, CompressionError, Tract
-from tract.exceptions import RetryExhaustedError
+from tract import CompressResult, CompressionError, PendingCompress, Tract
 from tests.conftest import make_tract_with_commits
 
 
@@ -80,13 +79,16 @@ class TestCompressValidatorPasses:
 
 
 class TestCompressValidatorFailsThenPasses:
-    """Validator fails, instructions amended, then succeeds."""
+    """Validator fails, hook-layer auto_retry retries, then succeeds."""
 
     def test_compress_validator_fails_then_passes(self):
-        """compress() retries with amended instructions on validation failure."""
+        """compress() retries via auto_retry on validation failure."""
         t, hashes = make_tract_with_commits(5)
         # First summary fails validation, second passes
-        mock = MockLLMClient(responses=["Bad summary", "Good summary"])
+        mock = MockLLMClient(responses=[
+            "Bad summary that is too vague for acceptance",
+            "Good summary with all the required details",
+        ])
         t.configure_llm(mock)
 
         call_count = 0
@@ -105,9 +107,12 @@ class TestCompressValidatorFailsThenPasses:
         assert call_count == 2
 
     def test_compress_retry_amends_instructions(self):
-        """On retry, the instructions are amended with the diagnosis."""
+        """On retry, the guidance contains the validation diagnosis."""
         t, hashes = make_tract_with_commits(3)
-        mock = MockLLMClient(responses=["bad", "good"])
+        mock = MockLLMClient(responses=[
+            "Vague summary without details needed",
+            "Detailed summary with all required information",
+        ])
         t.configure_llm(mock)
 
         call_count = 0
@@ -123,45 +128,44 @@ class TestCompressValidatorFailsThenPasses:
         )
 
         assert isinstance(result, CompressResult)
-        # The second LLM call should have received amended instructions
-        # (though we can't directly inspect instructions from mock,
-        #  we verify the retry happened and succeeded)
+        # The second LLM call should have received guidance with the diagnosis
+        # (via PendingCompress.retry(guidance=...))
         assert mock._call_count == 2
 
 
 class TestCompressAllRetriesExhausted:
-    """All retries exhausted -- error propagated."""
+    """All retries exhausted -- returns rejected PendingCompress."""
 
     def test_compress_all_retries_exhausted(self):
-        """compress() raises RetryExhaustedError when all attempts fail."""
+        """compress() returns rejected PendingCompress when all attempts fail."""
         t, hashes = make_tract_with_commits(5)
-        mock = MockLLMClient(responses=["bad summary"] * 5)
+        mock = MockLLMClient(responses=["A bad summary that fails validation"] * 5)
         t.configure_llm(mock)
 
-        with pytest.raises(RetryExhaustedError) as exc_info:
-            t.compress(
-                validator=lambda text: (False, "unacceptable"),
-                max_retries=2,
-            )
+        result = t.compress(
+            validator=lambda text: (False, "unacceptable"),
+            max_retries=2,
+        )
 
-        err = exc_info.value
-        assert err.attempts == 2
-        assert "unacceptable" in err.last_diagnosis
+        assert isinstance(result, PendingCompress)
+        assert result.status == "rejected"
+        assert "unacceptable" in result.rejection_reason
 
     def test_compress_max_retries_one(self):
-        """max_retries=1 means only one attempt for compression."""
+        """max_retries=1 means one auto_retry iteration for compression."""
         t, hashes = make_tract_with_commits(3)
-        mock = MockLLMClient(responses=["bad"])
+        mock = MockLLMClient(responses=["A bad quality summary text"])
         t.configure_llm(mock)
 
-        with pytest.raises(RetryExhaustedError) as exc_info:
-            t.compress(
-                validator=lambda text: (False, "bad quality"),
-                max_retries=1,
-            )
+        result = t.compress(
+            validator=lambda text: (False, "bad quality"),
+            max_retries=1,
+        )
 
-        assert exc_info.value.attempts == 1
-        assert mock._call_count == 1
+        assert isinstance(result, PendingCompress)
+        assert result.status == "rejected"
+        # 1 call from compress_range + 1 retry from auto_retry = 2
+        assert mock._call_count == 2
 
 
 class TestCompressRetryEdgeCases:

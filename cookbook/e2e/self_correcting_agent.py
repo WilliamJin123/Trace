@@ -1,7 +1,7 @@
 """Self-correcting agent: validation + retry + edit + metadata.
 
   PART 1 -- Manual:      generate() -> validate -> if fail: commit correction, retry loop
-  PART 2 -- LLM / Agent:  generate(validator=fn, max_retries=3, hide_retries=True, retry_metadata=True)
+  PART 2 -- LLM / Agent:  generate(validator=fn, max_retries=3, hide_retries=True)
 """
 
 import json
@@ -84,7 +84,6 @@ def part2_agent():
             validator=json_validator,
             max_retries=3,
             hide_retries=True,
-            retry_metadata=True,
         )
 
         print(f"\n  Final response: {response.text[:120]}")

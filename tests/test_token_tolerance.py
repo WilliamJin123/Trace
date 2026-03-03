@@ -2,6 +2,8 @@
 
 Verifies that the token_tolerance parameter controls how many tokens
 above target_tokens a summary can be before the validator rejects it.
+Validation is handled by the hook layer (PendingCompress.validate()
++ auto_retry), not by an inner retry loop in compress_range().
 """
 
 from __future__ import annotations
@@ -12,7 +14,6 @@ from tract import (
     CompressResult,
     DialogueContent,
     PendingCompress,
-    RetryExhaustedError,
     Tract,
 )
 from tests.conftest import make_tract_with_commits
@@ -72,8 +73,10 @@ class TestDefaultTolerance:
 
         # target_tokens=100, default tolerance=500 -> limit=600
         # ~700 tokens exceeds 600, should fail validation and exhaust retries
-        with pytest.raises(RetryExhaustedError):
-            t.compress(target_tokens=100, max_retries=1)
+        # Returns rejected PendingCompress (validation handled by hook layer)
+        result = t.compress(target_tokens=100, max_retries=1)
+        assert isinstance(result, PendingCompress)
+        assert result.status == "rejected"
 
 
 class TestCustomTolerance:
@@ -100,8 +103,10 @@ class TestCustomTolerance:
 
         # target_tokens=100, token_tolerance=50 -> limit=150
         # ~400 tokens exceeds 150, should fail and exhaust retries
-        with pytest.raises(RetryExhaustedError):
-            t.compress(target_tokens=100, token_tolerance=50, max_retries=1)
+        # Returns rejected PendingCompress (validation handled by hook layer)
+        result = t.compress(target_tokens=100, token_tolerance=50, max_retries=1)
+        assert isinstance(result, PendingCompress)
+        assert result.status == "rejected"
 
 
 class TestToleranceEdgeCases:
@@ -115,18 +120,20 @@ class TestToleranceEdgeCases:
         t, hashes = make_tract_with_commits(3)
         t.configure_llm(mock)
 
-        with pytest.raises(RetryExhaustedError):
-            t.compress(target_tokens=50, token_tolerance=0, max_retries=1)
+        # Returns rejected PendingCompress (validation handled by hook layer)
+        result = t.compress(target_tokens=50, token_tolerance=0, max_retries=1)
+        assert isinstance(result, PendingCompress)
+        assert result.status == "rejected"
 
     def test_tolerance_zero_passes_when_under_target(self):
         """token_tolerance=0 passes when summary is at or below target_tokens."""
-        summary = "Short."  # ~2 tokens
+        summary = "A short but sufficient summary text."  # ~8 tokens, >= 10 chars
         mock = MockLLMClient(response=summary)
         t, hashes = make_tract_with_commits(3)
         t.configure_llm(mock)
 
         # target_tokens=1000, tolerance=0 -> limit=1000
-        # ~2 tokens is well under 1000, should pass
+        # ~8 tokens is well under 1000, should pass
         result = t.compress(target_tokens=1000, token_tolerance=0)
         assert isinstance(result, CompressResult)
 
@@ -160,10 +167,10 @@ class TestToleranceEdgeCases:
         t, hashes = make_tract_with_commits(3)
         t.configure_llm(mock)
 
-        # review=True returns PendingCompress, but validation still ran during generation
+        # review=True returns PendingCompress without running auto_retry
         pending = t.compress(
             target_tokens=100, token_tolerance=200, review=True,
         )
         assert isinstance(pending, PendingCompress)
-        # The summary was generated successfully (within tolerance)
+        # The summary was generated successfully (one-shot from compress_range)
         assert len(pending.summaries) >= 1

@@ -18,7 +18,6 @@ from tract import (
     PendingCompress,
     PendingToolResult,
     Priority,
-    RetryExhaustedError,
     Tract,
     ToolDropResult,
     TraceError,
@@ -1584,7 +1583,7 @@ class TestTargetTokensEnforcement:
         assert mock._call_count == 1
 
     def test_compress_target_tokens_exhausted(self):
-        """When LLM always returns long responses, RetryExhaustedError is raised."""
+        """When LLM always returns long responses, PendingCompress is rejected."""
         t, hashes = make_tract_with_commits(3)
 
         # Always returns a long response
@@ -1594,5 +1593,7 @@ class TestTargetTokensEnforcement:
         t.configure_llm(mock)
 
         # Use token_tolerance=0 for strict enforcement so 200 tokens exceeds target=50
-        with pytest.raises(RetryExhaustedError):
-            t.compress(target_tokens=50, token_tolerance=0, max_retries=2)
+        # Validation now handled by hook layer -- returns rejected PendingCompress
+        result = t.compress(target_tokens=50, token_tolerance=0, max_retries=2)
+        assert isinstance(result, PendingCompress)
+        assert result.status == "rejected"

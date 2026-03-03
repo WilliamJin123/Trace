@@ -264,6 +264,12 @@ class SqliteCommitRepository(CommitRepository):
         )
         return list(self._session.execute(stmt).scalars().all())
 
+    def update_metadata(self, commit_hash: str, metadata: dict) -> None:
+        row = self.get(commit_hash)
+        if row is not None:
+            row.metadata_json = metadata
+            self._session.flush()
+
     def delete(self, commit_hash: str) -> None:
         """Delete a commit by hash. Also cleans up related rows.
 
