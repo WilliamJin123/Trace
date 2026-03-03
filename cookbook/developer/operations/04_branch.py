@@ -149,7 +149,7 @@ def part2_automated():
         t.system("You are a helpful assistant.")
         t.user("What is Python?")
         t.assistant("Python is a programming language.")
-        t.tool_result("def hello(): pass", tool_call_id="t1", name="code_gen")
+        t.tool_result("t1", "code_gen", "def hello(): pass")
         t.user("Now explain decorators.")
 
         print(f"\n  Trigger fired {len(proposals)} time(s)")
