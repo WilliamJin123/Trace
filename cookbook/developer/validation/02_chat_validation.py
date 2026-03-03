@@ -1,11 +1,13 @@
 """Chat Validation (chat(validator=), hide_retries)
 
-chat() and generate() accept a validator= parameter that wraps the LLM call
-in retry_with_steering automatically. On failure, a steering message is
-committed as a user message so the LLM sees its own mistake in context.
-hide_retries=True (the default) resets HEAD after success and re-commits only
-the clean result. Retry metadata (attempt count, history) is auto-attached by
-the hook layer when retries occur — no explicit parameter needed.
+chat() and generate() accept a validator= parameter that routes the LLM
+response through a PendingGeneration hook. On failure, a steering message
+is committed as a user message so the LLM sees its own mistake in context,
+then a new generation is attempted. hide_retries=True (the default)
+SKIP-annotates failed attempts and steering messages after approval, so
+they remain in the commit chain for audit but are excluded from compile().
+Retry metadata (attempt count, history) is auto-attached to the final
+commit when retries occur.
 
 Demonstrates: chat(validator=, max_retries=, hide_retries=, retry_prompt=),
               generate(validator=), RetryExhaustedError
@@ -109,17 +111,19 @@ def part2_basic_validation():
 
         response.pprint()
 
-        # If retries happened, the log shows steering messages between attempts
-        print("Commit chain (steering messages visible if retries occurred):")
+        # hide_retries=True (default): failed attempts + steering are SKIP-annotated
+        # after approval. They're in the log but excluded from compile().
+        print("Commit chain (SKIP-annotated intermediates if retries occurred):")
         for entry in reversed(t.log()):
             print(f"  {entry}")
 
 
 # =============================================================================
-# Part 3: hide_retries=True — clean history after retries
+# Part 3: hide_retries=False — keep retry artifacts visible in compile()
 # =============================================================================
-# Without hide_retries, failed responses + steering messages stay in the chain.
-# With hide_retries=True, HEAD resets and only the clean result is re-committed.
+# hide_retries=True (default) SKIP-annotates failed attempts + steering so
+# compile() excludes them. With hide_retries=False, everything stays visible
+# in compiled context — the LLM sees the full retry history.
 
 def part3_hide_retries():
     def must_contain_scala(text: str) -> tuple[bool, str | None]:
@@ -138,15 +142,17 @@ def part3_hide_retries():
             "Name your favorite programming language and explain why in one sentence.",
             validator=must_contain_scala,
             max_retries=3,
-            hide_retries=True,
+            hide_retries=False,  # Keep retry artifacts visible in compile()
         )
 
         response.pprint()
 
-        # With hide_retries, chain is clean — system + user + assistant, no retries
-        print("Clean chain (no retry artifacts):")
-        for entry in reversed(t.log()):
-            print(f"  {entry}")
+        # With hide_retries=False, steering messages appear in compiled context
+        print("Full chain (retry artifacts visible in compiled context):")
+        compiled = t.compile()
+        for msg in compiled.messages:
+            preview = msg.content[:80] + "..." if len(msg.content) > 80 else msg.content
+            print(f"  [{msg.role}] {preview}")
 
 
 # =============================================================================
@@ -257,7 +263,7 @@ def main():
     print(f"\n=== Part 2: chat(validator=) ===\n")
     part2_basic_validation()
 
-    print(f"\n=== Part 3: hide_retries=True ===\n")
+    print(f"\n=== Part 3: hide_retries=False ===\n")
     part3_hide_retries()
 
     print(f"\n=== Part 4: Auto-attached retry metadata ===\n")

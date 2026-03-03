@@ -64,13 +64,13 @@ def part1_manual():
 
 
 # =============================================================================
-# Part 3: compress(validator=) — validate summary quality
+# Part 2: compress(validator=) — validate summary quality
 # =============================================================================
 # The validator ensures the LLM summary mentions specific technical terms.
-# If validation fails, the LLM retries with a steering message injected
-# into the summarization prompt.
+# If validation fails, the hook layer (PendingCompress + auto_retry) retries
+# the summarization with the diagnosis as guidance.
 
-def part3_compress_validator():
+def part2_compress_validator():
     with Tract.open(
         api_key=llm.api_key,
         base_url=llm.base_url,
@@ -108,13 +108,13 @@ def part3_compress_validator():
 
 
 # =============================================================================
-# Part 4: retain_match= + validator= — two-layer safety net
+# Part 3: retain_match= + validator= — two-layer safety net
 # =============================================================================
 # Layer 1 (retain_match): regex patterns — hard deterministic requirement.
 # Layer 2 (validator): semantic check — soft quality control.
 # Both must pass for the summary to be accepted.
 
-def part4_combined_validation():
+def part3_combined_validation():
     with Tract.open(
         api_key=llm.api_key,
         base_url=llm.base_url,
@@ -174,12 +174,12 @@ def part4_combined_validation():
 
 
 # =============================================================================
-# Part 5: instructions= + validator= — guided and validated
+# Part 4: instructions= + validator= — guided and validated
 # =============================================================================
 # instructions= steers the summary focus. validator= confirms the summary
 # actually followed those instructions.
 
-def part5_guided_and_validated():
+def part4_guided_and_validated():
     with Tract.open(
         api_key=llm.api_key,
         base_url=llm.base_url,
@@ -227,14 +227,14 @@ def main():
     print("=== Part 1: Manual content check ===\n")
     part1_manual()
 
-    print(f"\n=== Part 3: compress(validator=) ===\n")
-    part3_compress_validator()
+    print(f"\n=== Part 2: compress(validator=) ===\n")
+    part2_compress_validator()
 
-    print(f"\n=== Part 4: retain_match= + validator= ===\n")
-    part4_combined_validation()
+    print(f"\n=== Part 3: retain_match= + validator= ===\n")
+    part3_combined_validation()
 
-    print(f"\n=== Part 5: instructions= + validator= ===\n")
-    part5_guided_and_validated()
+    print(f"\n=== Part 4: instructions= + validator= ===\n")
+    part4_guided_and_validated()
 
 
 if __name__ == "__main__":
