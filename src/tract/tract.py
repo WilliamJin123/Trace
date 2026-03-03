@@ -2130,6 +2130,105 @@ class Tract:
         )
         return _dc.replace(response, prompt=text)
 
+    def revise(
+        self,
+        commit_hash: str,
+        prompt: str,
+        *,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        llm_config: LLMConfig | None = None,
+        message: str | None = None,
+        reasoning: bool = True,
+        **kwargs: object,
+    ) -> ChatResponse:
+        """Ask the LLM to revise a previous commit and apply as an EDIT.
+
+        Convenience wrapper that combines chat + edit + skip into one call.
+        Internally: sends ``prompt`` via :meth:`chat` to get the LLM's
+        revised text, creates an EDIT commit targeting ``commit_hash``
+        with that text, and SKIPs the intermediate user/assistant commits
+        so they don't appear in compiled context.
+
+        Args:
+            commit_hash: Hash (or prefix) of the commit to revise.  Must
+                be an APPEND commit (system, user, or assistant).
+            prompt: Instruction telling the LLM how to revise the content.
+            model: Model override for this call.
+            temperature: Temperature override.
+            max_tokens: Max tokens override.
+            llm_config: Full LLMConfig override for this call.
+            message: Optional commit message for the EDIT commit.
+            reasoning: If True (default), auto-commit reasoning traces.
+            **kwargs: Extra provider-specific parameters.
+
+        Returns:
+            :class:`ChatResponse` whose ``commit_info`` is the EDIT commit
+            and whose ``text`` is the revised content.
+
+        Raises:
+            LLMConfigError: If no LLM client is configured.
+            EditTargetError: If ``commit_hash`` cannot be found or is
+                itself an EDIT commit.
+        """
+        import dataclasses as _dc
+
+        # Step 1: Get the LLM's revised text via a normal chat call.
+        response = self.chat(
+            prompt,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            llm_config=llm_config,
+            reasoning=reasoning,
+            **kwargs,
+        )
+
+        # Step 2: Resolve the target to determine the content role.
+        resolved = self.resolve_commit(commit_hash)
+        target_row = self._commit_repo.get(resolved)
+        if target_row is None:
+            from tract.exceptions import EditTargetError
+            raise EditTargetError(f"EDIT target commit not found: {resolved}")
+
+        # Determine the role of the target commit so we use the right
+        # shorthand (system / user / assistant).
+        ct = target_row.content_type
+        if ct == "instruction":
+            role = "system"
+        elif ct == "dialogue":
+            # Load the blob to get the role field.
+            import json as _json
+            blob = self._blob_repo.get(target_row.content_hash)
+            data = _json.loads(blob.payload_json) if blob else {}
+            role = data.get("role", "assistant")
+        else:
+            role = "assistant"
+
+        # Step 3: Apply as an EDIT commit.
+        shorthand = {"system": self.system, "user": self.user, "assistant": self.assistant}
+        edit_fn = shorthand.get(role, self.assistant)
+        edit_info = edit_fn(
+            response.text,
+            edit=resolved,
+            message=message or f"revise: {prompt[:60]}",
+        )
+
+        # Step 4: SKIP the intermediate user + assistant commits from
+        # the chat() call so only the EDIT survives in compiled context.
+        self.annotate(response.commit_info.parent_hash, Priority.SKIP)
+        self.annotate(response.commit_info.commit_hash, Priority.SKIP)
+        if response.reasoning_commit is not None:
+            self.annotate(response.reasoning_commit.commit_hash, Priority.SKIP)
+
+        # Return a ChatResponse pointing to the EDIT commit.
+        return _dc.replace(
+            response,
+            commit_info=edit_info,
+            prompt=prompt,
+        )
+
     # ------------------------------------------------------------------
     # Compile record accessors
     # ------------------------------------------------------------------

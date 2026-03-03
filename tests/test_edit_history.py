@@ -10,10 +10,12 @@ import time
 import pytest
 
 from tract import (
+    ChatResponse,
     CommitInfo,
     CommitOperation,
     DialogueContent,
     InstructionContent,
+    Priority,
     Tract,
 )
 from tract.exceptions import CommitNotFoundError
@@ -290,3 +292,160 @@ class TestRestore:
         """Raises CommitNotFoundError for nonexistent hash."""
         with pytest.raises(CommitNotFoundError):
             tract.restore("deadbeefdeadbeef" * 4)
+
+
+# ---------------------------------------------------------------------------
+# revise() tests
+# ---------------------------------------------------------------------------
+
+
+class MockLLMClient:
+    """Mock LLM that returns canned responses."""
+
+    def __init__(self, responses: list[str] | None = None):
+        self.responses = responses or ["revised text"]
+        self._call_count = 0
+
+    def chat(self, messages, **kwargs):
+        text = self.responses[min(self._call_count, len(self.responses) - 1)]
+        self._call_count += 1
+        return {
+            "choices": [{"message": {"content": text}}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        }
+
+    def close(self):
+        pass
+
+
+class TestRevise:
+    """Tests for Tract.revise()."""
+
+    def test_revise_creates_edit_commit(self):
+        """revise() creates an EDIT commit targeting the original."""
+        t = Tract.open()
+        t.configure_llm(MockLLMClient(["improved answer"]))
+        original = t.assistant("original answer")
+
+        result = t.revise(original.commit_hash, "Improve this answer")
+
+        assert isinstance(result, ChatResponse)
+        assert result.text == "improved answer"
+        assert result.commit_info.operation == CommitOperation.EDIT
+        assert result.commit_info.edit_target == original.commit_hash
+        t.close()
+
+    def test_revise_skips_intermediate_commits(self):
+        """The chat() intermediates are SKIPped in compiled context."""
+        t = Tract.open()
+        t.configure_llm(MockLLMClient(["better version"]))
+        original = t.assistant("first draft")
+
+        t.revise(original.commit_hash, "Make it better")
+
+        ctx = t.compile()
+        # Only the edited content should appear, not the revision prompt
+        texts = [m.content for m in ctx.messages]
+        assert any("better version" in text for text in texts)
+        assert not any("Make it better" in text for text in texts)
+        t.close()
+
+    def test_revise_appears_in_edit_history(self):
+        """The edit from revise() shows up in edit_history()."""
+        t = Tract.open()
+        t.configure_llm(MockLLMClient(["v2 content"]))
+        original = t.assistant("v1 content")
+
+        result = t.revise(original.commit_hash, "Revise please")
+
+        history = t.edit_history(original.commit_hash)
+        assert len(history) == 2
+        assert history[0].commit_hash == original.commit_hash
+        assert history[1].commit_hash == result.commit_info.commit_hash
+        t.close()
+
+    def test_revise_auto_message(self):
+        """revise() generates a default commit message from the prompt."""
+        t = Tract.open()
+        t.configure_llm(MockLLMClient(["new text"]))
+        original = t.assistant("old text")
+
+        result = t.revise(original.commit_hash, "Shorten this to one sentence")
+
+        assert result.commit_info.message.startswith("revise:")
+        t.close()
+
+    def test_revise_custom_message(self):
+        """Custom message overrides the auto-generated one."""
+        t = Tract.open()
+        t.configure_llm(MockLLMClient(["new text"]))
+        original = t.assistant("old text")
+
+        result = t.revise(original.commit_hash, "Fix it", message="manual fix")
+
+        assert result.commit_info.message == "manual fix"
+        t.close()
+
+    def test_revise_system_commit(self):
+        """revise() works on system (InstructionContent) commits."""
+        t = Tract.open()
+        t.configure_llm(MockLLMClient(["updated instructions"]))
+        original = t.system("original instructions")
+
+        result = t.revise(original.commit_hash, "Make instructions clearer")
+
+        assert result.text == "updated instructions"
+        assert result.commit_info.edit_target == original.commit_hash
+        ctx = t.compile()
+        texts = [m.content for m in ctx.messages]
+        assert any("updated instructions" in text for text in texts)
+        t.close()
+
+    def test_revise_user_commit(self):
+        """revise() works on user (DialogueContent role=user) commits."""
+        t = Tract.open()
+        t.configure_llm(MockLLMClient(["clarified question"]))
+        original = t.user("vague question")
+
+        result = t.revise(original.commit_hash, "Make the question clearer")
+
+        assert result.commit_info.edit_target == original.commit_hash
+        t.close()
+
+    def test_revise_preserves_surrounding_context(self):
+        """Other commits are unaffected by revise()."""
+        t = Tract.open()
+        t.configure_llm(MockLLMClient(["revised first"]))
+        c1 = t.assistant("first")
+        c2 = t.assistant("second")
+
+        t.revise(c1.commit_hash, "Revise first")
+
+        ctx = t.compile()
+        texts = [m.content for m in ctx.messages]
+        assert any("revised first" in text for text in texts)
+        assert any("second" in text for text in texts)
+        t.close()
+
+    def test_revise_returns_prompt(self):
+        """The returned ChatResponse includes the revision prompt."""
+        t = Tract.open()
+        t.configure_llm(MockLLMClient(["output"]))
+        original = t.assistant("input")
+
+        result = t.revise(original.commit_hash, "Do the thing")
+
+        assert result.prompt == "Do the thing"
+        t.close()
+
+    def test_revise_with_prefix(self):
+        """revise() accepts hash prefixes."""
+        t = Tract.open()
+        t.configure_llm(MockLLMClient(["revised"]))
+        original = t.assistant("original")
+
+        prefix = original.commit_hash[:8]
+        result = t.revise(prefix, "Fix it")
+
+        assert result.commit_info.edit_target == original.commit_hash
+        t.close()

@@ -4,16 +4,15 @@ Chat with an LLM, then iteratively refine a response via edits.
 Use edit_history() to see every version of a commit, and restore()
 to roll back when the edits go too far.
 
-Demonstrates: t.assistant(edit=), edit_history(), restore(),
-              get_content(), Priority.SKIP for cleaning up
-              intermediate commits, pprint(style="chat"),
+Demonstrates: t.revise(), t.assistant(edit=), edit_history(),
+              restore(), get_content(), pprint(style="chat"),
               response.pprint()
 """
 
 import sys
 from pathlib import Path
 
-from tract import Priority, Tract
+from tract import Tract
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from _providers import cerebras as llm  
@@ -49,28 +48,21 @@ def edit_history():
         r2.pprint()
 
         # --- Edit the first response to add more detail ---
-        # t.assistant(edit=...) replaces the content of a previous response.
-        # All edits point to the ORIGINAL commit (flat design, not chained).
+        # t.revise() asks the LLM to rewrite a commit, then applies the
+        # result as an EDIT. Under the hood it: (1) calls chat() with your
+        # prompt, (2) creates an EDIT commit targeting the original, and
+        # (3) SKIPs the intermediate user/assistant commits so only the
+        # edit survives in compiled context.
 
         print("=== Edit 1: ask LLM to improve the first answer ===\n")
-        improve = t.chat(
+        e1 = t.revise(
+            original_hash,
             "Please rewrite your first answer about black holes to also "
-            "mention the event horizon. Keep it to 2 sentences."
-        )
-        # Use the LLM's improved text as an edit of the original
-        e1 = t.assistant(
-            improve.text,
-            edit=original_hash,
+            "mention the event horizon. Keep it to 2 sentences.",
             message="Add event horizon detail",
         )
-        print(f"  Edit commit: {e1.commit_hash[:8]}")
-        print(f"  Content: {t.get_content(e1)}\n")
-
-        # The t.chat() call above created intermediate commits (user prompt +
-        # LLM response) that would clutter the compiled context. SKIP them
-        # so only the edit itself survives in the conversation view.
-        t.annotate(improve.commit_info.parent_hash, Priority.SKIP)
-        t.annotate(improve.commit_info.commit_hash, Priority.SKIP)
+        print(f"  Edit commit: {e1.commit_info.commit_hash[:8]}")
+        print(f"  Content: {t.get_content(e1.commit_info)}\n")
 
         # --- Edit again: further refinement ---
 
