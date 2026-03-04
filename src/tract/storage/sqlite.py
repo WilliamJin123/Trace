@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Sequence
 
 from sqlalchemy import func, select, and_, or_
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from tract.storage.repositories import (
@@ -65,11 +66,21 @@ class SqliteBlobRepository(BlobRepository):
         return self._session.execute(stmt).scalar_one_or_none()
 
     def save_if_absent(self, blob: BlobRow) -> None:
-        """Store blob only if content_hash not already present (dedup)."""
-        existing = self.get(blob.content_hash)
-        if existing is None:
-            self._session.add(blob)
-            self._session.flush()
+        """Store blob only if content_hash not already present (dedup).
+
+        Uses INSERT OR IGNORE to avoid race conditions when multiple
+        threads attempt to insert the same content-addressed blob
+        concurrently.
+        """
+        stmt = sqlite_insert(BlobRow).values(
+            content_hash=blob.content_hash,
+            payload_json=blob.payload_json,
+            byte_size=blob.byte_size,
+            token_count=blob.token_count,
+            created_at=blob.created_at,
+        ).on_conflict_do_nothing(index_elements=["content_hash"])
+        self._session.execute(stmt)
+        self._session.flush()
 
     def delete_if_orphaned(self, content_hash: str) -> bool:
         """Delete a blob if no commit still references it.
