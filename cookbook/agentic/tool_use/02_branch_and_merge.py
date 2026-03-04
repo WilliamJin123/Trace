@@ -18,8 +18,6 @@ import json
 import sys
 from pathlib import Path
 
-import httpx
-
 from tract import Tract, TractConfig, TokenBudgetConfig
 from tract.toolkit import ToolConfig, ToolExecutor, ToolProfile
 
@@ -78,29 +76,11 @@ BRANCH_PROFILE = ToolProfile(
 )
 
 
-def run_agent_loop(t, executor, tools, task, max_turns=12):
-    """Generic agentic loop: user task -> tool calls -> final response."""
-    t.user(task)
-
-    for turn in range(max_turns):
-        response = t.generate()
-
-        if not response.tool_calls:
-            print(f"\n  Agent: {response.text[:200]}")
-            if len(response.text) > 200:
-                print(f"         ...({len(response.text)} chars total)")
-            return response
-
-        for tc in response.tool_calls:
-            result = executor.execute(tc.name, tc.arguments)
-            t.tool_result(tc.id, tc.name, str(result))
-            args_short = json.dumps(tc.arguments)[:60]
-            print(f"    -> {tc.name}({args_short})")
-            output_short = str(result.output)[:80]
-            print(f"       {output_short}")
-
-    print("  (max turns reached)")
-    return None
+def _log_tool(name, args, result):
+    """Callback for t.run() — log each tool call."""
+    args_short = json.dumps(args)[:60]
+    print(f"    -> {name}({args_short})")
+    print(f"       {str(result.output)[:80]}")
 
 
 # =====================================================================
@@ -183,13 +163,17 @@ def part2_agent():
 
         # Let the agent manage branches
         print("  --- Task: Explore options on branches ---")
-        run_agent_loop(
-            t, executor, tools,
+        response = t.run(
             "Create a branch called 'postgres-research' and switch to it. "
             "Then switch back to main and create 'sqlite-research'. "
             "Use list_branches to verify both exist, then switch back to main "
-            "and merge 'postgres-research' into main with a descriptive message."
+            "and merge 'postgres-research' into main with a descriptive message.",
+            executor=executor, on_tool_call=_log_tool, max_turns=12,
         )
+        if response:
+            print(f"\n  Agent: {response.text[:200]}")
+            if len(response.text) > 200:
+                print(f"         ...({len(response.text)} chars total)")
 
         # Verify final state
         print("\n  --- Final state ---")

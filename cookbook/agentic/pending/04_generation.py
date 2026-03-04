@@ -8,8 +8,9 @@ Demonstrates:
 
 PendingGeneration is created internally by generate() when a validator is
 provided -- NOT via review=True. You intercept it by registering a handler
-on the "generate" hook. Inside the handler, the agent uses to_dict() +
-to_tools() + tract's built-in LLM client to decide what to do.
+on the "generate" hook. Inside the handler, call pending.consult(instruction)
+to let an LLM agent decide what to do -- consult() handles to_dict(),
+to_tools(), the LLM call, and apply_decision() internally.
 
 Scenario A: Quality gate agent
     Validator rejects short responses. The hook handler validates, retries
@@ -27,58 +28,13 @@ from pathlib import Path
 from tract import Tract
 from tract.exceptions import RetryExhaustedError
 from tract.hooks.generation import PendingGeneration
+from tract.hooks.pending import PendingStatus
 from tract.hooks.validation import ValidationResult
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from _providers import groq as llm  # noqa: E402
 
 MODEL_ID = llm.large
-
-
-# ---------------------------------------------------------------------------
-# Helper: ask the agent LLM to decide on a pending generation
-# ---------------------------------------------------------------------------
-
-def _ask_agent(pending: PendingGeneration, instruction: str) -> dict:
-    """Send pending state + tools to a SEPARATE LLM call for a decision.
-
-    This is the agent's "brain" -- completely independent from the tract
-    generate() LLM call that produced the response being evaluated.
-
-    Returns:
-        A decision dict with "action" and "args" keys.
-    """
-    tools = pending.to_tools()
-    ctx_info = pending.to_dict()
-
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are a quality-gate agent. You receive a pending LLM "
-                "generation and must decide what to do with it. Use the "
-                "provided tools to take exactly one action."
-            ),
-        },
-        {
-            "role": "user",
-            "content": f"{instruction}\n\nPending state:\n{json.dumps(ctx_info, indent=2)}",
-        },
-    ]
-
-    # Use tract's built-in LLM client (configured via Tract.open())
-    client = pending.tract._llm_client
-    raw = client.chat(messages, tools=tools)
-
-    tc_list = raw["choices"][0]["message"].get("tool_calls", [])
-    if tc_list:
-        tc = tc_list[0]
-        return {
-            "action": tc["function"]["name"],
-            "args": json.loads(tc["function"].get("arguments", "{}")),
-        }
-    # Fallback: if LLM responds without a tool call, default to approve
-    return {"action": "approve", "args": {}}
 
 
 # ---------------------------------------------------------------------------
@@ -126,19 +82,16 @@ def quality_gate_agent() -> None:
             result = pending.validate()
             print(f"\n  [hook] Re-validate: passed={result.passed}, diagnosis={result.diagnosis}")
 
-        # Use the agent LLM to make the final decision
-        decision = _ask_agent(
-            pending,
+        # Use consult() to let the agent LLM make the final decision
+        instruction = (
             f"The response {'passed' if result.passed else 'FAILED'} validation. "
             f"Response text: {pending.response_text[:200]!r}. "
             f"Retries so far: {pending.retry_count}. "
-            f"{'Approve the response.' if result.passed else 'Reject with reason: quality gate failed.'}",
+            f"{'Approve the response.' if result.passed else 'Reject with reason: quality gate failed.'}"
         )
+        decision = pending.consult(instruction)
         decisions_log.append(decision)
         print(f"\n  [hook] Agent decision: {json.dumps(decision)}")
-
-        # Dispatch the agent's decision
-        pending.apply_decision(decision)
         print(f"  [hook] Final status: {pending.status}")
 
     with Tract.open(
@@ -197,20 +150,18 @@ def agent_rejection() -> None:
         print(f"\n  [hook] Received PendingGeneration")
         print(f"    response_text from to_dict(): {ctx_info['fields'].get('response_text', '')[:80]!r}")
 
-        # Ask the agent LLM to reject
-        decision = _ask_agent(
-            pending,
+        # Ask the agent LLM to reject via consult()
+        decision = pending.consult(
             "This generation must be REJECTED. The response does not meet "
             "our safety policy. Use the reject tool with a clear reason.",
         )
         print(f"  [hook] Agent decision: {json.dumps(decision)}")
 
-        # If the agent didn't pick reject, force it
-        if decision.get("action") != "reject":
+        # consult() already dispatched the decision. If the agent didn't
+        # pick reject, force it.
+        if pending.status != PendingStatus.REJECTED:
             print(f"  [hook] Agent did not reject -- forcing rejection")
             pending.reject(reason="Policy violation: response flagged by safety agent")
-        else:
-            pending.apply_decision(decision)
 
         print(f"  [hook] Final status: {pending.status}")
         if pending.rejection_reason:
@@ -325,8 +276,9 @@ def main() -> None:
   2. Register t.on("generate", handler) to intercept. The handler receives
      the PendingGeneration directly.
 
-  3. Inside the handler, use to_dict() + to_tools() + tract's LLM client
-     to ask a SEPARATE LLM to decide (approve, reject, retry, validate).
+  3. Inside the handler, call pending.consult(instruction) to let an LLM
+     agent decide (approve, reject, retry, validate). consult() handles
+     to_dict(), to_tools(), the LLM call, and apply_decision() internally.
 
   4. retry() commits a steering message, re-generates via LLM, and updates
      response_text in place. Failed attempts get SKIP-annotated on approve().
@@ -335,8 +287,9 @@ def main() -> None:
 
   6. Rejection from the hook raises RetryExhaustedError in the caller.
 
-  7. The agent LLM call is completely independent from the tract generate()
-     LLM call that produced the response (same client, separate call).
+  7. The consult() LLM call is completely independent from the tract
+     generate() LLM call that produced the response (same client,
+     separate call).
 """)
 
 

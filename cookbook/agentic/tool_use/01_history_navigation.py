@@ -20,8 +20,6 @@ import json
 import sys
 from pathlib import Path
 
-import httpx
-
 from tract import Tract, TractConfig, TokenBudgetConfig
 from tract.toolkit import ToolConfig, ToolExecutor, ToolProfile
 
@@ -95,29 +93,11 @@ HISTORY_PROFILE = ToolProfile(
 )
 
 
-def run_agent_loop(t, executor, tools, task, max_turns=10):
-    """Generic agentic loop: user task -> tool calls -> final response."""
-    t.user(task)
-
-    for turn in range(max_turns):
-        response = t.generate()
-
-        if not response.tool_calls:
-            print(f"\n  Agent: {response.text[:200]}")
-            if len(response.text) > 200:
-                print(f"         ...({len(response.text)} chars total)")
-            return response
-
-        for tc in response.tool_calls:
-            result = executor.execute(tc.name, tc.arguments)
-            t.tool_result(tc.id, tc.name, str(result))
-            args_short = json.dumps(tc.arguments)[:60]
-            print(f"    -> {tc.name}({args_short})")
-            output_short = str(result.output)[:80]
-            print(f"       {output_short}")
-
-    print("  (max turns reached)")
-    return None
+def _log_tool(name, args, result):
+    """Callback for t.run() — log each tool call."""
+    args_short = json.dumps(args)[:60]
+    print(f"    -> {name}({args_short})")
+    print(f"       {str(result.output)[:80]}")
 
 
 # =====================================================================
@@ -211,24 +191,32 @@ def part2_agent():
 
         # Now ask the agent to investigate and fix
         print("  --- Task: Find and undo the bad information ---")
-        run_agent_loop(
-            t, executor, tools,
+        response = t.run(
             "Look at the conversation history. There's incorrect information "
             "early on (France's capital was recorded as Berlin). Use log to "
             "find the commits, then reset HEAD to just before that incorrect "
-            "exchange. After resetting, check status to confirm."
+            "exchange. After resetting, check status to confirm.",
+            executor=executor, on_tool_call=_log_tool, max_turns=10,
         )
+        if response:
+            print(f"\n  Agent: {response.text[:200]}")
+            if len(response.text) > 200:
+                print(f"         ...({len(response.text)} chars total)")
 
         print("\n  After reset:")
         t.compile().pprint(style="compact")
 
         # Ask it to recover
         print("\n  --- Task: Undo the reset ---")
-        run_agent_loop(
-            t, executor, tools,
+        response = t.run(
             "Actually, I want all the history back. Use ORIG_HEAD to undo "
-            "the reset you just did, then verify with status and compile."
+            "the reset you just did, then verify with status and compile.",
+            executor=executor, on_tool_call=_log_tool, max_turns=10,
         )
+        if response:
+            print(f"\n  Agent: {response.text[:200]}")
+            if len(response.text) > 200:
+                print(f"         ...({len(response.text)} chars total)")
 
         print("\n  After recovery:")
         t.compile().pprint(style="compact")

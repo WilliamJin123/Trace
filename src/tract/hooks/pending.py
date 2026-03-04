@@ -458,6 +458,102 @@ class Pending:
         """
         pass
 
+    def consult(
+        self,
+        instruction: str,
+        *,
+        system_prompt: str | None = None,
+        max_turns: int = 1,
+    ) -> dict:
+        """Ask an LLM to decide on this pending operation.
+
+        The agent equivalent of :meth:`review`. Serializes the pending
+        state via :meth:`to_dict`, generates tool schemas via
+        :meth:`to_tools`, sends them to the configured LLM client, and
+        dispatches the response via :meth:`apply_decision`.
+
+        Loops up to *max_turns* times or until the pending is resolved
+        (approved/rejected). Each turn is one LLM call that returns a
+        tool call, which is dispatched and fed back as context for the
+        next turn.
+
+        Args:
+            instruction: What the agent should do (e.g. "Approve this
+                compression" or "Review the summaries for quality").
+            system_prompt: Optional system prompt override. Defaults to
+                a generic context-management agent prompt.
+            max_turns: Maximum LLM round-trips (default 1). Use >1 for
+                multi-step flows (e.g. edit then approve).
+
+        Returns:
+            The last decision dict ``{"action": ..., "args": ...}``
+            dispatched, or ``{"action": "no_tool_call", "args": {}}``
+            if the LLM responded with text instead of a tool call.
+
+        Raises:
+            RuntimeError: If no LLM client is configured on the Tract.
+        """
+        import json as _json
+
+        if not self.tract._has_llm_client():
+            raise RuntimeError(
+                "Cannot consult: no LLM client configured. "
+                "Pass api_key= to Tract.open() or call configure_llm()."
+            )
+
+        client = self.tract._llm_client
+        tools = self.to_tools()
+
+        default_system = (
+            "You are a context management agent. You receive the state of "
+            "a pending operation and must decide what to do using the "
+            "provided tools. Always call exactly one tool per response."
+        )
+
+        messages: list[dict] = [
+            {"role": "system", "content": system_prompt or default_system},
+            {
+                "role": "user",
+                "content": (
+                    f"{instruction}\n\n"
+                    f"Current state:\n{_json.dumps(self.to_dict(), indent=2)}"
+                ),
+            },
+        ]
+
+        last_decision: dict = {"action": "no_tool_call", "args": {}}
+
+        for _turn in range(max_turns):
+            if self.status != PendingStatus.PENDING:
+                break
+
+            raw = client.chat(messages, tools=tools)
+            choice = raw["choices"][0]["message"]
+            tc_list = choice.get("tool_calls", [])
+
+            if not tc_list:
+                # LLM responded with text, not a tool call
+                break
+
+            tc = tc_list[0]
+            last_decision = {
+                "action": tc["function"]["name"],
+                "args": _json.loads(tc["function"].get("arguments", "{}")),
+            }
+
+            result = self.apply_decision(last_decision)
+
+            # Feed result back for multi-turn flows
+            if self.status == PendingStatus.PENDING and _turn < max_turns - 1:
+                messages.append(choice)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": f"Action applied. Result: {result}",
+                })
+
+        return last_decision
+
     def review(self, *, prompt_fn: Callable[[str], str] | None = None) -> None:
         """Interactive review flow: pprint then prompt for approve/reject.
 

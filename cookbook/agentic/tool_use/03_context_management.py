@@ -18,8 +18,6 @@ import json
 import sys
 from pathlib import Path
 
-import httpx
-
 from tract import Tract, TractConfig, TokenBudgetConfig
 from tract.toolkit import ToolConfig, ToolExecutor, ToolProfile
 
@@ -88,29 +86,11 @@ CONTEXT_PROFILE = ToolProfile(
 )
 
 
-def run_agent_loop(t, executor, tools, task, max_turns=12):
-    """Generic agentic loop: user task -> tool calls -> final response."""
-    t.user(task)
-
-    for turn in range(max_turns):
-        response = t.generate()
-
-        if not response.tool_calls:
-            print(f"\n  Agent: {response.text[:200]}")
-            if len(response.text) > 200:
-                print(f"         ...({len(response.text)} chars total)")
-            return response
-
-        for tc in response.tool_calls:
-            result = executor.execute(tc.name, tc.arguments)
-            t.tool_result(tc.id, tc.name, str(result))
-            args_short = json.dumps(tc.arguments)[:60]
-            print(f"    -> {tc.name}({args_short})")
-            output_short = str(result.output)[:80]
-            print(f"       {output_short}")
-
-    print("  (max turns reached)")
-    return None
+def _log_tool(name, args, result):
+    """Callback for t.run() — log each tool call."""
+    args_short = json.dumps(args)[:60]
+    print(f"    -> {name}({args_short})")
+    print(f"       {str(result.output)[:80]}")
 
 
 # =====================================================================
@@ -209,15 +189,19 @@ def part2_agent():
 
         # Ask the agent to maintain the context
         print("\n  --- Task: Assess and maintain context ---")
-        run_agent_loop(
-            t, executor, tools,
+        response = t.run(
             "The context is getting large. Please:\n"
             "1. Check status to see budget usage\n"
             "2. Use log to find commits, then pin any important ones\n"
             "3. Compress older turns to free up space\n"
             "4. Run GC to clean up orphaned commits\n"
-            "5. Check status again to confirm improvement"
+            "5. Check status again to confirm improvement",
+            executor=executor, on_tool_call=_log_tool, max_turns=12,
         )
+        if response:
+            print(f"\n  Agent: {response.text[:200]}")
+            if len(response.text) > 200:
+                print(f"         ...({len(response.text)} chars total)")
 
         # Show final state
         print("\n  AFTER maintenance:")

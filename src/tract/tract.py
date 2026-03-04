@@ -2169,6 +2169,82 @@ class Tract:
         )
         return _dc.replace(response, prompt=text)
 
+    def run(
+        self,
+        task: str,
+        *,
+        executor: object | None = None,
+        tools: list | None = None,
+        max_turns: int = 10,
+        on_tool_call: Callable | None = None,
+        **generate_kwargs: object,
+    ) -> ChatResponse:
+        """Run an agent loop: user task -> generate -> execute tools -> repeat.
+
+        Commits the user task, then loops: generate an LLM response, execute
+        any tool calls via the executor, commit tool results, and repeat
+        until the LLM responds with text (no tool calls) or max_turns is
+        reached.
+
+        Args:
+            task: The user message / task to accomplish.
+            executor: A :class:`ToolExecutor` (or any object with an
+                ``execute(name, args) -> ToolResult`` method). Required
+                if the LLM may produce tool calls.
+            tools: Optional list of tool definitions (OpenAI format) to
+                pass to the LLM. If not provided and executor has
+                ``_tools``, they are auto-extracted.
+            max_turns: Maximum generate-execute round trips (default 10).
+            on_tool_call: Optional callback ``(name, args, result) -> None``
+                called after each tool execution, for logging/visibility.
+            **generate_kwargs: Extra keyword arguments passed through to
+                :meth:`generate` (e.g. model, temperature, max_tokens).
+
+        Returns:
+            The final :class:`ChatResponse` (the one without tool calls,
+            or the last response if max_turns is exhausted).
+
+        Raises:
+            LLMConfigError: If no LLM client is configured.
+            RuntimeError: If the LLM produces tool calls but no executor
+                is provided.
+        """
+        from tract.toolkit.executor import ToolExecutor as _TE
+
+        self.user(task)
+
+        # Auto-extract tool definitions from executor if not provided
+        if tools is None and executor is not None and isinstance(executor, _TE):
+            tools = [td.to_openai() for td in executor._tools.values()]
+
+        last_response: ChatResponse | None = None
+        for _turn in range(max_turns):
+            # Pass tools to generate via kwargs if available
+            gen_kw = dict(generate_kwargs)
+            if tools:
+                gen_kw["tools"] = tools
+
+            response = self.generate(**gen_kw)
+            last_response = response
+
+            if not response.tool_calls:
+                return response
+
+            if executor is None:
+                raise RuntimeError(
+                    "LLM produced tool calls but no executor was provided. "
+                    "Pass executor= to run()."
+                )
+
+            for tc in response.tool_calls:
+                result = executor.execute(tc.name, tc.arguments)
+                self.tool_result(tc.id, tc.name, str(result))
+                if on_tool_call is not None:
+                    on_tool_call(tc.name, tc.arguments, result)
+
+        # max_turns exhausted
+        return last_response
+
     def revise(
         self,
         commit_hash: str,
@@ -3658,6 +3734,30 @@ class Tract:
             force=force,
         )
         self._session.commit()
+
+    @property
+    def llm_client(self) -> object:
+        """The configured LLM client for direct access.
+
+        Use this for advanced agent patterns that need raw LLM calls
+        without committing to conversation history (e.g. custom
+        multi-turn agent loops, evaluation pipelines).
+
+        For most use cases, prefer :meth:`chat`, :meth:`generate`,
+        :meth:`run`, or :meth:`~tract.hooks.pending.Pending.consult`.
+
+        Returns:
+            The LLM client instance.
+
+        Raises:
+            RuntimeError: If no LLM client is configured.
+        """
+        if not hasattr(self, "_llm_client"):
+            raise RuntimeError(
+                "No LLM client configured. Pass api_key= to Tract.open() "
+                "or call configure_llm(client)."
+            )
+        return self._llm_client
 
     def configure_llm(
         self,

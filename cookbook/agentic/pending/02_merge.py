@@ -1,4 +1,5 @@
-"""Agentic PendingMerge: LLM agent autonomously controls a merge conflict.
+"""Agentic PendingMerge: consult() sends the pending state to an LLM which
+autonomously controls a merge conflict.
 
 Demonstrated actions:
     approve          -- execute the merge with current resolutions
@@ -18,7 +19,6 @@ Three scenarios:
     C) Validate -> reject
 """
 
-import json
 import sys
 from pathlib import Path
 
@@ -32,56 +32,12 @@ from _providers import groq as llm  # noqa: E402
 MODEL_ID = llm.large
 
 
-# ---------------------------------------------------------------------------
-# Helper: send a PendingMerge to an LLM agent and execute its tool call
-# ---------------------------------------------------------------------------
-
-def ask_agent(pending: PendingMerge, instruction: str) -> dict:
-    """One-shot LLM tool-call cycle: context + tools -> decision -> dispatch.
-
-    Returns the decoded decision dict {action, args} chosen by the LLM.
-    """
-    tools = pending.to_tools()
-    ctx = pending.to_dict()
-
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are a merge conflict resolution agent. "
-                "You will receive the state of a pending merge operation "
-                "and a set of tools. Use EXACTLY ONE tool call to carry out "
-                "the user's instruction. Respond ONLY with a tool call."
-            ),
-        },
-        {
-            "role": "user",
-            "content": (
-                f"{instruction}\n\n"
-                f"Pending merge state:\n{json.dumps(ctx, indent=2)}"
-            ),
-        },
-    ]
-
-    # Use tract's built-in LLM client (configured via Tract.open())
-    client = pending.tract._llm_client
-    raw = client.chat(messages, tools=tools)
-
-    tc_list = raw["choices"][0]["message"].get("tool_calls", [])
-    if tc_list:
-        tc = tc_list[0]
-        decision = {
-            "action": tc["function"]["name"],
-            "args": json.loads(tc["function"].get("arguments", "{}")),
-        }
-    else:
-        # Fallback -- should not happen with well-formed prompts
-        decision = {"action": "validate", "args": {}}
-
-    print(f"    Agent decision: {json.dumps(decision)}")
-    result = pending.apply_decision(decision)
-    print(f"    Dispatch result: {result}")
-    return decision
+SYSTEM_PROMPT = (
+    "You are a merge conflict resolution agent. "
+    "You will receive the state of a pending merge operation "
+    "and a set of tools. Use EXACTLY ONE tool call to carry out "
+    "the user's instruction. Respond ONLY with a tool call."
+)
 
 
 # ---------------------------------------------------------------------------
@@ -151,10 +107,10 @@ def scenario_a() -> None:
 
         # Step 1: Agent validates -- should pass (LLM already resolved)
         print("\n  Step 1: Agent validates the current resolutions")
-        ask_agent(
-            pending,
+        pending.consult(
             "Validate the current merge resolutions to check if they are "
             "complete and non-empty.",
+            system_prompt=SYSTEM_PROMPT,
         )
 
         # Step 2: Agent edits the resolution to improve it
@@ -163,30 +119,30 @@ def scenario_a() -> None:
         current_res = pending.resolutions[first_key]
         print(f"    Current resolution ({first_key[:8]}): {current_res[:80]}")
 
-        ask_agent(
-            pending,
+        pending.consult(
             f"The resolution for conflict key '{first_key}' should be improved. "
             f"Use edit_resolution to replace it with: "
             f"'Photosynthesis is the biological process where chlorophyll-containing "
             f"organisms convert sunlight, water, and CO2 into glucose and oxygen "
             f"through light-dependent reactions (in thylakoids) and the Calvin cycle "
             f"(in the stroma).'",
+            system_prompt=SYSTEM_PROMPT,
         )
 
         print(f"    Updated resolution: {pending.resolutions[first_key][:80]}...")
 
         # Step 3: Agent re-validates after the edit
         print("\n  Step 3: Agent re-validates after edit")
-        ask_agent(
-            pending,
+        pending.consult(
             "Validate the resolutions again to confirm the edit is acceptable.",
+            system_prompt=SYSTEM_PROMPT,
         )
 
         # Step 4: Agent approves the merge
         print("\n  Step 4: Agent approves the merge")
-        ask_agent(
-            pending,
+        pending.consult(
             "All resolutions look good. Approve the merge.",
+            system_prompt=SYSTEM_PROMPT,
         )
 
         print(f"\n  Final status: {pending.status}")
@@ -223,23 +179,23 @@ def scenario_b() -> None:
         pending.resolutions.clear()
         print(f"    Cleared all resolutions (simulating review=True without resolver)")
 
-        ask_agent(
-            pending,
+        pending.consult(
             f"There are no resolutions yet. Use set_resolution with key "
             f"'{first_key}' and content 'PLACEHOLDER -- needs LLM re-resolution' "
             f"to create a temporary placeholder.",
+            system_prompt=SYSTEM_PROMPT,
         )
 
         print(f"    Placeholder resolution: {pending.resolutions.get(first_key, 'MISSING')}")
 
         # Step 2: Agent edits guidance and retries LLM resolution
         print("\n  Step 2: Agent updates guidance, then retries LLM resolution")
-        ask_agent(
-            pending,
+        pending.consult(
             "Use edit_guidance to set the guidance to: "
             "'Combine both versions into a comprehensive explanation that covers "
             "chlorophyll, light-dependent reactions, Calvin cycle, and the "
             "products (glucose + oxygen). Keep it under 3 sentences.'",
+            system_prompt=SYSTEM_PROMPT,
         )
 
         print(f"    Guidance: {pending.guidance}")
@@ -247,10 +203,10 @@ def scenario_b() -> None:
 
         # Now retry with the updated guidance
         print("\n  Step 3: Agent retries to re-resolve conflicts via LLM")
-        ask_agent(
-            pending,
+        pending.consult(
             "Now retry the conflict resolution so the LLM re-resolves all "
             "conflicts using the updated guidance.",
+            system_prompt=SYSTEM_PROMPT,
         )
 
         for key, res in pending.resolutions.items():
@@ -258,9 +214,9 @@ def scenario_b() -> None:
 
         # Step 4: Agent approves
         print("\n  Step 4: Agent approves the merge")
-        ask_agent(
-            pending,
+        pending.consult(
             "The LLM re-resolved the conflicts. Approve the merge.",
+            system_prompt=SYSTEM_PROMPT,
         )
 
         print(f"\n  Final status: {pending.status}")
@@ -291,20 +247,20 @@ def scenario_c() -> None:
 
         # Step 1: Agent validates
         print("\n  Step 1: Agent validates")
-        ask_agent(
-            pending,
+        pending.consult(
             "Validate the current merge resolutions.",
+            system_prompt=SYSTEM_PROMPT,
         )
 
         # Step 2: Agent decides the merge is unwanted and rejects it
         print("\n  Step 2: Agent rejects the merge")
-        ask_agent(
-            pending,
+        pending.consult(
             "After reviewing the conflict, this merge should not proceed. "
             "The feature branch content diverges too much from main. "
             "Reject the merge with reason: "
             "'Feature branch explanation diverges from main branch style; "
             "needs alignment before merging.'",
+            system_prompt=SYSTEM_PROMPT,
         )
 
         print(f"\n  Final status: {pending.status}")

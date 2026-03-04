@@ -5,16 +5,15 @@ actions: approve, reject, edit_result, summarize.  Three scenarios show
 the agent detecting sensitive data and redacting it, summarizing verbose
 output to fit a token budget, and rejecting useless error results.
 
-Demonstrates: PendingToolResult lifecycle, to_dict()/to_tools() for LLM
-              consumption, edit_result with original_content preservation,
-              summarize with target_tokens, reject for error results,
-              tract's built-in LLM client for agentic decision-making
+Demonstrates: PendingToolResult lifecycle, pending.consult() for LLM-driven
+              decisions, multi-turn flows via max_turns, edit_result with
+              original_content preservation, summarize with target_tokens,
+              reject for error results
 """
 
 import json
 import sys
 from pathlib import Path
-from typing import Any
 
 from tract import Tract
 from tract.hooks.tool_result import PendingToolResult
@@ -23,28 +22,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from _providers import groq as llm
 
 MODEL_ID = llm.large
-
-
-# -- helpers ---------------------------------------------------------
-
-def ask_llm(client, messages: list[dict], tools: list[dict] | None = None) -> dict:
-    """Single LLM call via tract's built-in client. Returns the raw response dict."""
-    kwargs: dict[str, Any] = {"max_tokens": 1024}
-    if tools:
-        kwargs["tools"] = tools
-    return client.chat(messages, **kwargs)
-
-
-def extract_tool_call(raw: dict) -> dict[str, Any] | None:
-    """Pull the first tool call from an LLM response, or None."""
-    tc_list = raw["choices"][0]["message"].get("tool_calls", [])
-    if not tc_list:
-        return None
-    tc = tc_list[0]
-    return {
-        "action": tc["function"]["name"],
-        "args": json.loads(tc["function"].get("arguments", "{}")),
-    }
 
 
 # =====================================================================
@@ -100,64 +77,25 @@ def scenario_a_edit():
         print("  PendingToolResult before agent acts:")
         pending.pprint()
 
-        # Give the agent the pending state and tool schemas
-        state = pending.to_dict()
-        tools = pending.to_tools()
-
-        decision_messages = [
-            {"role": "system", "content": (
+        # consult() handles to_dict(), to_tools(), LLM call, and
+        # apply_decision() internally. max_turns=5 allows multi-step
+        # flows (e.g. edit_result then approve).
+        decision = pending.consult(
+            "A tool result is pending. Review it. If the content contains "
+            "secrets (API keys, passwords, tokens), use edit_result to "
+            "replace the content with a redacted version (replace secret "
+            "values with '***REDACTED***'), then approve.",
+            system_prompt=(
                 "You are a security agent reviewing tool results before they "
                 "enter the LLM context window. You have tools to control the "
-                "pending result. If the content contains secrets (API keys, "
-                "passwords, tokens), use edit_result to replace the content "
-                "with a redacted version, then approve. Redact by replacing "
-                "secret values with '***REDACTED***'."
-            )},
-            {"role": "user", "content": (
-                f"A tool result is pending. Review it and decide.\n\n"
-                f"State:\n{json.dumps(state, indent=2)}"
-            )},
-        ]
-
-        # Agent loop: may need edit_result then approve (two tool calls)
-        for turn in range(5):
-            raw_resp = ask_llm(t._llm_client, decision_messages, tools)
-            decision = extract_tool_call(raw_resp)
-
-            if not decision:
-                # Agent responded with text -- done
-                text = raw_resp["choices"][0]["message"]["content"]
-                print(f"\n  Agent (text): {text[:120]}")
-                break
-
-            action = decision["action"]
-            args = decision["args"]
-            print(f"  Agent calls: {action}({json.dumps(args)[:100]})")
-
-            # Execute the action on the pending object
-            result = pending.apply_decision(decision)
-
-            if action == "edit_result":
-                print(f"  -> Content replaced ({len(pending.content)} chars)")
-                print(f"  -> Original preserved: {pending.original_content is not None}")
-                # Feed result back so the agent can call approve next
-                decision_messages.append(
-                    raw_resp["choices"][0]["message"]
-                )
-                decision_messages.append({
-                    "role": "tool",
-                    "tool_call_id": raw_resp["choices"][0]["message"]["tool_calls"][0]["id"],
-                    "content": "edit_result applied successfully. Now approve if ready.",
-                })
-                continue
-
-            if action == "approve":
-                print(f"  -> Approved! Committed.")
-                break
-
-            if action == "reject":
-                print(f"  -> Rejected: {args.get('reason', '')}")
-                break
+                "pending result. If the content contains secrets, use "
+                "edit_result to redact, then approve."
+            ),
+            max_turns=5,
+        )
+        print(f"\n  Agent final decision: {json.dumps(decision)}")
+        print(f"  Content after agent: {len(pending.content)} chars")
+        print(f"  Original preserved: {pending.original_content is not None}")
 
         print(f"\n  Final pending status: {pending.status}")
         print(f"\n  Committed content (redacted):")
@@ -225,61 +163,24 @@ def scenario_b_summarize():
               f"{len(big_listing)} chars")
         pending.pprint()
 
-        # Agent inspects
-        state = pending.to_dict()
-        tools = pending.to_tools()
-
-        decision_messages = [
-            {"role": "system", "content": (
+        # consult() handles the multi-turn summarize -> approve flow.
+        # The agent will call summarize (dispatched via apply_decision),
+        # then approve on the next turn.
+        decision = pending.consult(
+            "A tool result is pending review. If the token_count exceeds "
+            "200 tokens, call summarize with target_tokens=100. After "
+            "summarizing, call approve.",
+            system_prompt=(
                 "You are a context budget manager reviewing tool results. "
                 "You have tools to control a pending tool result. If the "
                 "token_count exceeds 200 tokens, call summarize with "
                 "target_tokens=100. After summarizing, call approve."
-            )},
-            {"role": "user", "content": (
-                f"A tool result is pending review.\n\n"
-                f"State:\n{json.dumps(state, indent=2)}"
-            )},
-        ]
-
-        for turn in range(5):
-            raw_resp = ask_llm(t._llm_client, decision_messages, tools)
-            decision = extract_tool_call(raw_resp)
-
-            if not decision:
-                text = raw_resp["choices"][0]["message"]["content"]
-                print(f"\n  Agent (text): {text[:120]}")
-                break
-
-            action = decision["action"]
-            args = decision["args"]
-            print(f"  Agent calls: {action}({json.dumps(args)[:80]})")
-
-            if action == "summarize":
-                # summarize() calls the LLM internally via tract's LLM client
-                pending.summarize(
-                    target_tokens=args.get("target_tokens", 100),
-                )
-                print(f"  -> Summarized: {len(pending.content)} chars")
-                print(f"  -> Original preserved: {pending.original_content is not None}")
-                decision_messages.append(
-                    raw_resp["choices"][0]["message"]
-                )
-                decision_messages.append({
-                    "role": "tool",
-                    "tool_call_id": raw_resp["choices"][0]["message"]["tool_calls"][0]["id"],
-                    "content": (
-                        f"Summarized. New content: {len(pending.content)} chars. "
-                        f"Original preserved. Call approve to commit."
-                    ),
-                })
-                continue
-
-            result = pending.apply_decision(decision)
-
-            if action == "approve":
-                print(f"  -> Approved! Committed.")
-                break
+            ),
+            max_turns=5,
+        )
+        print(f"\n  Agent final decision: {json.dumps(decision)}")
+        print(f"  Summarized: {len(pending.content)} chars")
+        print(f"  Original preserved: {pending.original_content is not None}")
 
         print(f"\n  Final pending status: {pending.status}")
         print(f"\n  Summarized content committed:")
@@ -356,36 +257,20 @@ def scenario_c_reject():
         print("  PendingToolResult (error):")
         pending.pprint()
 
-        # Agent inspects
-        state = pending.to_dict()
-        tools = pending.to_tools()
-
-        decision_messages = [
-            {"role": "system", "content": (
+        # Single-turn consult: agent inspects the error and rejects
+        decision = pending.consult(
+            "Review this tool result and decide. If the result is an error "
+            "and the content is just a stack trace with no useful data, "
+            "reject it with a concise reason.",
+            system_prompt=(
                 "You are a context management agent. A tool result is pending "
                 "review. If the result is an error (is_error=true) and the "
                 "content is just a stack trace with no useful data, reject it "
                 "with a concise reason. Only approve error results if they "
                 "contain actionable information worth keeping in context."
-            )},
-            {"role": "user", "content": (
-                f"Review this tool result and decide.\n\n"
-                f"State:\n{json.dumps(state, indent=2)}"
-            )},
-        ]
-
-        raw_resp = ask_llm(t._llm_client, decision_messages, tools)
-        decision = extract_tool_call(raw_resp)
-
-        if decision:
-            action = decision["action"]
-            args = decision["args"]
-            print(f"\n  Agent calls: {action}({json.dumps(args)[:100]})")
-            pending.apply_decision(decision)
-        else:
-            # Fallback: if LLM did not use tools, reject manually
-            print("\n  Agent did not use tools, applying fallback reject.")
-            pending.reject("Error stack trace -- no useful data for context")
+            ),
+        )
+        print(f"\n  Agent decision: {json.dumps(decision)}")
 
         print(f"\n  Final pending status: {pending.status}")
 
@@ -427,9 +312,9 @@ def main():
     print("    rejected it to keep the context window clean.")
     print()
     print("  Key patterns:")
-    print("    - to_dict() gives the agent full visibility into pending state")
-    print("    - to_tools() generates tool schemas for the LLM to call")
-    print("    - apply_decision() safely dispatches the LLM's choice")
+    print("    - consult(instruction) handles the full LLM decision loop")
+    print("    - consult(max_turns=N) enables multi-step flows (edit+approve)")
+    print("    - consult() calls to_dict(), to_tools(), LLM, apply_decision()")
     print("    - edit_result() preserves original_content for provenance")
     print("    - summarize() calls LLM internally, also preserves original")
     print("    - reject() prevents useless content from entering context")

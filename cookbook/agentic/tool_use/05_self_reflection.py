@@ -22,8 +22,6 @@ import json
 import sys
 from pathlib import Path
 
-import httpx
-
 from tract import Tract
 from tract.toolkit import ToolConfig, ToolExecutor, ToolProfile
 
@@ -93,29 +91,11 @@ REFLECTION_PROFILE = ToolProfile(
 )
 
 
-def run_agent_loop(t, executor, tools, task, max_turns=12):
-    """Generic agentic loop: user task -> tool calls -> final response."""
-    t.user(task)
-
-    for turn in range(max_turns):
-        response = t.generate()
-
-        if not response.tool_calls:
-            print(f"\n  Agent: {response.text[:200]}")
-            if len(response.text) > 200:
-                print(f"         ...({len(response.text)} chars total)")
-            return response
-
-        for tc in response.tool_calls:
-            result = executor.execute(tc.name, tc.arguments)
-            t.tool_result(tc.id, tc.name, str(result))
-            args_short = json.dumps(tc.arguments)[:60]
-            print(f"    -> {tc.name}({args_short})")
-            output_short = str(result.output)[:80]
-            print(f"       {output_short}")
-
-    print("  (max turns reached)")
-    return None
+def _log_tool(name, args, result):
+    """Callback for t.run() — log each tool call."""
+    args_short = json.dumps(args)[:60]
+    print(f"    -> {name}({args_short})")
+    print(f"       {str(result.output)[:80]}")
 
 
 # =====================================================================
@@ -220,15 +200,19 @@ def part2_agent():
 
         # Ask the agent to review and improve
         print("\n  --- Task: Review and improve ---")
-        run_agent_loop(
-            t, executor, tools,
+        response = t.run(
             f"Review your previous answer about compilers (commit "
             f"{original_hash[:8]}). Use get_commit to read it, then "
             f"edit it to be more complete and accurate — mention lexing, "
             f"parsing, and code generation. Use commit with operation='edit' "
             f"and edit_target='{original_hash}'. After editing, compile to "
-            f"verify the improved version appears."
+            f"verify the improved version appears.",
+            executor=executor, on_tool_call=_log_tool, max_turns=12,
         )
+        if response:
+            print(f"\n  Agent: {response.text[:200]}")
+            if len(response.text) > 200:
+                print(f"         ...({len(response.text)} chars total)")
 
         print("\n  Context after agent edits:")
         t.compile().pprint(style="compact")

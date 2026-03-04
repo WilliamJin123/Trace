@@ -1,15 +1,16 @@
-"""Agentic GC and Rebase -- LLM Autonomously Controls Pending Operations
+"""Agentic GC and Rebase -- consult() Autonomously Controls Pending Operations
 
-An LLM agent inspects and controls PendingGC and PendingRebase objects,
-deciding which commits to exclude and when to approve. Both operations
-share the same action set (approve, reject, exclude), so the agent
-pattern is identical -- only the data shape differs.
+consult() sends the pending state to an LLM which decides how to handle
+PendingGC and PendingRebase objects, choosing which commits to exclude
+and when to approve. Both operations share the same action set (approve,
+reject, exclude), so the consult() pattern is identical -- only the data
+shape differs.
 
 Part 1: PendingGC -- orphan cleanup with selective exclusion
 Part 2: PendingRebase -- replay plan review with commit skipping
 
-Demonstrates: to_dict() inspection, exclude() for selective control,
-              approve() for execution, tract's built-in LLM client
+Demonstrates: consult() for one-shot LLM dispatch, exclude() for
+              selective control, approve() for execution
 """
 
 import json
@@ -25,47 +26,11 @@ from _providers import groq as llm
 
 MODEL_ID = llm.large
 
-
-def ask_agent(pending, instruction: str) -> dict:
-    """Send a Pending's state to the LLM and get a structured decision back.
-
-    Builds a prompt from to_dict() context and to_tools() schemas, sends
-    it via tract's built-in LLM client, and returns the parsed decision dict.
-    """
-    state = pending.to_dict()
-    tools = pending.to_tools()
-
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are a context management agent. You receive the state of "
-                "a pending operation and must decide what to do using the "
-                "provided tools. Always call exactly one tool per response."
-            ),
-        },
-        {
-            "role": "user",
-            "content": (
-                f"{instruction}\n\n"
-                f"Current state:\n{json.dumps(state, indent=2)}"
-            ),
-        },
-    ]
-
-    # Use tract's built-in LLM client (configured via Tract.open())
-    client = pending.tract._llm_client
-    raw = client.chat(messages, tools=tools)
-    tc_list = raw["choices"][0]["message"].get("tool_calls", [])
-
-    if tc_list:
-        tc = tc_list[0]
-        return {
-            "action": tc["function"]["name"],
-            "args": json.loads(tc["function"].get("arguments", "{}")),
-        }
-    # Fallback if the LLM responds without a tool call
-    return {"action": "approve", "args": {}}
+SYSTEM_PROMPT = (
+    "You are a context management agent. You receive the state of "
+    "a pending operation and must decide what to do using the "
+    "provided tools. Always call exactly one tool per response."
+)
 
 
 # =====================================================================
@@ -84,7 +49,7 @@ def part1_gc():
     print("PART 1 -- PendingGC: Agent-Driven Orphan Cleanup")
     print("=" * 60)
     print()
-    print("  The agent will inspect orphaned commits via to_dict(),")
+    print("  consult() will send orphaned commits to an LLM which will")
     print("  exclude one worth keeping, then approve the rest for removal.")
     print()
 
@@ -143,26 +108,24 @@ def part1_gc():
             save_hash = pending.commits_to_remove[0]
             print(f"\n  Agent decides to save commit {save_hash[:12]}...")
 
-            decision = ask_agent(
-                pending,
+            decision = pending.consult(
                 f"This GC will remove {len(pending.commits_to_remove)} orphaned "
                 f"commits. The first commit ({save_hash[:12]}...) contains a "
                 f"valuable migration plan. Please exclude it from removal using "
                 f"the exclude tool with commit_hash='{save_hash}'.",
+                system_prompt=SYSTEM_PROMPT,
             )
             print(f"    LLM decision: {json.dumps(decision)}")
-            pending.apply_decision(decision)
             print(f"    After exclude: {len(pending.commits_to_remove)} commits remain")
 
         # Step 3: Agent approves the remaining removals
-        decision = ask_agent(
-            pending,
+        decision = pending.consult(
             "The valuable commit has been saved. Please approve the GC "
             "to remove the remaining orphaned commits.",
+            system_prompt=SYSTEM_PROMPT,
         )
         print(f"\n  Agent approves:")
         print(f"    LLM decision: {json.dumps(decision)}")
-        result = pending.apply_decision(decision)
         print(f"    status: {pending.status}")
         pending.pprint()
 
@@ -253,15 +216,14 @@ def part2_rebase():
             original_count = len(pending.replay_plan)
             print(f"\n  Agent decides to skip commit {skip_hash[:12]}...")
 
-            decision = ask_agent(
-                pending,
+            decision = pending.consult(
                 f"This rebase will replay {len(pending.replay_plan)} commits "
                 f"onto a new base. The third commit ({skip_hash[:12]}...) "
                 f"is outdated and should be dropped. Please exclude it using "
                 f"the exclude tool with commit_hash='{skip_hash}'.",
+                system_prompt=SYSTEM_PROMPT,
             )
             print(f"    LLM decision: {json.dumps(decision)}")
-            pending.apply_decision(decision)
             print(f"    After exclude: {len(pending.replay_plan)} commits (was {original_count})")
 
         # Step 3: Agent checks warnings then approves
@@ -270,15 +232,14 @@ def part2_rebase():
             for w in pending.warnings:
                 print(f"    - {w}")
 
-        decision = ask_agent(
-            pending,
+        decision = pending.consult(
             "The outdated commit has been excluded from the replay plan. "
             "Please approve the rebase to replay the remaining commits "
             "onto the updated main branch.",
+            system_prompt=SYSTEM_PROMPT,
         )
         print(f"\n  Agent approves:")
         print(f"    LLM decision: {json.dumps(decision)}")
-        result = pending.apply_decision(decision)
         print(f"    status: {pending.status}")
         pending.pprint()
 

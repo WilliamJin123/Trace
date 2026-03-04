@@ -1,7 +1,7 @@
-"""Agent-controlled compression: an LLM uses to_dict() and to_tools() to
-inspect a PendingCompress and autonomously decide how to handle it.
+"""Agent-controlled compression: consult() sends the pending state to an LLM
+which autonomously decides how to handle it.
 
-Demonstrates every PendingCompress action through agent dispatch:
+Demonstrates every PendingCompress action through consult():
   - validate: check summary quality
   - edit_summary: replace a summary at a given index
   - edit_guidance: steer future retries
@@ -9,7 +9,6 @@ Demonstrates every PendingCompress action through agent dispatch:
   - approve / reject: finalize the decision
 """
 
-import json
 import sys
 from pathlib import Path
 
@@ -23,7 +22,7 @@ MODEL_ID = llm.large
 
 
 # =====================================================================
-# Helpers
+# Helper
 # =====================================================================
 
 def _seed_conversation(t: Tract) -> None:
@@ -57,59 +56,13 @@ def _seed_conversation(t: Tract) -> None:
     )
 
 
-def ask_agent(pending: PendingCompress, instruction: str, extra_context: str = ""):
-    """Send the pending state + instruction to the LLM, dispatch its tool call.
-
-    The LLM receives:
-      - to_dict() as JSON context (operation, status, fields, available_actions)
-      - to_tools() as callable tool schemas (one per public action)
-      - An instruction telling it what to evaluate
-
-    Returns whatever apply_decision() returns (e.g. CompressResult, ValidationResult, None).
-    """
-    tools = pending.to_tools()
-    state = pending.to_dict()
-
-    context_block = f"Current state:\n{json.dumps(state, indent=2)}"
-    if extra_context:
-        context_block += f"\n\nAdditional context:\n{extra_context}"
-
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are a context management agent responsible for reviewing "
-                "compression operations on LLM conversation histories. You "
-                "evaluate summaries for quality, completeness, and accuracy. "
-                "Use the provided tools to take action. Always call exactly "
-                "one tool -- never respond with plain text."
-            ),
-        },
-        {
-            "role": "user",
-            "content": f"{context_block}\n\nInstruction: {instruction}",
-        },
-    ]
-
-    # Use tract's built-in LLM client (configured via Tract.open())
-    client = pending.tract._llm_client
-    resp = client.chat(messages, tools=tools)
-
-    choice = resp["choices"][0]["message"]
-    tc_list = choice.get("tool_calls", [])
-
-    if tc_list:
-        tc = tc_list[0]
-        decision = {
-            "action": tc["function"]["name"],
-            "args": json.loads(tc["function"].get("arguments", "{}")),
-        }
-        print(f"    Agent decision: {json.dumps(decision)}")
-        return pending.apply_decision(decision)
-    else:
-        text = choice.get("content", "")
-        print(f"    Agent responded (no tool call): {text[:120]}")
-        return None
+SYSTEM_PROMPT = (
+    "You are a context management agent responsible for reviewing "
+    "compression operations on LLM conversation histories. You "
+    "evaluate summaries for quality, completeness, and accuracy. "
+    "Use the provided tools to take action. Always call exactly "
+    "one tool -- never respond with plain text."
+)
 
 
 # =====================================================================
@@ -149,39 +102,39 @@ def scenario_a() -> None:
 
         # --- Step 2: Ask agent to validate ---
         print(f"\n  Step 1 -- Agent validates:")
-        result = ask_agent(
-            pending,
+        result = pending.consult(
             "Validate the compression summaries to check for quality issues. "
             "Call the validate action.",
+            system_prompt=SYSTEM_PROMPT,
         )
         if result is not None:
             print(f"    Result: {result}")
 
         # --- Step 3: Ask agent to fix the bad summary ---
         print(f"\n  Step 2 -- Agent edits the bad summary:")
-        ask_agent(
-            pending,
+        pending.consult(
             "The summary at index 0 is too vague ('Stuff happened.'). "
             "Replace it with a proper summary that captures the key details: "
             "the user has a PDF export issue on Chrome/macOS with a large "
             "project (200 tasks, 2GB attachments). Use the edit_summary tool.",
+            system_prompt=SYSTEM_PROMPT,
         )
         print(f"    Summary after edit: {pending.summaries[0][:80]}...")
 
         # --- Step 4: Agent re-validates ---
         print(f"\n  Step 3 -- Agent re-validates:")
-        result = ask_agent(
-            pending,
+        result = pending.consult(
             "Validate the summaries again to confirm the fix resolved the issue.",
+            system_prompt=SYSTEM_PROMPT,
         )
         if result is not None:
             print(f"    Result: {result}")
 
         # --- Step 5: Agent approves ---
         print(f"\n  Step 4 -- Agent approves:")
-        result = ask_agent(
-            pending,
+        result = pending.consult(
             "The summaries look good now. Approve the compression to finalize.",
+            system_prompt=SYSTEM_PROMPT,
         )
         print(f"    Status: {pending.status}")
 
@@ -220,25 +173,25 @@ def scenario_b() -> None:
 
         # --- Step 1: Agent sets guidance ---
         print(f"\n  Step 1 -- Agent sets guidance to focus the retry:")
-        ask_agent(
-            pending,
+        pending.consult(
             "The summaries should focus on technical details: the specific "
             "bug (PDF export failure), environment (Chrome, macOS, 200 tasks, "
             "2GB), and the user's deadline. Set guidance using edit_guidance "
             "with text: 'Focus on technical issue details: PDF export bug, "
             "browser/OS environment, project size, and the user deadline. "
             "Omit pleasantries and conversational filler.'",
+            system_prompt=SYSTEM_PROMPT,
         )
         print(f"    Guidance set: {pending.guidance}")
         print(f"    Guidance source: {pending.guidance_source}")
 
         # --- Step 2: Agent retries summary 0 with guidance ---
         print(f"\n  Step 2 -- Agent retries summary generation with guidance:")
-        ask_agent(
-            pending,
+        pending.consult(
             "Now retry the summary at index 0 so it regenerates using the "
             "new guidance. The guidance will automatically be included in "
             "the retry prompt.",
+            system_prompt=SYSTEM_PROMPT,
         )
         print(f"\n  Summary after retry:")
         for i, s in enumerate(pending.summaries):
@@ -247,10 +200,10 @@ def scenario_b() -> None:
 
         # --- Step 3: Agent approves ---
         print(f"\n  Step 3 -- Agent approves the guided compression:")
-        result = ask_agent(
-            pending,
+        result = pending.consult(
             "The retried summary now focuses on technical details. "
             "Approve the compression.",
+            system_prompt=SYSTEM_PROMPT,
         )
         print(f"    Status: {pending.status}")
 
@@ -298,23 +251,23 @@ def scenario_c() -> None:
 
         # --- Agent validates first ---
         print(f"\n  Step 1 -- Agent validates:")
-        result = ask_agent(
-            pending,
+        result = pending.consult(
             "Validate the compression summaries for quality.",
+            system_prompt=SYSTEM_PROMPT,
         )
         if result is not None:
             print(f"    Result: {result}")
 
         # --- Agent decides to reject ---
         print(f"\n  Step 2 -- Agent rejects the compression:")
-        ask_agent(
-            pending,
+        pending.consult(
             "After reviewing the summaries, I believe this compression loses "
             "too much critical detail about the user's specific environment "
             "(Chrome, macOS Sonoma, 2GB attachments) and their urgent deadline "
             "(stakeholder meeting tomorrow). These details are essential for "
             "the support agent to provide accurate help. Reject this compression "
             "with a clear reason explaining what information would be lost.",
+            system_prompt=SYSTEM_PROMPT,
         )
         print(f"    Status: {pending.status}")
         print(f"    Reason: {pending.rejection_reason}")
@@ -339,8 +292,8 @@ def main() -> None:
 
     print()
     print("Agent-Controlled Compression")
-    print("An LLM inspects PendingCompress via to_dict()/to_tools()")
-    print("and autonomously decides: validate, edit, retry, approve, or reject.")
+    print("consult() sends PendingCompress state to an LLM which")
+    print("autonomously decides: validate, edit, retry, approve, or reject.")
     print()
 
     scenario_a()
@@ -361,8 +314,8 @@ def main() -> None:
     print("  Scenario C: validate -> reject")
     print("    Agent decided compression would lose critical details, rejected.")
     print()
-    print("  Key pattern: to_dict() provides state, to_tools() provides actions,")
-    print("  apply_decision() dispatches safely through the whitelist.")
+    print("  Key pattern: consult() sends to_dict() + to_tools() to an LLM,")
+    print("  parses the tool call, and dispatches via apply_decision().")
     print()
 
 

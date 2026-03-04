@@ -2,21 +2,21 @@
 
 An LLM agent autonomously intercepts trigger-fired actions via the hook
 system and exercises ALL PendingTrigger actions: approve, reject, and
-modify_params.  The agent inspects the pending's to_dict() output to
-understand what triggered, decides whether to adjust parameters before
-approving, or rejects outright.
+modify_params.  The agent uses pending.consult(instruction) to let an LLM
+decide what to do -- consult() handles to_dict(), to_tools(), the LLM
+call, and apply_decision() internally.
 
 Flow overview:
 
     trigger fires -> PendingTrigger created -> t.on("trigger", handler)
-    -> handler asks LLM -> LLM decides: modify_params + approve, or reject
+    -> handler calls pending.consult() -> LLM decides via tools
 
 Scenario A: Agent modifies target_tokens then approves a compress trigger.
 Scenario B: Agent decides the context is too important to compress and rejects.
 
 Tools exercised: modify_params, approve, reject
-Demonstrates: PendingTrigger lifecycle, LLM-driven approval, param editing,
-              rejection with reasoning, hook interception of triggers
+Demonstrates: PendingTrigger lifecycle, consult() for LLM-driven decisions,
+              multi-turn flows via max_turns, rejection with reasoning
 """
 
 import json
@@ -33,53 +33,8 @@ MODEL_ID = llm.large
 
 
 # =====================================================================
-# Helper: ask the LLM a question and get a JSON decision
-# =====================================================================
-
-def ask_agent(client, system_prompt: str, user_prompt: str) -> dict:
-    """Send a prompt to the LLM via tract's built-in client and parse a JSON decision."""
-    from tract.llm.client import OpenAIClient
-
-    response = client.chat(
-        [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        temperature=0.0,
-        max_tokens=512,
-    )
-    text = OpenAIClient.extract_content(response)
-    # Extract JSON from the response (handle markdown code fences)
-    text = text.strip()
-    if text.startswith("```"):
-        # Strip ```json ... ``` fences
-        lines = text.split("\n")
-        lines = [l for l in lines if not l.strip().startswith("```")]
-        text = "\n".join(lines)
-    return json.loads(text)
-
-
-# =====================================================================
 # SCENARIO A: Agent modifies params then approves
 # =====================================================================
-
-APPROVE_SYSTEM = """\
-You are a context management agent. A compression trigger has fired and you \
-must decide how to handle it.
-
-You will receive a JSON description of the pending trigger action. Inspect \
-the action_params and reason, then respond with a JSON object:
-
-{
-  "action": "modify_and_approve",
-  "target_tokens": <integer: the target token count after compression>,
-  "reasoning": "<one sentence explaining your choice>"
-}
-
-Rules:
-- Set target_tokens to roughly 60% of the current threshold to leave headroom.
-- Always respond with valid JSON only, no extra text."""
-
 
 def scenario_a_approve():
     """Agent intercepts a compress trigger, adjusts target_tokens, and approves."""
@@ -104,29 +59,27 @@ def scenario_a_approve():
         decisions: list[dict] = []
 
         def agent_handler(pending: PendingTrigger) -> None:
-            """Hook handler: ask the LLM to decide on the trigger action."""
-            info = pending.to_dict()
+            """Hook handler: use consult() to let an LLM decide."""
             print(f"\n  [hook] Trigger fired: {pending.trigger_name}")
             print(f"  [hook] Action type:   {pending.action_type}")
             print(f"  [hook] Reason:        {pending.reason}")
             print(f"  [hook] Params:        {pending.action_params}")
 
-            # Use tract's built-in LLM client (configured via Tract.open())
-            prompt = (
-                f"A trigger has fired. Here is the pending action:\n\n"
-                f"{json.dumps(info, indent=2)}\n\n"
-                f"What should we do?"
+            # consult() with max_turns=2 allows modify_params then approve
+            decision = pending.consult(
+                "A compression trigger has fired. Inspect the action_params "
+                "and reason. Set target_tokens to roughly 60% of the current "
+                "threshold to leave headroom, then approve.",
+                system_prompt=(
+                    "You are a context management agent. A compression "
+                    "trigger has fired. Use modify_params to adjust "
+                    "target_tokens, then approve."
+                ),
+                max_turns=2,
             )
-            decision = ask_agent(pending.tract._llm_client, APPROVE_SYSTEM, prompt)
             decisions.append(decision)
             print(f"  [agent] Decision: {json.dumps(decision)}")
-
-            # Apply the agent's decision: modify params then approve
-            target = decision.get("target_tokens", 100)
-            pending.modify_params({"target_tokens": target})
-            print(f"  [agent] Modified target_tokens -> {target}")
-            print(f"  [agent] Params after modify: {pending.action_params}")
-            pending.approve()
+            print(f"  [agent] Params after consult: {pending.action_params}")
             print(f"  [agent] Status: {pending.status}")
 
         # Register the hook and trigger
@@ -159,26 +112,6 @@ def scenario_a_approve():
 # SCENARIO B: Agent rejects the trigger
 # =====================================================================
 
-REJECT_SYSTEM = """\
-You are a context management agent. A compression trigger has fired but \
-you must evaluate whether compression is appropriate right now.
-
-You will receive a JSON description of the pending trigger action. The \
-context contains critical experiment data that should NOT be compressed \
-yet because the user is actively analyzing it.
-
-Respond with a JSON object:
-
-{
-  "action": "reject",
-  "reason": "<one sentence explaining why compression should be blocked>"
-}
-
-Rules:
-- Always reject. The data is too important to compress right now.
-- Always respond with valid JSON only, no extra text."""
-
-
 def scenario_b_reject():
     """Agent intercepts a compress trigger and rejects it to protect data."""
     print("=" * 60)
@@ -202,25 +135,25 @@ def scenario_b_reject():
 
         def agent_handler(pending: PendingTrigger) -> None:
             """Hook handler: agent rejects compression to protect data."""
-            info = pending.to_dict()
             print(f"\n  [hook] Trigger fired: {pending.trigger_name}")
             print(f"  [hook] Action type:   {pending.action_type}")
             print(f"  [hook] Reason:        {pending.reason}")
 
-            # Use tract's built-in LLM client (configured via Tract.open())
-            prompt = (
-                f"A compression trigger wants to fire:\n\n"
-                f"{json.dumps(info, indent=2)}\n\n"
-                f"The user is actively analyzing this experiment data. "
-                f"Should we compress?"
+            # consult() asks the LLM to reject via the reject tool
+            decision = pending.consult(
+                "A compression trigger wants to fire, but the user is "
+                "actively analyzing critical experiment data. The data is "
+                "too important to compress right now. Reject the trigger "
+                "with a clear reason.",
+                system_prompt=(
+                    "You are a context management agent. A compression "
+                    "trigger has fired but the context contains critical "
+                    "experiment data that should NOT be compressed yet. "
+                    "Always reject. Use the reject tool."
+                ),
             )
-            decision = ask_agent(pending.tract._llm_client, REJECT_SYSTEM, prompt)
             rejections.append(decision)
             print(f"  [agent] Decision: {json.dumps(decision)}")
-
-            # Apply: reject with the agent's reasoning
-            reason = decision.get("reason", "Agent rejected without reason.")
-            pending.reject(reason)
             print(f"  [agent] Status: {pending.status}")
             print(f"  [agent] Rejection reason: {pending.rejection_reason}")
 

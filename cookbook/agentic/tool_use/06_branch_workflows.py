@@ -90,31 +90,13 @@ TANGENT_PROFILE = ToolProfile(
 )
 
 
-def run_agent_loop(t, executor, task, *, max_turns=15):
-    """Agentic loop: user task -> tool calls -> final response."""
-    t.user(task)
-
-    for turn in range(max_turns):
-        response = t.generate()
-
-        if not response.tool_calls:
-            text = response.text or "(empty)"
-            print(f"\n  Agent: {text[:400]}")
-            if len(text) > 400:
-                print(f"         ...({len(text)} chars total)")
-            return response
-
-        for tc in response.tool_calls:
-            result = executor.execute(tc.name, tc.arguments)
-            t.tool_result(tc.id, tc.name, str(result))
-            args_short = json.dumps(tc.arguments)[:80]
-            ok = "OK" if result.success else "FAIL"
-            output = str(result.output if result.success else result.error)[:100]
-            print(f"    [{ok}] {tc.name}({args_short})")
-            print(f"           {output}")
-
-    print("  (max turns reached)")
-    return None
+def _log_tool(name, args, result):
+    """Callback for t.run() — log each tool call with OK/FAIL status."""
+    args_short = json.dumps(args)[:80]
+    ok = "OK" if result.success else "FAIL"
+    output = str(result.output if result.success else result.error)[:100]
+    print(f"    [{ok}] {name}({args_short})")
+    print(f"           {output}")
 
 
 def main():
@@ -164,13 +146,18 @@ def main():
         t.compile().pprint(style="compact")
 
         print("=== Phase 1: Design question (on main, no branching) ===\n")
-        run_agent_loop(
-            t, executor,
+        response = t.run(
             "Let's design the API for a task management app. I need endpoints "
             "for creating, listing, updating, and deleting tasks. Each task has "
             "a title, description, status (todo/in_progress/done), and assignee. "
             "What's your recommended URL structure?",
+            executor=executor, on_tool_call=_log_tool, max_turns=15,
         )
+        if response:
+            text = response.text or "(empty)"
+            print(f"\n  Agent: {text[:400]}")
+            if len(text) > 400:
+                print(f"         ...({len(text)} chars total)")
         print(f"\n  Branch: {t.current_branch}")
 
         print("\n  Context after Phase 1:")
@@ -178,11 +165,16 @@ def main():
 
         # --- Phase 2: Conceptual tangent (full LLM-driven lifecycle) ---
         print("\n\n=== Phase 2: Conceptual tangent (full agent lifecycle) ===\n")
-        run_agent_loop(
-            t, executor,
+        response = t.run(
             "Wait, quick question -- what actually is REST? I keep hearing "
             "the term but I don't fully understand the principles behind it.",
+            executor=executor, on_tool_call=_log_tool, max_turns=15,
         )
+        if response:
+            text = response.text or "(empty)"
+            print(f"\n  Agent: {text[:400]}")
+            if len(text) > 400:
+                print(f"         ...({len(text)} chars total)")
         print(f"\n  Branch: {t.current_branch}")
         print(f"  Branches: {[b.name for b in t.list_branches()]}")
 
@@ -192,11 +184,16 @@ def main():
             t.switch("main")
 
         print(f"\n\n=== Phase 3: Resume design (on {t.current_branch}) ===\n")
-        run_agent_loop(
-            t, executor,
+        response = t.run(
             "OK, back to the API design. What status codes should each "
             "endpoint return? And should we version the API?",
+            executor=executor, on_tool_call=_log_tool, max_turns=15,
         )
+        if response:
+            text = response.text or "(empty)"
+            print(f"\n  Agent: {text[:400]}")
+            if len(text) > 400:
+                print(f"         ...({len(text)} chars total)")
 
         # --- Final state ---
         print("\n\n=== Final context on main ===\n")
