@@ -125,13 +125,40 @@ def dispatch_demo() -> None:
         print(f"\n    Allowed actions: {sorted(pending2._public_actions)}")
         pending2.approve()
 
+    # --- Read tools via dispatch ---
+    print(f"\n  Read tools via execute_tool():")
+    with Tract.open(
+        api_key=llm.api_key,
+        base_url=llm.base_url,
+        model=MODEL_ID,
+    ) as t:
+        t.system("You are a project management assistant.")
+        t.assistant("Tool.", metadata={
+            "tool_calls": [{"id": "r1", "name": "search",
+                            "arguments": {}}],
+        })
+        pending3: PendingToolResult = t.tool_result(
+            "r1", "search", "Found 42 results matching 'TODO'...", review=True,
+        )
+
+        # Agent can read state without mutating it
+        result = pending3.execute_tool("get_result")
+        print(f"    get_result(): {result!r}")
+
+        state = pending3.execute_tool("get_state")
+        print(f"    get_state(): operation={state['operation']}, "
+              f"fields={list(state['fields'].keys())}")
+
+        pending3.approve()
+
     # --- Full pipeline summary ---
     print(f"\n  Full agent pipeline:")
     print(f"    1. Operation returns Pending (review=True or via hook)")
     print(f"    2. Send to_dict() as context + to_tools() as tools to LLM")
-    print(f"    3. LLM returns {{action, args}} in tool_call response")
-    print(f"    4. pending.apply_decision(llm_response) dispatches safely")
-    print(f"    5. Whitelist blocks private/unauthorized methods")
+    print(f"    3. LLM calls read tools (get_*, list_*) to inspect state")
+    print(f"    4. LLM returns {{action, args}} in tool_call response")
+    print(f"    5. pending.apply_decision(llm_response) dispatches safely")
+    print(f"    6. Whitelist blocks private/unauthorized methods")
 
 
 if __name__ == "__main__":

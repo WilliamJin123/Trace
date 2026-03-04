@@ -91,6 +91,17 @@ def to_dict_demo() -> None:
         print(f"    fields:            {list(tr_dict['fields'].keys())}")
         print(f"    available_actions: {tr_dict['available_actions']}")
 
+        # --- Read tools vs to_dict() ---
+        # to_dict() truncates large values (strings > 500 chars, lists > 5 items).
+        # Read tools return full untruncated data for targeted inspection.
+        print(f"\n  Read tools — targeted, untruncated access:")
+        print(f"    get_result():  {pending_tr.get_result()!r}")
+        print(f"    get_state():   returns full state dict (no truncation)")
+
+        # get_state() gives the same structure as to_dict() but without clipping
+        state = pending_tr.get_state()
+        print(f"    get_state() keys: {list(state.keys())}")
+
         pending_tr.approve()
 
 

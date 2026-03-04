@@ -55,8 +55,19 @@ def to_tools_demo() -> None:
                     req = " (required)" if pname in required else ""
                     print(f"      {pname}: {pschema['type']}{req}")
 
-        # Raw JSON for one tool — this is what you pass to an LLM API
-        print(f"\n  Raw JSON for 'edit_summary':")
+        # Separate read vs write tools for clarity
+        read_tools = [t for t in tools if t["function"]["name"].startswith(("get_", "list_"))]
+        write_tools = [t for t in tools if not t["function"]["name"].startswith(("get_", "list_"))]
+        print(f"\n  Read tools ({len(read_tools)}): {[t['function']['name'] for t in read_tools]}")
+        print(f"  Write/control tools ({len(write_tools)}): {[t['function']['name'] for t in write_tools]}")
+
+        # Raw JSON for one read tool — get_summary takes an index param
+        print(f"\n  Raw JSON for 'get_summary' (read tool):")
+        get_tool: dict = next(t for t in tools if t["function"]["name"] == "get_summary")
+        print(json.dumps(get_tool, indent=4))
+
+        # Raw JSON for one write tool
+        print(f"\n  Raw JSON for 'edit_summary' (write tool):")
         edit_tool: dict = next(t for t in tools if t["function"]["name"] == "edit_summary")
         print(json.dumps(edit_tool, indent=4))
 

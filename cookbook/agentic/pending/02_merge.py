@@ -1,16 +1,27 @@
 """Agentic PendingMerge: consult() sends the pending state to an LLM which
 autonomously controls a merge conflict.
 
-Demonstrated actions:
-    approve          -- execute the merge with current resolutions
-    reject           -- abandon the merge, leave branches unchanged
+Available actions:
+
+  Read tools (inspect state without mutation):
+    list_conflicts   -- overview of all conflicts (index, key, type, resolved?)
+    get_conflict     -- full ours/theirs/base text for one conflict
+    get_resolution   -- full untruncated resolution text by key
+    get_guidance     -- current guidance text and source
+    get_state        -- full state dict without truncation
+
+  Write tools (mutate state):
     edit_resolution  -- patch a single conflict resolution by key
     set_resolution   -- overwrite/create a resolution from scratch
     edit_guidance    -- change the guidance text for the next retry
     retry            -- re-resolve ALL conflicts via LLM with new guidance
     validate         -- check that every conflict has a non-empty resolution
 
-Skipped (TUI-only):
+  Control tools:
+    approve          -- execute the merge with current resolutions
+    reject           -- abandon the merge, leave branches unchanged
+
+  Skipped (TUI-only):
     edit_interactive -- opens an interactive CLI menu; not suitable for agents
 
 Three scenarios:

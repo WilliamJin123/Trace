@@ -2,15 +2,23 @@
 
 consult() sends the pending state to an LLM which decides how to handle
 PendingGC and PendingRebase objects, choosing which commits to exclude
-and when to approve. Both operations share the same action set (approve,
-reject, exclude), so the consult() pattern is identical -- only the data
-shape differs.
+and when to approve.
 
 Part 1: PendingGC -- orphan cleanup with selective exclusion
 Part 2: PendingRebase -- replay plan review with commit skipping
 
-Demonstrates: consult() for one-shot LLM dispatch, exclude() for
-              selective control, approve() for execution
+Available actions:
+
+  Read tools:
+    list_candidates  -- (GC) overview of all commits scheduled for removal
+    list_commits     -- (Rebase) overview of all commits in the replay plan
+    get_state        -- full state dict without truncation
+
+  Write tools:
+    exclude          -- remove a commit from the GC/rebase plan
+
+  Control tools:
+    approve / reject -- finalize the decision
 """
 
 import json

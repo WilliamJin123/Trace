@@ -1,9 +1,23 @@
 """Agentic Tool Result Control
 
-An LLM agent autonomously controls a PendingToolResult using ALL of its
-actions: approve, reject, edit_result, summarize.  Three scenarios show
-the agent detecting sensitive data and redacting it, summarizing verbose
-output to fit a token budget, and rejecting useless error results.
+An LLM agent autonomously controls a PendingToolResult.
+
+Available actions:
+
+  Read tools:
+    get_result       -- full untruncated result content
+    get_state        -- full state dict without truncation
+
+  Write tools:
+    edit_result      -- replace result content (preserves original_content)
+    summarize        -- LLM-powered summarization with optional context
+
+  Control tools:
+    approve / reject -- finalize the decision
+
+Three scenarios show the agent detecting sensitive data and redacting it,
+summarizing verbose output to fit a token budget, and rejecting useless
+error results.
 
 Demonstrates: PendingToolResult lifecycle, pending.consult() for LLM-driven
               decisions, multi-turn flows via max_turns, edit_result with

@@ -1,11 +1,21 @@
 """Agent-controlled compression: consult() sends the pending state to an LLM
 which autonomously decides how to handle it.
 
-Demonstrates every PendingCompress action through consult():
+Demonstrates PendingCompress actions through consult():
+
+  Read tools (inspect state without mutation):
+  - list_summaries: overview of all summaries (index, char_count, preview)
+  - get_summary: full untruncated text of one summary
+  - get_guidance: current guidance text and source
+  - get_state: full state dict without truncation
+
+  Write tools (mutate state):
   - validate: check summary quality
   - edit_summary: replace a summary at a given index
   - edit_guidance: steer future retries
   - retry: re-generate a summary with guidance
+
+  Control tools:
   - approve / reject: finalize the decision
 """
 

@@ -1,10 +1,18 @@
 """Agentic generation control: LLM agent autonomously manages PendingGeneration.
 
-Demonstrates:
-    - approve: commit the generated response as-is
-    - reject: refuse the generation (raises RetryExhaustedError)
-    - retry: re-generate with steering guidance from the agent
-    - validate: check response quality against a validator function
+Available actions:
+
+  Read tools:
+    get_response     -- full untruncated response text
+    get_state        -- full state dict without truncation
+
+  Write tools:
+    retry            -- re-generate with steering guidance from the agent
+    validate         -- check response quality against a validator function
+
+  Control tools:
+    approve          -- commit the generated response as-is
+    reject           -- refuse the generation (raises RetryExhaustedError)
 
 PendingGeneration is created internally by generate() when a validator is
 provided -- NOT via review=True. You intercept it by registering a handler
