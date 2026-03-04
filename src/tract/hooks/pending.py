@@ -132,7 +132,7 @@ class Pending:
     # Subclasses override this with their allowed action names.
     # Frozen by default; use register_action() for dynamic extension.
     _public_actions: frozenset[str] = field(
-        default_factory=lambda: frozenset({"approve", "reject", "pass_through"}), repr=False
+        default_factory=lambda: frozenset({"approve", "reject", "pass_through", "get_state"}), repr=False
     )
 
     # -- Status guards --------------------------------------------------
@@ -221,6 +221,47 @@ class Pending:
         self.status = PendingStatus.PASSED_THROUGH
 
     # -- Agent interface (auto-generated from subclass methods) ----------
+
+    def get_state(self) -> dict:
+        """Return full pending state without truncation.
+
+        Unlike to_dict() which truncates large values for initial context,
+        this returns all fields at full length. Use in multi-turn flows
+        to re-inspect state after mutations.
+
+        Returns:
+            A JSON-serializable dict with operation, pending_id, status,
+            fields, and available_actions.
+        """
+        import dataclasses
+
+        from tract.hooks.introspection import _serialize_value
+
+        fields: dict[str, Any] = {}
+        skip_fields = {
+            "operation", "pending_id", "status", "tract",
+            "triggered_by", "rejection_reason", "created_at",
+        }
+        for f in dataclasses.fields(self):
+            if f.name.startswith("_"):
+                continue
+            if f.name in skip_fields:
+                continue
+            value = getattr(self, f.name)
+            fields[f.name] = _serialize_value(value)
+
+        # Include dynamic fields dict if present (for dynamic operations)
+        if hasattr(self, "fields") and isinstance(getattr(self, "fields"), dict):
+            for k, v in self.fields.items():
+                fields[k] = _serialize_value(v)
+
+        return {
+            "operation": self.operation,
+            "pending_id": self.pending_id,
+            "status": str(self.status),
+            "fields": fields,
+            "available_actions": sorted(self._public_actions),
+        }
 
     def to_dict(self) -> dict:
         """Serialize this Pending to a structured dict for LLM consumption.

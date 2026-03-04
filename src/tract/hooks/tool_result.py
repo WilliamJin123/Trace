@@ -40,7 +40,7 @@ class PendingToolResult(Pending):
 
     _public_actions: frozenset[str] = field(
         default_factory=lambda: frozenset({
-            "approve", "reject", "edit_result", "summarize",
+            "approve", "reject", "edit_result", "summarize", "get_state", "get_result",
         }),
         repr=False,
     )
@@ -66,6 +66,18 @@ class PendingToolResult(Pending):
     def __post_init__(self) -> None:
         if not self.operation:
             self.operation = "tool_result"
+
+    # -- Read methods ---------------------------------------------------
+
+    def get_result(self) -> str:
+        """Get the full untruncated result content.
+
+        Returns:
+            The current content text (may have been edited or summarized).
+        """
+        return self.content
+
+    # -- Core methods ---------------------------------------------------
 
     def approve(self) -> CommitInfo:
         """Approve and commit the tool result.

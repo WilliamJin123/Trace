@@ -76,6 +76,11 @@ class PendingMerge(GuidanceMixin, Pending):
             "edit_guidance",
             "retry",
             "validate",
+            "get_state",
+            "get_guidance",
+            "list_conflicts",
+            "get_conflict",
+            "get_resolution",
         }),
         repr=False,
     )
@@ -117,6 +122,78 @@ class PendingMerge(GuidanceMixin, Pending):
         self._require_pending()
         self.status = PendingStatus.REJECTED
         self.rejection_reason = reason
+
+    # -- Read methods ---------------------------------------------------
+
+    def list_conflicts(self) -> list[dict]:
+        """List all conflicts with index, key, type, and resolution status.
+
+        Returns:
+            List of dicts with index, key, conflict_type, and resolved boolean.
+        """
+        result = []
+        for i, conflict in enumerate(self.conflicts):
+            key = getattr(conflict, "target_hash", None)
+            if key is None and isinstance(conflict, dict):
+                key = conflict.get("target_hash")
+            elif key is None and isinstance(conflict, str):
+                key = conflict
+
+            result.append({
+                "index": i,
+                "key": key,
+                "conflict_type": str(getattr(conflict, "conflict_type", "unknown")),
+                "resolved": key is not None and key in self.resolutions,
+            })
+        return result
+
+    def get_conflict(self, index: int) -> dict:
+        """Get full conflict details including both sides' content.
+
+        Args:
+            index: Index into the conflicts list.
+
+        Returns:
+            Dict with key, conflict_type, content_a (ours), content_b (theirs),
+            and resolution if available.
+
+        Raises:
+            IndexError: If index is out of range.
+        """
+        conflict = self.conflicts[index]
+        key = getattr(conflict, "target_hash", None)
+
+        result: dict = {
+            "index": index,
+            "key": key,
+            "conflict_type": str(getattr(conflict, "conflict_type", "unknown")),
+            "content_a": getattr(conflict, "content_a_text", None),
+            "content_b": getattr(conflict, "content_b_text", None),
+        }
+
+        if key and key in self.resolutions:
+            result["resolution"] = self.resolutions[key]
+
+        return result
+
+    def get_resolution(self, key: str) -> str:
+        """Get the full untruncated resolution text for a conflict.
+
+        Args:
+            key: The conflict key in the resolutions dict.
+
+        Returns:
+            The full resolution text.
+
+        Raises:
+            KeyError: If key is not in resolutions.
+        """
+        if key not in self.resolutions:
+            raise KeyError(
+                f"Conflict key {key!r} is not in resolutions. "
+                f"Available keys: {sorted(self.resolutions.keys())}"
+            )
+        return self.resolutions[key]
 
     # -- Editing methods ------------------------------------------------
 

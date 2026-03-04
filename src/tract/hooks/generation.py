@@ -67,6 +67,8 @@ class PendingGeneration(Pending):
             "reject",
             "retry",
             "validate",
+            "get_state",
+            "get_response",
         }),
         repr=False,
     )
@@ -74,6 +76,18 @@ class PendingGeneration(Pending):
     def __post_init__(self) -> None:
         if not self.operation:
             self.operation = "generate"
+
+    # -- Read methods ---------------------------------------------------
+
+    def get_response(self) -> str:
+        """Get the full untruncated response text.
+
+        Returns:
+            The current response text.
+        """
+        return self.response_text
+
+    # -- Core methods ---------------------------------------------------
 
     def approve(self) -> Any:
         """Commit the current response text as the assistant message.

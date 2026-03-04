@@ -53,7 +53,7 @@ class PendingRebase(Pending):
     # -- Whitelist for agent dispatch -----------------------------------
 
     _public_actions: frozenset[str] = field(
-        default_factory=lambda: frozenset({"approve", "reject", "exclude"}),
+        default_factory=lambda: frozenset({"approve", "reject", "exclude", "get_state", "list_commits"}),
         repr=False,
     )
 
@@ -94,6 +94,27 @@ class PendingRebase(Pending):
         self._require_pending()
         self.status = PendingStatus.REJECTED
         self.rejection_reason = reason
+
+    # -- Read methods ---------------------------------------------------
+
+    def list_commits(self) -> list[dict]:
+        """List all commits in the replay plan.
+
+        Returns:
+            List of dicts with hash, short_hash, message, and role for each commit.
+        """
+        result = []
+        for commit_hash in self.replay_plan:
+            entry: dict = {"hash": commit_hash, "short_hash": commit_hash[:8]}
+            try:
+                row = self.tract._commit_repo.get(commit_hash)
+                if row:
+                    entry["message"] = row.message or ""
+                    entry["role"] = row.role or ""
+            except Exception:
+                pass
+            result.append(entry)
+        return result
 
     # -- Editing methods ------------------------------------------------
 

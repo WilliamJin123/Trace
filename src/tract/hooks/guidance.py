@@ -42,6 +42,14 @@ class GuidanceMixin:
         guidance_source: str | None
         def _require_pending(self) -> None: ...
 
+    def get_guidance(self) -> dict:
+        """Read the current guidance text and its source.
+
+        Returns:
+            Dict with "guidance" (str or None) and "guidance_source" (str or None).
+        """
+        return {"guidance": self.guidance, "guidance_source": self.guidance_source}
+
     def edit_guidance(self, new_guidance: str) -> None:
         """Replace the current guidance text.
 

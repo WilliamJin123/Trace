@@ -92,6 +92,10 @@ class PendingCompress(GuidanceMixin, Pending):
             "edit_guidance",
             "retry",
             "validate",
+            "get_state",
+            "get_guidance",
+            "list_summaries",
+            "get_summary",
         }),
         repr=False,
     )
@@ -134,6 +138,39 @@ class PendingCompress(GuidanceMixin, Pending):
         self._require_pending()
         self.status = PendingStatus.REJECTED
         self.rejection_reason = reason
+
+    # -- Editing methods ------------------------------------------------
+
+    # -- Read methods ---------------------------------------------------
+
+    def list_summaries(self) -> list[dict]:
+        """List all summaries with index, length, and preview.
+
+        Returns:
+            List of dicts with index, char_count, and a short preview.
+        """
+        result = []
+        for i, summary in enumerate(self.summaries):
+            result.append({
+                "index": i,
+                "char_count": len(summary),
+                "preview": summary[:80] + "..." if len(summary) > 80 else summary,
+            })
+        return result
+
+    def get_summary(self, index: int) -> str:
+        """Get the full untruncated text of a summary.
+
+        Args:
+            index: Index into the summaries list.
+
+        Returns:
+            The full summary text.
+
+        Raises:
+            IndexError: If index is out of range.
+        """
+        return self.summaries[index]
 
     # -- Editing methods ------------------------------------------------
 
