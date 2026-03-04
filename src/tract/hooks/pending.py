@@ -43,23 +43,40 @@ def _is_hex_hash(s: str) -> bool:
     return len(s) >= 32 and all(c in "0123456789abcdef" for c in s)
 
 
-def _format_value_for_display(value: Any) -> str:
+def _resolve_hash(hash_str: str, tract: Any) -> str:
+    """Resolve a commit hash to 'shorthash -- message' using tract storage.
+
+    Falls back to just the short hash if lookup fails.
+    """
+    short = hash_str[:8]
+    try:
+        row = tract._commit_repo.get(hash_str)
+        if row and row.message:
+            return f"{short} -- {row.message}"
+    except Exception:
+        pass
+    return short
+
+
+def _format_value_for_display(value: Any, *, tract: Any = None) -> str:
     """Format a value for Rich table display."""
     if value is None:
         return "[dim]None[/dim]"
     if isinstance(value, str):
         if _is_hex_hash(value):
-            return value[:8]
+            return _resolve_hash(value, tract) if tract else value[:8]
         return value
     if isinstance(value, list):
         if len(value) == 0:
             return "(empty)"
-        # All hashes: show as short hashes on one line
+        # All hashes: one per line with messages
         if all(isinstance(v, str) and _is_hex_hash(v) for v in value):
+            if tract:
+                return "\n".join(_resolve_hash(v, tract) for v in value)
             return ", ".join(v[:8] for v in value)
         # Single item: unwrap
         if len(value) == 1:
-            return _format_value_for_display(value[0])
+            return _format_value_for_display(value[0], tract=tract)
         # Multiple strings: one per line
         if all(isinstance(v, str) for v in value):
             lines = []
@@ -67,16 +84,16 @@ def _format_value_for_display(value: Any) -> str:
                 lines.append(f"[{i}] {v}")
             return "\n".join(lines)
         # Mixed types
-        return ", ".join(_format_value_for_display(v) for v in value)
+        return ", ".join(_format_value_for_display(v, tract=tract) for v in value)
     if isinstance(value, dict):
         if len(value) == 0:
             return "{}"
-        items = [f"{k}: {_format_value_for_display(v)}" for k, v in value.items()]
+        items = [f"{k}: {_format_value_for_display(v, tract=tract)}" for k, v in value.items()]
         return "\n".join(items)
     if isinstance(value, set):
         if len(value) == 0:
             return "(empty)"
-        return ", ".join(_format_value_for_display(v) for v in sorted(value, key=str))
+        return ", ".join(_format_value_for_display(v, tract=tract) for v in sorted(value, key=str))
     return repr(value)
 
 
@@ -395,7 +412,7 @@ class Pending:
             if f.name in skip_fields:
                 continue
             value = getattr(self, f.name)
-            table.add_row(f.name, _format_value_for_display(value))
+            table.add_row(f.name, _format_value_for_display(value, tract=self.tract))
 
         console.print(table)
 
