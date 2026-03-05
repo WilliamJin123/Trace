@@ -1,7 +1,24 @@
 # Tract Reconceptualization: Substrate + Rules
 
 Date: 2026-03-04 (updated 2026-03-05)
-Status: Design exploration — substrate, rules, compile strategy, and metadata settled
+Status: Design complete — ready for implementation scoping
+
+## Build Order
+
+1. **Content types + compile strategy** — RuleContent, MetadataContent,
+   adaptive K-window compile. Fully unit-testable, no LLM needed.
+2. **Rule engine core** — index, event processing, config resolution,
+   built-in deterministic conditions (tag, pattern, threshold).
+3. **Default loop** — dumb loop replacing orchestrator. compile → LLM →
+   tools → repeat. Clean exit on block.
+4. **Action handlers + transitions** — operation, block, require,
+   compile_filter, set_config. Transition mechanics across branches.
+   LLM conditions/actions can be mocked in tests.
+5. **Registries + extensibility** — custom conditions, actions, metrics,
+   triggers. Protocol-based registration.
+
+Validation: POC cookbooks on cheap models (Cerebras/Groq free tiers).
+Benchmarks (SWE-Bench) deferred until frontier model access available.
 
 ## Motivation
 
@@ -42,3 +59,4 @@ transformations at the micro level.
 - [RULES.md](RULES.md) — the unified rule system design
 - [APPLICATIONS.md](APPLICATIONS.md) — common patterns built from substrate
 - [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) — unresolved design decisions
+- [PAPER_ANALYSIS_GCC.md](PAPER_ANALYSIS_GCC.md) — comparison with Git Context Controller paper

@@ -296,6 +296,96 @@ Three paths to the same committed RuleContent:
 3. **Natural language**: LLM parses at authoring time into structured rule.
    Concrete instructions, not vague preferences.
 
+## Rule Engine Runtime
+
+### Rule Index
+
+Rules are collected via DAG ancestry traversal and cached in an index:
+
+```
+RuleIndex: dict[(trigger, name) → RuleContent + dag_distance]
+```
+
+Maintained incrementally:
+- **Commit (non-rule)** → index unchanged
+- **Commit (RuleContent)** → add/update entry, distance=0, bump existing +1
+- **Switch/branch** → rebuild from new branch ancestry
+- **Merge/rebase** → rebuild (ancestry changed)
+
+Same invalidation pattern as the compile cache. Lookup is O(1) by trigger.
+
+### EvalContext
+
+```python
+@dataclass(frozen=True)
+class EvalContext:
+    event: str                  # the trigger that fired
+    commit: CommitInfo | None   # the triggering commit (if applicable)
+    branch: str                 # current branch name
+    head: str                   # current HEAD hash
+    tract: Tract                # for operations and queries
+    metrics: MetricRegistry     # for threshold conditions
+    rule_index: RuleIndex       # for introspection
+```
+
+Condition evaluators and action handlers both receive this.
+
+### Two Engine Modes
+
+The engine has two distinct modes behind the same "rule" abstraction:
+
+**Event processing** — triggered by commit, transition, compress, etc.
+Collects matching rules, evaluates conditions, executes actions in the
+gates → work → handoff → post pipeline.
+
+**Config resolution** — for `trigger="active"` rules. Nothing "fires" them.
+Instead, when the system needs a config value (compile_strategy, temperature),
+it queries active rules for that key and resolves by DAG precedence. This is
+a key-value store with scoped inheritance, not an event handler.
+
+### Execution Flow (Event Processing)
+
+```
+event fires ("commit", "transition:ads", etc.)
+  → look up matching rules from index by trigger (O(1))
+  → group by action category: gates | work | handoff | post
+  → for gates:
+      sort by cost (deterministic first), then DAG distance
+      evaluate conditions — first block/require failure stops everything
+  → for work:
+      sort by DAG distance (furthest first = root before branch)
+      evaluate conditions, execute passing actions (accumulate: all run)
+  → for handoff:
+      sort by DAG distance (closest wins = override)
+      evaluate conditions, execute first passing action only
+  → for post:
+      sort by DAG distance (furthest first)
+      evaluate conditions, execute passing actions
+  → return result (blocked | success + action results)
+```
+
+### Short-Circuit Optimization
+
+Conditions evaluate in cost order within each category:
+1. `condition=None` → always fires, free
+2. `type` in (tag, pattern, threshold) → deterministic, cheap
+3. `type="llm"` → expensive, evaluate last
+
+If a deterministic gate blocks, all LLM evaluations are skipped.
+
+### Recursion Guard
+
+Actions can trigger new events (e.g., operation action runs compress →
+fires "compress" trigger). Engine tracks evaluation depth. At depth > 3,
+nested events execute the raw operation without rule evaluation. Same
+pattern as the current hook system's `_fire_hook` guard.
+
+### DAG Traversal Sharing
+
+compile() reads content commits; the rule engine reads rule commits. Both
+walk the same ancestry. Shared primitive: `walk_ancestry(filter)` where
+the filter selects by content type. One traversal, two consumers.
+
 ## Extensibility
 
 Condition types, action types, metrics, and triggers are all **registries**
@@ -355,9 +445,11 @@ composed by rules.
 
 ## Edge Cases and Mitigations
 
-**Partial transition failure**: If a transition action fails mid-execution,
-earlier actions (audits, notifications) have already committed/fired. The
-transition can be retried. External side effects need idempotent handlers.
+**Transition non-atomicity**: Transitions mutate two branches (work actions
+commit to source in step 3, handoff commits to target in step 6). If step 6
+fails, source already has step 3's commits. This is by design — work actions
+on source are valid regardless. Retry skips past committed work and retries
+the handoff. Rules and action handlers should be idempotent.
 
 **Circular workflows**: Ecommerce loops don't cause infinite transitions
 because `t.transition()` is an explicit agent call, not automatic. Stopping

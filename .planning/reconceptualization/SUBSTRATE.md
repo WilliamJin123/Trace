@@ -102,6 +102,17 @@ Agent-maintained structured knowledge about its environment: file trees,
 dependency graphs, project plans, environment configs. Not conversation
 content — workspace state the agent updates as it works.
 
+```
+MetadataContent:
+  kind: str              # freeform label ("file_tree", "project_plan", etc.)
+  data: dict | str       # freeform structured or text content
+  path: str | None       # optional: filesystem path for export/sync
+```
+
+Freeform by design — no schema enforcement on `kind` or `data`. Conventions
+(recommended kinds and shapes) documented, not enforced. If validation
+becomes a pain point, promote to a registry later.
+
 - `compilable=False` (like RuleContent — never rendered as LLM messages)
 - Updated in-place via EDIT operations
 - Preserved across compression (engine treats like rules)

@@ -37,6 +37,30 @@
 - **Structured metadata**: MetadataContent type (compilable=False, EDIT to
   update, preserved across compression, optional path for file export).
   Bridges tract SQL storage and agents' file-based state.
+- **MetadataContent schema**: Freeform (option B). kind=str, data=dict|str,
+  path=str|None. No enforcement, conventions documented. Promote to registry
+  if validation becomes a pain point.
+- **Rule engine runtime**: Incremental rule index (same invalidation as compile
+  cache). EvalContext frozen dataclass. Two modes: event processing (gates →
+  work → handoff → post) and config resolution (active trigger = key-value
+  store). Short-circuit: deterministic conditions before LLM. Recursion guard
+  at depth > 3. Shared walk_ancestry(filter) for compile and rule engine.
+- **Orchestrator replacement**: Nuke it. The orchestrator was an example, not
+  core. Tool definitions preserved. Assessment loop / profiles / callbacks all
+  replaced by rules. The agent loop belongs to the host application.
+- **Default loop**: Built-in dumb loop in `src/tract/loop.py` (public API,
+  not examples). compile → LLM → execute tools → repeat. Clean exit on block
+  (returns LoopResult with status + reason). Caller handles scheduling/retry.
+  Like the default LLM client — ships with tract, easily replaced.
+- **Transition atomicity**: Non-atomic by design. Work actions commit to source,
+  handoff commits to target. Partial failure = retry (skips committed work).
+  Handlers must be idempotent.
+- **Pause/resume**: Not a special mechanism. Pause = stop the loop. Resume =
+  open the same tract, start the loop again. DAG persists in SQLite. External
+  processes (cron, webhooks) commit new data; next loop iteration sees it.
+- **Validation strategy**: POC cookbooks on cheap models (Cerebras, Groq).
+  If weak models produce coherent multi-stage workflows with rules, the
+  architecture is doing real work. Frontier models amplify, not enable.
 
 ## Promotion Loop
 
@@ -67,16 +91,14 @@ Should the rule system live in `tract` or be a separate package?
 - Separate: cleaner boundaries, tract-core stays focused
 - Decision deferred — design the interface first, packaging later
 
-### 5. Migration from Current Hook System
-The current system has hooks, triggers, policies, and orchestrator.
-- Do these become thin wrappers over the rule system?
-- Or clean break with migration path?
-- How to maintain backward compatibility for existing cookbook examples?
-
-### 6. Relationship to Existing Orchestrator
-The orchestrator (Phase 7) has its own assessment → action loop. Likely
-becomes an application built on top of rules (the assess → act loop is
-a set of turn-scoped rules). Needs concrete mapping.
+### 5. Migration from Current Hook/Orchestrator System
+**Resolved**: Clean break. Nobody is using the framework yet, so no backward
+compatibility needed. Hooks, policies, orchestrator, and callbacks all get
+replaced by the rule system. Cookbooks get rewritten. Tool definitions from
+Phase 7 are preserved (the interface agents use). The assessment loop, profiles,
+and callbacks are deleted — the agent loop belongs to the host application.
+A built-in default loop (`src/tract/loop.py`) replaces the orchestrator for
+testing and POCs.
 
 ## Visualization
 
