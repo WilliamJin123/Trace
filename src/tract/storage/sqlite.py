@@ -23,7 +23,6 @@ from tract.storage.repositories import (
     PersistenceRepository,
     TagAnnotationRepository,
     TagRegistryRepository,
-    TriggerRepository,
     RefRepository,
     SpawnPointerRepository,
     ToolSchemaRepository,
@@ -37,15 +36,11 @@ from tract.storage.schema import (
     CompileEffectiveRow,
     CompileRecordRow,
     ConfigChangeRow,
-    DynamicOpSpecRow,
-    HookWiringRow,
     OperationCommitRow,
     OperationConfigRow,
     OperationEventRow,
     TagAnnotationRow,
     TagRegistryRow,
-    TriggerLogRow,
-    TriggerProposalRow,
     RefRow,
     SpawnPointerRow,
     ToolSchemaRow,
@@ -923,90 +918,6 @@ class SqliteSpawnPointerRepository(SpawnPointerRepository):
             current = pointer.parent_tract_id
 
 
-class SqliteTriggerRepository(TriggerRepository):
-    """SQLite implementation of trigger proposal and log storage.
-
-    Provides CRUD for trigger proposals and audit log entries.
-    """
-
-    def __init__(self, session: Session) -> None:
-        self._session = session
-
-    def save_proposal(self, proposal: TriggerProposalRow) -> None:
-        self._session.add(proposal)
-        self._session.flush()
-
-    def get_proposal(self, proposal_id: str) -> TriggerProposalRow | None:
-        stmt = select(TriggerProposalRow).where(
-            TriggerProposalRow.proposal_id == proposal_id
-        )
-        return self._session.execute(stmt).scalar_one_or_none()
-
-    def get_pending_proposals(self, tract_id: str) -> list[TriggerProposalRow]:
-        stmt = (
-            select(TriggerProposalRow)
-            .where(
-                TriggerProposalRow.tract_id == tract_id,
-                TriggerProposalRow.status == "pending",
-            )
-            .order_by(TriggerProposalRow.created_at)
-        )
-        return list(self._session.execute(stmt).scalars().all())
-
-    def update_proposal_status(
-        self, proposal_id: str, status: str, resolved_at: datetime
-    ) -> None:
-        stmt = select(TriggerProposalRow).where(
-            TriggerProposalRow.proposal_id == proposal_id
-        )
-        proposal = self._session.execute(stmt).scalar_one_or_none()
-        if proposal is not None:
-            proposal.status = status
-            proposal.resolved_at = resolved_at
-            self._session.flush()
-
-    def save_log_entry(self, entry: TriggerLogRow) -> None:
-        self._session.add(entry)
-        self._session.flush()
-
-    def get_log(
-        self,
-        tract_id: str,
-        *,
-        since: datetime | None = None,
-        until: datetime | None = None,
-        trigger_name: str | None = None,
-        limit: int = 100,
-    ) -> list[TriggerLogRow]:
-        conditions = [TriggerLogRow.tract_id == tract_id]
-        if since is not None:
-            conditions.append(TriggerLogRow.created_at >= since)
-        if until is not None:
-            conditions.append(TriggerLogRow.created_at <= until)
-        if trigger_name is not None:
-            conditions.append(TriggerLogRow.trigger_name == trigger_name)
-
-        stmt = (
-            select(TriggerLogRow)
-            .where(and_(*conditions))
-            .order_by(TriggerLogRow.created_at.desc())
-            .limit(limit)
-        )
-        return list(self._session.execute(stmt).scalars().all())
-
-    def delete_log_entries(self, tract_id: str, before: datetime) -> int:
-        stmt = select(TriggerLogRow).where(
-            TriggerLogRow.tract_id == tract_id,
-            TriggerLogRow.created_at < before,
-        )
-        rows = self._session.execute(stmt).scalars().all()
-        count = len(rows)
-        for row in rows:
-            self._session.delete(row)
-        self._session.flush()
-        return count
-
-
 class SqliteToolSchemaRepository(ToolSchemaRepository):
     """SQLite implementation of tool schema storage.
 
@@ -1236,98 +1147,11 @@ class SqliteTagRegistryRepository(TagRegistryRepository):
 class SqlitePersistenceRepository(PersistenceRepository):
     """SQLite implementation of persistence repository.
 
-    Provides CRUD for hook wirings, dynamic op specs, and operation configs.
+    Provides CRUD for operation configs and config change log.
     """
 
     def __init__(self, session: Session) -> None:
         self._session = session
-
-    # -- Hook wirings --
-
-    def save_hook_wiring(self, wiring: HookWiringRow) -> HookWiringRow:
-        self._session.add(wiring)
-        self._session.flush()
-        return wiring
-
-    def get_hook_wirings(self, tract_id: str, *, include_deregistered: bool = False) -> list[HookWiringRow]:
-        stmt = (
-            select(HookWiringRow)
-            .where(HookWiringRow.tract_id == tract_id)
-        )
-        if not include_deregistered:
-            stmt = stmt.where(HookWiringRow.deregistered_at.is_(None))
-        stmt = stmt.order_by(HookWiringRow.priority, HookWiringRow.id)
-        return list(self._session.execute(stmt).scalars().all())
-
-    def delete_hook_wiring(
-        self, tract_id: str, operation: str, handler_path: str | None = None
-    ) -> bool:
-        from datetime import timezone
-        stmt = select(HookWiringRow).where(
-            and_(
-                HookWiringRow.tract_id == tract_id,
-                HookWiringRow.operation == operation,
-                HookWiringRow.deregistered_at.is_(None),
-            )
-        )
-        if handler_path is not None:
-            stmt = stmt.where(HookWiringRow.handler_path == handler_path)
-        rows = list(self._session.execute(stmt).scalars().all())
-        if not rows:
-            return False
-        now = datetime.now(timezone.utc)
-        for row in rows:
-            row.deregistered_at = now
-        self._session.flush()
-        return True
-
-    def delete_hook_wiring_by_name(self, tract_id: str, name: str) -> bool:
-        from datetime import timezone
-        path_pattern = f"hooks/{name}.py"
-        stmt = select(HookWiringRow).where(
-            and_(
-                HookWiringRow.tract_id == tract_id,
-                HookWiringRow.handler_path == path_pattern,
-                HookWiringRow.deregistered_at.is_(None),
-            )
-        )
-        rows = list(self._session.execute(stmt).scalars().all())
-        if not rows:
-            return False
-        now = datetime.now(timezone.utc)
-        for row in rows:
-            row.deregistered_at = now
-        self._session.flush()
-        return True
-
-    # -- Dynamic op specs --
-
-    def save_dynamic_op(self, spec_row: DynamicOpSpecRow) -> DynamicOpSpecRow:
-        self._session.add(spec_row)
-        self._session.flush()
-        return spec_row
-
-    def get_dynamic_ops(self, tract_id: str) -> list[DynamicOpSpecRow]:
-        stmt = (
-            select(DynamicOpSpecRow)
-            .where(DynamicOpSpecRow.tract_id == tract_id)
-            .order_by(DynamicOpSpecRow.id)
-        )
-        return list(self._session.execute(stmt).scalars().all())
-
-    def delete_dynamic_op(self, tract_id: str, name: str) -> bool:
-        stmt = select(DynamicOpSpecRow).where(
-            and_(
-                DynamicOpSpecRow.tract_id == tract_id,
-                DynamicOpSpecRow.name == name,
-            )
-        )
-        row = self._session.execute(stmt).scalar_one_or_none()
-        if row is None:
-            return False
-        self._session.delete(row)
-        self._session.flush()
-        return True
 
     # -- Operation configs --
 

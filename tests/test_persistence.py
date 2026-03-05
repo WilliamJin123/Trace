@@ -61,8 +61,6 @@ class TestSchemaMigration:
                     text("SELECT name FROM sqlite_master WHERE type='table'")
                 ).fetchall()
             ]
-        assert "hook_wirings" in tables
-        assert "dynamic_op_specs" in tables
         assert "operation_configs" in tables
         t.close()
 
@@ -101,8 +99,6 @@ class TestSchemaMigration:
             ]
 
         assert version == "12"
-        assert "hook_wirings" in tables
-        assert "dynamic_op_specs" in tables
         assert "operation_configs" in tables
         assert "config_change_log" in tables
 
@@ -180,65 +176,6 @@ class TestInMemory:
 
 class TestPersistenceRepository:
     """Test SqlitePersistenceRepository directly."""
-
-    def test_hook_wiring_crud(self, tmp_path: Path) -> None:
-        t = _make_file_tract(tmp_path)
-        repo = t._persistence_repo
-        assert repo is not None
-
-        from tract.storage.schema import HookWiringRow
-
-        wiring = HookWiringRow(
-            tract_id=t.tract_id,
-            operation="compress",
-            handler_source="file",
-            handler_path="hooks/test.py",
-            handler_function="handler",
-            handler_code=None,
-            priority=100,
-            enabled=True,
-            created_at=__import__("datetime").datetime.now(),
-        )
-        repo.save_hook_wiring(wiring)
-        t._session.commit()
-
-        wirings = repo.get_hook_wirings(t.tract_id)
-        assert len(wirings) == 1
-        assert wirings[0].operation == "compress"
-
-        # Delete by name
-        assert repo.delete_hook_wiring_by_name(t.tract_id, "test") is True
-        t._session.commit()
-        assert len(repo.get_hook_wirings(t.tract_id)) == 0
-
-        t.close()
-
-    def test_dynamic_op_spec_crud(self, tmp_path: Path) -> None:
-        t = _make_file_tract(tmp_path)
-        repo = t._persistence_repo
-        assert repo is not None
-
-        from tract.storage.schema import DynamicOpSpecRow
-
-        spec_row = DynamicOpSpecRow(
-            tract_id=t.tract_id,
-            name="trigger:my_trigger",
-            spec_json='{"type":"trigger","name":"my_trigger"}',
-            created_at=__import__("datetime").datetime.now(),
-        )
-        repo.save_dynamic_op(spec_row)
-        t._session.commit()
-
-        specs = repo.get_dynamic_ops(t.tract_id)
-        assert len(specs) == 1
-        assert specs[0].name == "trigger:my_trigger"
-
-        # Delete
-        assert repo.delete_dynamic_op(t.tract_id, "trigger:my_trigger") is True
-        t._session.commit()
-        assert len(repo.get_dynamic_ops(t.tract_id)) == 0
-
-        t.close()
 
     def test_operation_config_crud(self, tmp_path: Path) -> None:
         t = _make_file_tract(tmp_path)

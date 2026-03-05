@@ -22,15 +22,11 @@ if TYPE_CHECKING:
         CompileEffectiveRow,
         CompileRecordRow,
         ConfigChangeRow,
-        DynamicOpSpecRow,
-        HookWiringRow,
         OperationCommitRow,
         OperationConfigRow,
         OperationEventRow,
         TagAnnotationRow,
         TagRegistryRow,
-        TriggerLogRow,
-        TriggerProposalRow,
         SpawnPointerRow,
         ToolSchemaRow,
     )
@@ -484,67 +480,6 @@ class SpawnPointerRepository(ABC):
         ...
 
 
-class TriggerRepository(ABC):
-    """Abstract interface for trigger proposal and log storage.
-
-    Provides CRUD for trigger proposals (collaborative approval workflow)
-    and audit log entries (tracking all trigger evaluations).
-    """
-
-    @abstractmethod
-    def save_proposal(self, proposal: TriggerProposalRow) -> None:
-        """Save a new trigger proposal."""
-        ...
-
-    @abstractmethod
-    def get_proposal(self, proposal_id: str) -> TriggerProposalRow | None:
-        """Get a proposal by its ID. Returns None if not found."""
-        ...
-
-    @abstractmethod
-    def get_pending_proposals(self, tract_id: str) -> list[TriggerProposalRow]:
-        """Get all pending proposals for a tract.
-
-        Returns proposals with status="pending", ordered by created_at ascending.
-        """
-        ...
-
-    @abstractmethod
-    def update_proposal_status(
-        self, proposal_id: str, status: str, resolved_at: datetime
-    ) -> None:
-        """Update a proposal's status and resolution timestamp."""
-        ...
-
-    @abstractmethod
-    def save_log_entry(self, entry: TriggerLogRow) -> None:
-        """Save a trigger evaluation log entry."""
-        ...
-
-    @abstractmethod
-    def get_log(
-        self,
-        tract_id: str,
-        *,
-        since: datetime | None = None,
-        until: datetime | None = None,
-        trigger_name: str | None = None,
-        limit: int = 100,
-    ) -> list[TriggerLogRow]:
-        """Get trigger log entries for a tract.
-
-        Returns entries ordered by created_at DESC, with optional filters.
-        """
-        ...
-
-    @abstractmethod
-    def delete_log_entries(self, tract_id: str, before: datetime) -> int:
-        """Delete log entries older than the given timestamp.
-
-        Returns the number of entries deleted. Used for audit log GC.
-        """
-        ...
-
 
 class ToolSchemaRepository(ABC):
     """Abstract interface for tool schema storage.
@@ -690,63 +625,10 @@ class TagRegistryRepository(ABC):
 
 
 class PersistenceRepository(ABC):
-    """Abstract interface for persistence storage (hook wirings, dynamic ops, configs).
+    """Abstract interface for persistence storage (operation configs, config change log).
 
-    Provides CRUD for persisted hook registrations, dynamic operation specs,
-    and operation configurations.
+    Provides CRUD for persisted operation configurations and config change audit log.
     """
-
-    # -- Hook wirings --
-
-    @abstractmethod
-    def save_hook_wiring(self, wiring: HookWiringRow) -> HookWiringRow:
-        """Save a hook wiring entry. Returns the created row."""
-        ...
-
-    @abstractmethod
-    def get_hook_wirings(self, tract_id: str, *, include_deregistered: bool = False) -> list[HookWiringRow]:
-        """Get all hook wirings for a tract, ordered by priority then id.
-
-        Args:
-            tract_id: Tract identifier.
-            include_deregistered: If True, include soft-deleted wirings.
-        """
-        ...
-
-    @abstractmethod
-    def delete_hook_wiring(self, tract_id: str, operation: str, handler_path: str | None = None) -> bool:
-        """Delete hook wiring(s). Returns True if any were deleted.
-
-        If handler_path is provided, deletes only that specific wiring.
-        Otherwise deletes all wirings for the operation.
-        """
-        ...
-
-    @abstractmethod
-    def delete_hook_wiring_by_name(self, tract_id: str, name: str) -> bool:
-        """Delete hook wiring by the handler file name (without .py extension).
-
-        Matches on handler_path containing the name.
-        Returns True if a wiring was deleted.
-        """
-        ...
-
-    # -- Dynamic op specs --
-
-    @abstractmethod
-    def save_dynamic_op(self, spec_row: DynamicOpSpecRow) -> DynamicOpSpecRow:
-        """Save a dynamic op spec. Returns the created row."""
-        ...
-
-    @abstractmethod
-    def get_dynamic_ops(self, tract_id: str) -> list[DynamicOpSpecRow]:
-        """Get all dynamic op specs for a tract."""
-        ...
-
-    @abstractmethod
-    def delete_dynamic_op(self, tract_id: str, name: str) -> bool:
-        """Delete a dynamic op spec by name. Returns True if deleted."""
-        ...
 
     # -- Operation configs --
 

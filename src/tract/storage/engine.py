@@ -248,9 +248,44 @@ def init_db(engine: Engine) -> None:
             existing.value = "4"
             session.commit()
         if existing is not None and existing.value == "4":
-            # Migrate v4 -> v5: create trigger tables
-            for table_name in ["trigger_proposals", "trigger_log"]:
-                Base.metadata.tables[table_name].create(engine, checkfirst=True)
+            # Migrate v4 -> v5: create trigger tables (raw SQL -- ORM classes removed)
+            with engine.connect() as conn:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS trigger_proposals (
+                        proposal_id VARCHAR(64) PRIMARY KEY,
+                        tract_id VARCHAR(64) NOT NULL,
+                        trigger_name VARCHAR(100) NOT NULL,
+                        action_type VARCHAR(50) NOT NULL,
+                        action_params_json TEXT,
+                        reason TEXT,
+                        status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                        created_at DATETIME NOT NULL,
+                        resolved_at DATETIME
+                    )
+                """))
+                conn.execute(text("""
+                    CREATE INDEX IF NOT EXISTS ix_trigger_proposals_tract_status
+                    ON trigger_proposals (tract_id, status)
+                """))
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS trigger_log (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        tract_id VARCHAR(64) NOT NULL,
+                        trigger_name VARCHAR(100) NOT NULL,
+                        trigger VARCHAR(20) NOT NULL,
+                        action_type VARCHAR(50),
+                        reason TEXT,
+                        outcome VARCHAR(20) NOT NULL,
+                        commit_hash VARCHAR(64),
+                        error_message TEXT,
+                        created_at DATETIME NOT NULL
+                    )
+                """))
+                conn.execute(text("""
+                    CREATE INDEX IF NOT EXISTS ix_trigger_log_tract_time
+                    ON trigger_log (tract_id, created_at)
+                """))
+                conn.commit()
             existing.value = "5"
             session.commit()
         if existing is not None and existing.value == "5":
@@ -338,8 +373,42 @@ def init_db(engine: Engine) -> None:
             session.commit()
         if existing is not None and existing.value == "10":
             # Migrate v10 -> v11: add persistence tables
-            for table_name in ["hook_wirings", "dynamic_op_specs", "operation_configs"]:
-                Base.metadata.tables[table_name].create(engine, checkfirst=True)
+            # operation_configs is still in ORM; hook_wirings and dynamic_op_specs
+            # are removed from ORM but still needed for existing DB migration (raw SQL).
+            Base.metadata.tables["operation_configs"].create(engine, checkfirst=True)
+            with engine.connect() as conn:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS hook_wirings (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        tract_id VARCHAR(64) NOT NULL,
+                        operation VARCHAR(100) NOT NULL,
+                        handler_source VARCHAR(20) NOT NULL,
+                        handler_path TEXT,
+                        handler_function VARCHAR(100) NOT NULL DEFAULT 'handler',
+                        handler_code TEXT,
+                        priority INTEGER NOT NULL DEFAULT 100,
+                        enabled INTEGER NOT NULL DEFAULT 1,
+                        created_at DATETIME NOT NULL
+                    )
+                """))
+                conn.execute(text("""
+                    CREATE INDEX IF NOT EXISTS ix_hook_wirings_tract_op
+                    ON hook_wirings (tract_id, operation)
+                """))
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS dynamic_op_specs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        tract_id VARCHAR(64) NOT NULL,
+                        name VARCHAR(100) NOT NULL,
+                        spec_json TEXT NOT NULL,
+                        created_at DATETIME NOT NULL
+                    )
+                """))
+                conn.execute(text("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS ix_dynamic_op_specs_tract_name
+                    ON dynamic_op_specs (tract_id, name)
+                """))
+                conn.commit()
             existing.value = "11"
             session.commit()
         if existing is not None and existing.value == "11":
@@ -347,28 +416,36 @@ def init_db(engine: Engine) -> None:
             with engine.connect() as conn:
                 # 1. Create config_change_log table
                 Base.metadata.tables["config_change_log"].create(engine, checkfirst=True)
-                # 2. Add config_snapshot_json to trigger_log
-                columns = [
-                    r[1]
+                # 2. Add config_snapshot_json to trigger_log (if table exists)
+                tables = [
+                    r[0]
                     for r in conn.execute(
-                        text("PRAGMA table_info(trigger_log)")
+                        text("SELECT name FROM sqlite_master WHERE type='table'")
                     ).fetchall()
                 ]
-                if "config_snapshot_json" not in columns:
-                    conn.execute(
-                        text("ALTER TABLE trigger_log ADD COLUMN config_snapshot_json TEXT")
-                    )
-                # 3. Add deregistered_at to hook_wirings
-                columns = [
-                    r[1]
-                    for r in conn.execute(
-                        text("PRAGMA table_info(hook_wirings)")
-                    ).fetchall()
-                ]
-                if "deregistered_at" not in columns:
-                    conn.execute(
-                        text("ALTER TABLE hook_wirings ADD COLUMN deregistered_at DATETIME")
-                    )
+                if "trigger_log" in tables:
+                    columns = [
+                        r[1]
+                        for r in conn.execute(
+                            text("PRAGMA table_info(trigger_log)")
+                        ).fetchall()
+                    ]
+                    if "config_snapshot_json" not in columns:
+                        conn.execute(
+                            text("ALTER TABLE trigger_log ADD COLUMN config_snapshot_json TEXT")
+                        )
+                # 3. Add deregistered_at to hook_wirings (if table exists)
+                if "hook_wirings" in tables:
+                    columns = [
+                        r[1]
+                        for r in conn.execute(
+                            text("PRAGMA table_info(hook_wirings)")
+                        ).fetchall()
+                    ]
+                    if "deregistered_at" not in columns:
+                        conn.execute(
+                            text("ALTER TABLE hook_wirings ADD COLUMN deregistered_at DATETIME")
+                        )
                 conn.commit()
             existing.value = "12"
             session.commit()

@@ -12,7 +12,6 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import (
-    Boolean,
     DateTime,
     ForeignKey,
     Index,
@@ -294,63 +293,6 @@ class SpawnPointerRow(Base):
     )
 
 
-class TriggerProposalRow(Base):
-    """A trigger proposal awaiting approval or rejection.
-
-    Proposals are created when a trigger runs in collaborative mode.
-    They can be approved (executed), rejected, or expire.
-    """
-
-    __tablename__ = "trigger_proposals"
-
-    proposal_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    tract_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    trigger_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    action_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    action_params_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
-    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    status: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="pending"
-    )  # "pending", "approved", "rejected", "expired", "executed"
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-
-    __table_args__ = (
-        Index("ix_trigger_proposals_tract_status", "tract_id", "status"),
-    )
-
-
-class TriggerLogRow(Base):
-    """Audit log entry for a trigger evaluation.
-
-    Records every trigger evaluation: what triggered it, what action
-    was proposed or executed, and what the outcome was.
-    """
-
-    __tablename__ = "trigger_log"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    tract_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    trigger_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    trigger: Mapped[str] = mapped_column(
-        String(20), nullable=False
-    )  # "compile" or "commit"
-    action_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    outcome: Mapped[str] = mapped_column(
-        String(20), nullable=False
-    )  # "executed", "proposed", "skipped", "error"
-    commit_hash: Mapped[Optional[str]] = mapped_column(
-        String(64), nullable=True
-    )  # the commit produced by this action, if any
-    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    config_snapshot_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-
-    __table_args__ = (
-        Index("ix_trigger_log_tract_time", "tract_id", "created_at"),
-    )
-
 
 class ToolSchemaRow(Base):
     """Content-addressed storage for tool JSON schemas.
@@ -433,55 +375,6 @@ class TagRegistryRow(Base):
     __table_args__ = (
         Index("ix_tag_registry_tract", "tract_id"),
         Index("ix_tag_registry_tract_name", "tract_id", "tag_name", unique=True),
-    )
-
-
-class HookWiringRow(Base):
-    """Persisted hook registration.
-
-    Stores the wiring of a hook handler to an operation, allowing
-    hooks to survive process restarts.
-    """
-
-    __tablename__ = "hook_wirings"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    tract_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    operation: Mapped[str] = mapped_column(String(100), nullable=False)
-    handler_source: Mapped[str] = mapped_column(
-        String(20), nullable=False
-    )  # "file" or "inline"
-    handler_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    handler_function: Mapped[str] = mapped_column(
-        String(100), nullable=False, default="handler"
-    )
-    handler_code: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
-    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    deregistered_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-
-    __table_args__ = (
-        Index("ix_hook_wirings_tract_op", "tract_id", "operation"),
-    )
-
-
-class DynamicOpSpecRow(Base):
-    """Persisted dynamic operation specification.
-
-    Stores the serialized OperationSpec so dynamic ops survive restarts.
-    """
-
-    __tablename__ = "dynamic_op_specs"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    tract_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    name: Mapped[str] = mapped_column(String(100), nullable=False)
-    spec_json: Mapped[str] = mapped_column(Text, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-
-    __table_args__ = (
-        Index("ix_dynamic_op_specs_tract_name", "tract_id", "name", unique=True),
     )
 
 
