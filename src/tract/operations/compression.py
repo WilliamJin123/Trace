@@ -1,9 +1,8 @@
 """Compression operations for Trace.
 
 Implements context compression: summarizing commit chains into shorter
-summaries to fit token budgets. compress_range() always returns a
-PendingCompress -- the Tract layer handles routing (auto-approve,
-hook, or return to caller).
+summaries to fit token budgets. compress_range() returns a
+CompressRangeResult -- the Tract layer handles finalization.
 
 Content modes:
 - LLM (llm_client provided): uses LLM for summarization
@@ -19,18 +18,29 @@ import json
 import logging
 import re
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from tract.exceptions import CompressionError
 from tract.models.annotations import Priority, RetentionCriteria
 from tract.models.commit import CommitOperation
-from tract.hooks.compress import PendingCompress
 from tract.models.compression import CompressResult, GCResult, ReorderWarning
 from tract.models.content import DialogueContent
 from tract.prompts.summarize import DEFAULT_SUMMARIZE_SYSTEM, build_summarize_prompt
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class CompressRangeResult:
+    """Result of a compression operation."""
+    summary_text: str
+    summary_commits: list
+    replaced_hashes: list[str]
+    pinned_hashes: list[str]
+    token_count: int
+    generation_config: dict | None = None
 
 
 def _validate_retention(
@@ -503,13 +513,12 @@ def compress_range(
     type_registry: dict[str, type] | None = None,
     triggered_by: str | None = None,
     two_stage: bool = False,
-) -> PendingCompress:
+) -> CompressRangeResult:
     """Core compression operation.
 
     Compresses a range of commits into summaries, preserving PINNED commits
-    and ignoring SKIP commits. Always returns a PendingCompress -- the caller
-    (Tract.compress) decides whether to auto-execute, fire a hook, or return
-    it to the user for review.
+    and ignoring SKIP commits. Returns a CompressRangeResult -- the caller
+    (Tract.compress) handles finalization.
 
     Supports two content modes:
     - Manual (content provided): uses user text as summary
@@ -540,7 +549,7 @@ def compress_range(
         triggered_by: Optional provenance string (e.g. "trigger:auto_compress").
 
     Returns:
-        PendingCompress with all state needed for finalization.
+        CompressRangeResult with summary data and metadata.
 
     Raises:
         CompressionError: On various error conditions.
@@ -664,38 +673,16 @@ def compress_range(
         token_counter.count_text(s) for s in summaries if s is not None
     )
 
-    # h. Always build and return PendingCompress -- the caller (Tract.compress)
-    #    handles three-tier routing: review=True returns to caller, hook fires
-    #    handler, no hook auto-approves.
-    pending = PendingCompress(
-        operation="compress",
-        tract=None,  # type: ignore[arg-type]  # Set by Tract.compress() before routing
-        summaries=summaries,
-        source_commits=[c.commit_hash for c in compressible_commits],
-        preserved_commits=[c.commit_hash for c in pinned_commits],
-        original_tokens=original_tokens,
-        estimated_tokens=estimated_tokens,
-        triggered_by=triggered_by,
+    # h. Build and return CompressRangeResult with summary data.
+    summary_text = "\n\n".join(s for s in summaries if s is not None)
+    return CompressRangeResult(
+        summary_text=summary_text,
+        summary_commits=summaries,
+        replaced_hashes=[c.commit_hash for c in compressible_commits],
+        pinned_hashes=[c.commit_hash for c in pinned_commits],
+        token_count=estimated_tokens,
+        generation_config=generation_config,
     )
-    # Store context needed for later commit by _finalize_compression
-    pending._range_commits = range_commits
-    pending._pinned_commits = pinned_commits
-    pending._normal_commits = compressible_commits
-    pending._pinned_hashes = pinned_hashes
-    pending._skip_hashes = skip_hashes
-    pending._groups = groups
-    pending._branch_name = branch_name
-    pending._target_tokens = target_tokens
-    pending._instructions = instructions
-    pending._system_prompt = system_prompt
-    pending._head_hash = head_hash
-    pending._generation_config = generation_config
-    pending._two_stage = two_stage
-    pending._retention_criteria = group_retention
-    if two_stage and guidance_text is not None:
-        pending.guidance = guidance_text
-        pending.guidance_source = "llm"
-    return pending
 
 
 def _commit_compression(

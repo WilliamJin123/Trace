@@ -52,8 +52,8 @@ class TestOperationPrompts:
         """operation_prompts property returns the current prompts."""
         t = Tract.open()
         assert t.operation_prompts == OperationPrompts()
-        t.configure_prompts(orchestrate="Agent mode")
-        assert t.operation_prompts.orchestrate == "Agent mode"
+        t.configure_prompts(compress="Compress mode")
+        assert t.operation_prompts.compress == "Compress mode"
 
     def test_config_history_logs_prompt_changes(self):
         """configure_prompts() logs to config history."""

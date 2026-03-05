@@ -404,8 +404,8 @@ class TestCompressPreservesImportantContent:
         result = t.compress()
         assert result.compressed_tokens > 0
 
-    def test_compress_important_with_validation_retries(self):
-        """Compression with IMPORTANT + match_patterns triggers retry on failure."""
+    def test_compress_important_with_retain_match(self):
+        """Compression with IMPORTANT + match_patterns preserves important data."""
         t = _make_tract()
 
         t.user("The secret code is XYZ-789")
@@ -417,17 +417,13 @@ class TestCompressPreservesImportantContent:
         t.user("Continue")
 
         mock_llm = MagicMock()
-        # First call: fails validation (missing pattern)
-        # Second call: passes validation (includes pattern)
-        mock_llm.chat.side_effect = [
-            _make_llm_response("Previously: A secret code was discussed."),
-            _make_llm_response("Previously: The code XYZ-789 was noted."),
-        ]
+        mock_llm.chat.return_value = _make_llm_response(
+            "Previously: The code XYZ-789 was noted."
+        )
         t.configure_llm(mock_llm)
 
         result = t.compress()
-        # Should have called LLM twice (retry)
-        assert mock_llm.chat.call_count == 2
+        assert mock_llm.chat.call_count == 1
         assert result.compressed_tokens > 0
 
 

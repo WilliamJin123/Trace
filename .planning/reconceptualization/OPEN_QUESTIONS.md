@@ -62,7 +62,12 @@
   If weak models produce coherent multi-stage workflows with rules, the
   architecture is doing real work. Frontier models amplify, not enable.
 
-## Promotion Loop
+## Promotion Loop (Deferred to R5)
+
+**Status:** Not implemented in R0-R4. The promotion loop is a future enhancement
+that requires empirical data from real workflow usage to inform design decisions.
+R4 delivers the rule system and cookbooks; promotion loop builds on top once
+we observe real patterns of repeated LLM decisions.
 
 ### 1. Pattern Detection
 How does the system recognize "the LLM keeps making the same decision"?

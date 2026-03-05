@@ -15,7 +15,7 @@ from tract.toolkit.models import ToolConfig, ToolProfile
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# All 25 tool names (must match definitions.py)
+# All 22 tool names (must match definitions.py)
 # ---------------------------------------------------------------------------
 _ALL_TOOL_NAMES = [
     "commit",
@@ -40,9 +40,6 @@ _ALL_TOOL_NAMES = [
     "register_tag",
     "get_tags",
     "list_tags",
-    "register_trigger",
-    "unregister_trigger",
-    "toggle_triggers",
 ]
 
 # ---------------------------------------------------------------------------
@@ -141,10 +138,6 @@ SELF_PROFILE = ToolProfile(
         "configure_model": ToolConfig(
             enabled=True,
             description="Change the LLM model or temperature for your operations.",
-        ),
-        "toggle_triggers": ToolConfig(
-            enabled=True,
-            description="Pause or resume your automatic triggers.",
         ),
     },
 )
@@ -287,18 +280,6 @@ SUPERVISOR_PROFILE = ToolProfile(
         "list_tags": ToolConfig(
             enabled=True,
             description="List all registered tags in the managed agent's context.",
-        ),
-        "register_trigger": ToolConfig(
-            enabled=True,
-            description="Register a trigger for the managed agent.",
-        ),
-        "unregister_trigger": ToolConfig(
-            enabled=True,
-            description="Remove a trigger from the managed agent.",
-        ),
-        "toggle_triggers": ToolConfig(
-            enabled=True,
-            description="Pause or resume the managed agent's triggers.",
         ),
     },
 )

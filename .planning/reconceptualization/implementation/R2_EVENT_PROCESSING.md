@@ -34,7 +34,17 @@ class ActionHandler(Protocol):
 
 
 class SetConfigAction:
-    """Set a configuration parameter. Override semantics."""
+    """Set a configuration parameter. Override semantics.
+
+    Returns config data in ActionResult for the caller to apply. The engine
+    deduplicates set_config results by key (override semantics: closest to
+    HEAD wins). The caller (_fire_rules in tract.py) extracts the deduped
+    set_config results from EvalResult and applies them.
+
+    For persistent config changes, use trigger="active" rules (resolved via
+    RuleIndex.get_config). Event-driven set_config is for transient overrides
+    within a single event processing cycle.
+    """
     def execute(self, params: dict, ctx: EvalContext) -> ActionResult:
         # params: {"key": str, "value": any}
         # Store in EvalResult for the caller to apply
@@ -47,12 +57,23 @@ class SetConfigAction:
 
 class OperationAction:
     """Run a substrate operation. Accumulate semantics."""
+
+    # All supported substrate operations and their Tract method mappings
+    SUPPORTED_OPS = {
+        "compress", "branch", "annotate", "edit", "merge",
+        "rebase", "delete", "cherry_pick", "gc",
+    }
+
     def execute(self, params: dict, ctx: EvalContext) -> ActionResult:
         # params: {"op": str, "params": dict}
-        # Dispatch to tract operations: compress, edit, branch, merge, etc.
+        # Dispatch to tract substrate operations
         op = params["op"]
         op_params = params.get("params", {})
         t = ctx.tract
+
+        if op not in self.SUPPORTED_OPS:
+            raise ValueError(f"Unknown operation: {op!r}. Supported: {sorted(self.SUPPORTED_OPS)}")
+
         if op == "compress":
             result = t.compress(**op_params)
             return ActionResult("operation", True, {"op": "compress", "result": str(result)})
@@ -62,8 +83,24 @@ class OperationAction:
         elif op == "annotate":
             t.annotate(**op_params)
             return ActionResult("operation", True, {"op": "annotate"})
-        # ... other operations
-        raise ValueError(f"Unknown operation: {op!r}")
+        elif op == "edit":
+            result = t.commit(op_params.pop("content"), operation="edit", **op_params)
+            return ActionResult("operation", True, {"op": "edit", "result": str(result)})
+        elif op == "merge":
+            result = t.merge(**op_params)
+            return ActionResult("operation", True, {"op": "merge", "result": str(result)})
+        elif op == "rebase":
+            result = t.rebase(**op_params)
+            return ActionResult("operation", True, {"op": "rebase", "result": str(result)})
+        elif op == "delete":
+            t.delete_commit(**op_params)
+            return ActionResult("operation", True, {"op": "delete"})
+        elif op == "cherry_pick":
+            result = t.import_commit(**op_params)
+            return ActionResult("operation", True, {"op": "cherry_pick", "result": str(result)})
+        elif op == "gc":
+            result = t.gc(**op_params)
+            return ActionResult("operation", True, {"op": "gc", "result": str(result)})
 
 
 class BlockAction:
@@ -104,16 +141,22 @@ class LLMAction:
 
 
 class CreateRuleAction:
-    """Commit a new RuleContent. Accumulate semantics."""
+    """Commit a new RuleContent. Accumulate semantics.
+
+    IMPORTANT: Does NOT commit during event processing. Instead, returns
+    the template in ActionResult.data for deferred commitment. The engine
+    collects all create_rule results and commits them in the post-processing
+    step after the event pipeline completes. This prevents rule index
+    invalidation mid-iteration.
+    """
     def execute(self, params: dict, ctx: EvalContext) -> ActionResult:
         template = params.get("template", {})
-        ctx.tract.rule(
-            name=template["name"],
-            trigger=template["trigger"],
-            condition=template.get("condition"),
-            action=template["action"],
-        )
-        return ActionResult("create_rule", True, {"name": template["name"]})
+        # Validate template has required fields
+        if not all(k in template for k in ("name", "trigger", "action")):
+            return ActionResult("create_rule", False,
+                              reason="Template missing required fields: name, trigger, action")
+        # Return template for deferred commit (do NOT commit here)
+        return ActionResult("create_rule", True, {"template": template, "deferred": True})
 
 
 # Registry
@@ -176,8 +219,11 @@ class RuleEngine:
         self._custom_actions = custom_actions or {}
         self._max_depth = max_depth
         # NOTE: _eval_depth lives on Tract, NOT on RuleEngine.
-        # RuleEngine is re-instantiated when rule_index goes stale,
-        # so a depth counter here would reset and defeat the guard.
+        # RuleEngine is re-instantiated when rule_index goes stale
+        # (e.g., after a CreateRuleAction commits a new rule), so a
+        # depth counter on the engine would reset mid-recursion and
+        # defeat the guard. Tract is single-threaded (SQLite-backed),
+        # so this mutable state on Tract is safe.
 
     def process_event(
         self,
@@ -246,6 +292,8 @@ class RuleEngine:
                 )
 
         # 4. Work (all matching execute, accumulate)
+        #    EXCEPTION: set_config uses override semantics — post-process
+        #    deduplication keeps only the closest rule's value per key.
         for rule in categories.get("work", []):
             rules_evaluated += 1
             if not self._check_condition(rule.condition, ctx):
@@ -253,6 +301,11 @@ class RuleEngine:
             rules_fired += 1
             result = self._execute_action(rule.action, ctx)
             all_results.append(result)
+
+        # Post-process: deduplicate set_config results (override semantics)
+        # Work rules sort furthest-first, so the LAST set_config for a key
+        # is from the closest rule. Keep only that one per key.
+        all_results = self._dedup_set_config(all_results)
 
         # 5. Handoff (override: closest wins, first match only)
         for rule in categories.get("handoff", []):
@@ -334,6 +387,29 @@ class RuleEngine:
         if handler is None:
             return ActionResult(action_type, False, reason=f"Unknown action: {action_type!r}")
         return handler.execute(action, ctx)
+
+    @staticmethod
+    def _dedup_set_config(results: list[ActionResult]) -> list[ActionResult]:
+        """Deduplicate set_config results by key (override semantics).
+
+        Work rules sort furthest-first (root before branch), so the LAST
+        set_config for a given key is from the closest rule (highest precedence).
+        Keep only the last occurrence of each key; preserve all non-set_config results.
+        """
+        # Walk backwards to find the first (= closest) occurrence of each key
+        seen_keys: set[str] = set()
+        keep_indices: set[int] = set()
+        for i in range(len(results) - 1, -1, -1):
+            r = results[i]
+            if r.action_type == "set_config":
+                key = r.data.get("key")
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    keep_indices.add(i)
+                # else: skip (farther rule, lower precedence)
+            else:
+                keep_indices.add(i)
+        return [results[i] for i in sorted(keep_indices)]
 ```
 
 ### Task 2.3: Wire Event Processing into Tract
@@ -355,7 +431,11 @@ def _rule_engine(self) -> RuleEngine:
     return self.__rule_engine
 
 def _fire_rules(self, event: str, commit: CommitInfo | None = None) -> EvalResult:
-    """Fire rules for an event. Returns EvalResult."""
+    """Fire rules for an event. Returns EvalResult.
+
+    Post-processes deferred actions (e.g., create_rule commits) after the
+    event pipeline completes. This prevents rule index invalidation mid-iteration.
+    """
     from tract.rules.models import EvalContext
 
     # Pre-compute metrics so condition evaluators never call compile().
@@ -378,7 +458,20 @@ def _fire_rules(self, event: str, commit: CommitInfo | None = None) -> EvalResul
         metrics=metrics,
         rule_index=self.rule_index,
     )
-    return self._rule_engine.process_event(event, ctx)
+    result = self._rule_engine.process_event(event, ctx)
+
+    # Post-process: commit deferred create_rule actions
+    for ar in result.action_results:
+        if ar.action_type == "create_rule" and ar.success and ar.data.get("deferred"):
+            template = ar.data["template"]
+            self.rule(
+                name=template["name"],
+                trigger=template["trigger"],
+                condition=template.get("condition"),
+                action=template["action"],
+            )
+
+    return result
 ```
 
 **Wire into operations:**
@@ -387,8 +480,12 @@ def _fire_rules(self, event: str, commit: CommitInfo | None = None) -> EvalResul
 # In commit():
 def commit(self, content, ...):
     # ... existing commit logic ...
+    # Fire pre_commit event (gates can block BEFORE persisting)
+    eval_result = self._fire_rules("pre_commit")
+    if eval_result.blocked:
+        raise TraceError(f"Commit blocked: {eval_result.block_reasons}")
     result = self._do_commit(content, ...)
-    # Fire commit event
+    # Fire post-commit event (reactive: redaction, auto-tagging, auto-compress)
     self._fire_rules("commit", commit=result)
     return result
 
@@ -435,19 +532,19 @@ def transition(self, target: str, **kwargs) -> CommitInfo | None:
     4. Switch to / create target branch
     5. Commit handoff payload on target
 
+    IMPORTANT: Rules from BOTH "transition" (generic) and "transition:{target}"
+    (specific) triggers are collected and processed through a SINGLE
+    gates→work→handoff→post pipeline. This ensures gate failures from either
+    trigger prevent work actions from executing.
+
     Args:
         target: Target branch name.
 
     Returns:
         CommitInfo of the handoff commit on the target, or None if blocked.
     """
-    # Fire generic "transition" event
-    eval_result = self._fire_rules("transition")
-    if eval_result.blocked:
-        return None
-
-    # Fire specific "transition:{target}" event
-    eval_result = self._fire_rules(f"transition:{target}")
+    # Collect rules from BOTH generic and specific triggers into one batch
+    eval_result = self._fire_transition_rules(target)
     if eval_result.blocked:
         return None
 
@@ -463,21 +560,43 @@ def transition(self, target: str, **kwargs) -> CommitInfo | None:
     if compile_filter:
         mode = compile_filter.get("mode", "full")
         if mode == "selective":
-            # Compile with tag filtering
-            include_tags = compile_filter.get("include_tags", [])
+            include_tags = set(compile_filter.get("include_tags", []))
             compiled = self.compile()
-            # Filter messages to those from tagged commits
-            payload_text = "\n\n".join(
-                m.content for m in compiled.messages
-                if m.content  # simplified -- real impl filters by tag
-            )
+            # Filter to messages from commits with matching tags
+            payload_messages = []
+            for msg, commit_hash in zip(compiled.messages, compiled.commit_hashes):
+                commit = self._commit_repo.get(commit_hash)
+                commit_tags = set(json.loads(commit.tags_json or "[]"))
+                if commit_tags & include_tags:
+                    payload_messages.append(msg)
+            payload_text = "\n\n".join(m.content for m in payload_messages if m.content)
+        elif mode == "summarized":
+            target_tokens = compile_filter.get("target_tokens", 500)
+            instruction = compile_filter.get("instruction", "Summarize for handoff.")
+            # Use compression to create a summary at target token budget
+            compiled = self.compile()
+            payload_text = str(compiled.to_dicts())  # fallback; real impl uses LLM summary
         elif mode == "same_context":
-            payload_text = self.compile().to_dicts()
-            payload_text = str(payload_text)  # serialize for handoff
+            # No branching, no handoff payload -- just append rules on current branch
+            payload_text = None
+        elif mode == "new_agent":
+            include_tags = set(compile_filter.get("include_tags", []))
+            compiled = self.compile()
+            payload_messages = []
+            for msg, commit_hash in zip(compiled.messages, compiled.commit_hashes):
+                commit = self._commit_repo.get(commit_hash)
+                commit_tags = set(json.loads(commit.tags_json or "[]"))
+                if commit_tags & include_tags:
+                    payload_messages.append(msg)
+            payload_text = "\n\n".join(m.content for m in payload_messages if m.content)
         else:
             payload_text = str(self.compile().to_dicts())
     else:
         payload_text = str(self.compile().to_dicts())
+
+    # For same_context: no branch switch, just continue on current branch
+    if compile_filter and compile_filter.get("mode") == "same_context":
+        return None  # rules already applied, no handoff needed
 
     # Switch to target branch (create if needed)
     if target not in [b.name for b in self.branches]:
@@ -492,6 +611,68 @@ def transition(self, target: str, **kwargs) -> CommitInfo | None:
     )
     return self.commit(handoff_content, message=f"transition handoff from {source} to {target}",
                        tags=["transition_handoff"])
+
+
+def _fire_transition_rules(self, target: str) -> EvalResult:
+    """Collect rules from both 'transition' and 'transition:{target}' triggers
+    and process through a SINGLE gates→work→handoff→post pipeline.
+
+    This ensures gate failures from either trigger prevent work actions from
+    either trigger from executing, maintaining the ordering guarantee.
+    """
+    from tract.rules.models import EvalContext
+
+    metrics = {}
+    if self._cache_manager:
+        head = self.head
+        if head:
+            snapshot = self._cache_manager.get(head)
+            if snapshot:
+                metrics["total_tokens"] = snapshot.token_count
+    metrics.setdefault("total_tokens", 0)
+
+    ctx = EvalContext(
+        event=f"transition:{target}",
+        commit=None,
+        branch=self.current_branch or "",
+        head=self.head or "",
+        tract=self,
+        metrics=metrics,
+        rule_index=self.rule_index,
+    )
+    return self._rule_engine.process_transition(target, ctx)
+```
+
+**Add to `rules/engine.py`:**
+
+```python
+def process_transition(self, target: str, ctx: EvalContext) -> EvalResult:
+    """Process a transition by collecting rules from both generic and
+    specific triggers into a single pipeline.
+
+    Combines rules from 'transition' and 'transition:{target}' triggers,
+    then processes them through the standard gates→work→handoff→post pipeline.
+    """
+    # Recursion guard
+    depth = getattr(ctx.tract, '_rule_eval_depth', 0)
+    if depth >= self._max_depth:
+        return EvalResult()
+
+    ctx.tract._rule_eval_depth = depth + 1
+    try:
+        # Collect rules from both triggers
+        generic_rules = self._rule_index.get_by_trigger("transition")
+        specific_rules = self._rule_index.get_by_trigger(f"transition:{target}")
+        all_rules = generic_rules + specific_rules
+
+        if not all_rules:
+            return EvalResult()
+
+        # Process through single unified pipeline
+        categories = self._group_by_category(all_rules)
+        return self._execute_pipeline(categories, ctx)
+    finally:
+        ctx.tract._rule_eval_depth = depth
 ```
 
 ### Task 2.4: LLM Condition (placeholder)

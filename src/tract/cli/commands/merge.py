@@ -43,53 +43,12 @@ def merge(
     """
     from tract.cli import _tract_session
     from tract.exceptions import NothingToMergeError
-    from tract.hooks.merge import PendingMerge
 
     with _tract_session(ctx) as (t, console):
         try:
-            if do_review:
-                result = t.merge(
-                    source,
-                    no_ff=no_ff,
-                    strategy=strategy,
-                    delete_branch=delete_branch,
-                    review=True,
-                )
-
-                if not isinstance(result, PendingMerge):
-                    # No conflicts (fast-forward or clean) — display normally
-                    format_merge_result(result, console)
-                    return
-
-                console.print(
-                    f"[bold]Pending merge:[/bold] "
-                    f"{len(result.conflicts)} conflict(s) to resolve"
-                )
-
-                result.edit_interactive()
-
-                # Check all conflicts resolved
-                unresolved = [
-                    c for c in result.conflicts
-                    if c.target_hash and c.target_hash not in result.resolutions
-                ]
-                if unresolved:
-                    console.print(
-                        f"\n[yellow]{len(unresolved)} conflict(s) still unresolved. "
-                        f"Cannot commit.[/yellow]"
-                    )
-                    return
-
-                if not click.confirm("\nApprove and commit merge?", default=True):
-                    console.print("[yellow]Cancelled.[/yellow] Nothing was committed.")
-                    return
-
-                committed = result.approve()
-                format_merge_result(committed, console)
-            else:
-                result = t.merge(
-                    source, no_ff=no_ff, strategy=strategy, delete_branch=delete_branch
-                )
-                format_merge_result(result, console)
+            result = t.merge(
+                source, no_ff=no_ff, strategy=strategy, delete_branch=delete_branch
+            )
+            format_merge_result(result, console)
         except NothingToMergeError:
             console.print("Already up to date.")

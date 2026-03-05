@@ -11,13 +11,12 @@ from __future__ import annotations
 
 import uuid
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, overload
 
 from pydantic import BaseModel
 
-from tract.hooks.event import HookEvent
 from tract.engine.cache import CacheManager
 from tract.engine.commit import CommitEngine
 from tract.engine.compiler import DefaultContextCompiler
@@ -57,27 +56,16 @@ if TYPE_CHECKING:
     from sqlalchemy import Engine
     from sqlalchemy.orm import Session
 
-    from tract.hooks.compress import PendingCompress
-    from tract.hooks.gc import PendingGC
-    from tract.hooks.merge import PendingMerge
-    from tract.hooks.pending import Pending
-    from tract.hooks.rebase import PendingRebase
-    from tract.hooks.tool_result import PendingToolResult
     from tract.models.branch import BranchInfo
     from tract.models.compression import CompressResult, GCResult, ReorderWarning, ToolCompactResult, ToolDropResult
     from tract.models.merge import ImportResult, MergeResult, RebaseResult
     from tract.models.session import SpawnInfo
     from tract.operations.diff import DiffResult
     from tract.operations.history import StatusInfo
-    from tract.orchestrator.config import AutonomyLevel, OrchestratorConfig
-    from tract.orchestrator.loop import Orchestrator
     from tract.toolkit.executor import ToolExecutor
     from tract.protocols import ToolTurn
-    from tract.orchestrator.models import OrchestratorResult
-    from tract.triggers.evaluator import TriggerEvaluator
     from tract.models.config import ToolSummarizationConfig
     from tract.storage.schema import CommitRow
-    from tract.storage.sqlite import SqliteTriggerRepository
 
 
 # ------------------------------------------------------------------
@@ -109,46 +97,6 @@ def _fallback_message(content_type: str, text: str) -> str:
     if len(preview) > _MAX_AUTO_MSG_LEN:
         preview = preview[: _MAX_AUTO_MSG_LEN - 3] + "..."
     return preview
-
-
-_FIELD_TYPE_CHECK: dict[str, type | tuple] = {
-    "str": str,
-    "int": (int,),
-    "float": (int, float),
-    "bool": (bool,),
-    "list": list,
-    "dict": dict,
-    "list[str]": list,
-    "list[int]": list,
-}
-
-
-def _validate_dynamic_fields(fields: dict, field_specs: dict) -> dict:
-    """Validate and apply defaults for dynamic operation fields.
-
-    Raises ValueError if a provided field value doesn't match its declared type.
-    Applies defaults from spec for missing fields.
-    """
-    result = dict(fields)
-    for fname, fdef in field_specs.items():
-        if fname not in result:
-            if "default" in fdef:
-                result[fname] = fdef["default"]
-        elif fdef.get("type") in _FIELD_TYPE_CHECK:
-            expected = _FIELD_TYPE_CHECK[fdef["type"]]
-            if not isinstance(result[fname], expected):
-                raise ValueError(
-                    f"Field {fname!r}: expected {fdef['type']}, got {type(result[fname]).__name__}"
-                )
-    return result
-
-
-@dataclass
-class _HookEntry:
-    """Internal named wrapper for a registered hook handler."""
-
-    name: str
-    handler: object  # Callable -- use object to avoid TYPE_CHECKING issues
 
 
 class Tract:
@@ -219,13 +167,6 @@ class Tract:
         self._verify_cache: bool = verify_cache
         self._in_batch: bool = False
         self._closed = False
-        self._trigger_evaluator: TriggerEvaluator | None = None
-        self._trigger_repo: SqliteTriggerRepository | None = None
-        self._orchestrating: bool = False
-        self._orchestrator: Orchestrator | None = None  # type: ignore[assignment]
-        self._agent_loop: object | None = None  # AgentLoop protocol
-        self._trigger_commit_count: int = 0
-        self._token_trigger_fired: bool = False
         self._owns_llm_client: bool = False
         self._default_config: LLMConfig | None = None
         self._operation_configs: OperationConfigs = OperationConfigs()
@@ -233,17 +174,9 @@ class Tract:
         self._operation_clients: OperationClients = OperationClients()
         self._active_tools: list[dict] | None = None
         self._tool_executor: ToolExecutor | None = None  # type: ignore[assignment]
-        self._hooks: dict[str, list[_HookEntry]] = {}
-        self._in_hook: bool = False
-        self._hook_log: list[HookEvent] = []
         self._tool_summarization_config: ToolSummarizationConfig | None = None
         self._commit_reasoning: bool = True
         self._auto_message_enabled: bool = False
-
-        # Dynamic operations registry
-        from tract.hooks.registry import OperationRegistry
-        self._operation_registry = OperationRegistry()
-        self._custom_hookable_ops: set[str] = set()
 
         # Persistence state
         self._db_path: str = ":memory:"
@@ -272,7 +205,6 @@ class Tract:
         tokenizer_encoding: str | None = None,
         commit_reasoning: bool = True,
         auto_message: bool | str | LLMConfig = False,
-        agent_loop: object | None = None,
     ) -> Tract:
         """Open (or create) a Trace repository.
 
@@ -325,10 +257,6 @@ class Tract:
                 - ``True``: use the tract-level default LLM client/model.
                 - ``"model-name"``: use a specific model (e.g. ``"llama3.1-8b"``).
                 - :class:`LLMConfig`: full control over message generation config.
-            agent_loop: A custom agent loop conforming to the
-                :class:`~tract.llm.protocols.AgentLoop` protocol.  When set,
-                :meth:`orchestrate` delegates to this loop instead of the
-                built-in :class:`~tract.orchestrator.loop.Orchestrator`.
 
         Returns:
             A ready-to-use ``Tract`` instance.
@@ -406,10 +334,6 @@ class Tract:
         # Spawn pointer repository
         spawn_repo = SqliteSpawnPointerRepository(session)
 
-        # Trigger repository
-        from tract.storage.sqlite import SqliteTriggerRepository as _SqliteTriggerRepository
-        trigger_repo = _SqliteTriggerRepository(session)
-
         # Tag repositories
         tag_annotation_repo = SqliteTagAnnotationRepository(session)
         tag_registry_repo = SqliteTagRegistryRepository(session)
@@ -439,7 +363,6 @@ class Tract:
             verify_cache=verify_cache,
         )
         tract._spawn_repo = spawn_repo
-        tract._trigger_repo = trigger_repo
         tract._tag_annotation_repo = tag_annotation_repo
         tract._tag_registry_repo = tag_registry_repo
 
@@ -451,32 +374,6 @@ class Tract:
         tract._persistence_repo = persistence_repo
         tract._db_path = path
         tract._load_persisted_state()
-
-        # Auto-load persisted trigger config (if any)
-        saved_config = tract.load_trigger_config()
-        if saved_config is not None:
-            from tract.triggers.builtin import (
-                ArchiveTrigger as _ArchiveTrigger,
-                BranchTrigger as _BranchTrigger,
-                CompressTrigger as _CompressTrigger,
-                PinTrigger as _PinTrigger,
-            )
-
-            _trigger_type_map: dict[str, type] = {
-                "auto-compress": _CompressTrigger,
-                "auto-pin": _PinTrigger,
-                "auto-branch": _BranchTrigger,
-                "auto-archive": _ArchiveTrigger,
-                # Backward compat for saved configs with old name
-                "auto-rebase": _ArchiveTrigger,
-            }
-            triggers = []
-            for entry in saved_config.get("triggers", []):
-                trigger_cls = _trigger_type_map.get(entry.get("name"))
-                if trigger_cls is not None and entry.get("enabled", True):
-                    triggers.append(trigger_cls.from_config(entry))
-            if triggers:
-                tract.configure_triggers(triggers=triggers)
 
         # Validate: model= and default_config= are mutually exclusive
         if model is not None and default_config is not None:
@@ -541,10 +438,6 @@ class Tract:
                     tract._operation_configs, message=auto_message,
                 )
             # auto_message=True: no operation config needed, uses default
-
-        # Plug-in agent loop
-        if agent_loop is not None:
-            tract._agent_loop = agent_loop
 
         return tract
 
@@ -645,11 +538,6 @@ class Tract:
     def spawn_repo(self) -> SqliteSpawnPointerRepository | None:
         """Expose spawn repo for internal use by Session."""
         return self._spawn_repo
-
-    @property
-    def trigger_evaluator(self) -> TriggerEvaluator | None:
-        """The trigger evaluator, or None if not configured."""
-        return self._trigger_evaluator
 
     # ------------------------------------------------------------------
     # Spawn relationship helpers
@@ -938,18 +826,6 @@ class Tract:
                         if patched is not None:
                             self._cache.put(info.commit_hash, patched)
                 # Do NOT clear cache -- other entries at different HEADs remain valid
-
-        # Evaluate commit-triggered triggers (after commit)
-        if (
-            self._trigger_evaluator is not None
-            and not self._in_batch
-            and not self._orchestrating
-        ):
-            self._trigger_evaluator.evaluate(trigger="commit")
-
-        # Check orchestrator triggers (after trigger evaluation)
-        if not self._orchestrating and not self._in_batch:
-            self._check_orchestrator_triggers("commit")
 
         return info
 
@@ -1247,22 +1123,13 @@ class Tract:
         edit: str | None = None,
         message: str | None = None,
         metadata: dict | None = None,
-        review: bool = False,
         is_error: bool = False,
-    ) -> CommitInfo | PendingToolResult:
+    ) -> CommitInfo:
         """Commit a tool execution result.
 
         Shorthand for committing a tool result message in OpenAI-compatible
         format.  The ``tool_call_id`` links this result back to the
         :class:`ToolCall` that requested it.
-
-        Three-tier routing determines what happens:
-        1. ``review=True``: Returns :class:`PendingToolResult` to the caller.
-        2. Hook registered (``t.on("tool_result", handler)``): Fires handler.
-        3. No hook: Commits directly (original behavior).
-
-        When ``edit=`` is set, the hook is bypassed (the user already decided
-        what to write).
 
         Args:
             tool_call_id: The ID from the originating ToolCall.
@@ -1270,70 +1137,32 @@ class Tract:
             content: The result text.
             edit: If set, the commit hash of a previous tool result to replace.
                 Uses EDIT operation instead of APPEND. The original is preserved
-                in history for provenance. Bypasses the hook system.
+                in history for provenance.
             message: Optional commit message (auto-generated if omitted).
             metadata: Optional extra metadata (tool_call_id and name are
                 added automatically).
-            review: If True, return :class:`PendingToolResult` for manual
-                review instead of auto-committing.
             is_error: If True, mark this result as a failed tool call by
                 storing ``is_error: True`` in commit metadata. Used by
                 :meth:`drop_failed_tool_turns` to identify and skip
                 error turns.
 
         Returns:
-            :class:`CommitInfo` (if committed) or :class:`PendingToolResult`
-            (if ``review=True`` or hook leaves it unresolved).
+            :class:`CommitInfo` for the new commit.
         """
-        from tract.hooks.tool_result import PendingToolResult
         from tract.models.content import DialogueContent
 
-        # If this is an edit, bypass the hook (user already decided)
-        if edit is not None:
-            meta = {**(metadata or {}), "tool_call_id": tool_call_id, "name": name}
-            if is_error:
-                meta["is_error"] = True
-            return self.commit(
-                DialogueContent(role="tool", text=content),
-                operation=CommitOperation.EDIT,
-                edit_target=edit,
-                message=message or f"tool result: {name}",
-                metadata=meta,
-            )
+        meta = {**(metadata or {}), "tool_call_id": tool_call_id, "name": name}
+        if is_error:
+            meta["is_error"] = True
 
-        # Build the execute function for the pending
-        def _execute(pending: PendingToolResult) -> CommitInfo:
-            meta = {**(metadata or {}), "tool_call_id": pending.tool_call_id, "name": pending.tool_name}
-            if pending.original_content is not None:
-                meta["summarized_from_length"] = len(pending.original_content)
-            if pending.is_error:
-                meta["is_error"] = True
-            return self.commit(
-                DialogueContent(role="tool", text=pending.content),
-                message=message or f"tool result: {pending.tool_name}",
-                metadata=meta,
-            )
-
-        # Create the pending
-        pending = PendingToolResult(
-            operation="tool_result",
-            tract=self,
-            tool_call_id=tool_call_id,
-            tool_name=name,
-            content=content,
-            token_count=self._token_counter.count_text(content),
-            is_error=is_error,
+        operation = CommitOperation.EDIT if edit else CommitOperation.APPEND
+        return self.commit(
+            DialogueContent(role="tool", text=content),
+            operation=operation,
+            edit_target=edit,
+            message=message or f"tool result: {name}",
+            metadata=meta,
         )
-        pending._execute_fn = _execute
-
-        # Three-tier routing: review > hook > auto-approve
-        if review:
-            return pending
-
-        self._fire_hook(pending)
-        if pending.status == "approved":
-            return pending._result
-        return pending  # Rejected or unresolved
 
     def configure_tool_summarization(
         self,
@@ -1346,9 +1175,7 @@ class Tract:
     ) -> None:
         """Configure automatic tool result summarization.
 
-        Sets up a ``tool_result`` hook that summarizes results based on
-        per-tool instructions and/or token count thresholds. This is
-        syntactic sugar over writing a hook handler manually.
+        Stores config for later use by tool result processing.
 
         Args:
             instructions: Per-tool summarization instructions. Keys are
@@ -1391,31 +1218,6 @@ class Tract:
             include_context=include_context,
             system_prompt=system_prompt,
         )
-
-        def _auto_handler(pending: PendingToolResult) -> None:
-            config = self._tool_summarization_config
-            if config is None:
-                pending.approve()
-                return
-
-            tool_instructions = config.instructions.get(pending.tool_name)
-
-            summarize_kwargs: dict = {}
-            if config.include_context:
-                summarize_kwargs["include_context"] = True
-            if config.system_prompt:
-                summarize_kwargs["system_prompt"] = config.system_prompt
-
-            if tool_instructions:
-                pending.summarize(instructions=tool_instructions, **summarize_kwargs)
-                pending.approve()
-            elif config.auto_threshold and pending.token_count > config.auto_threshold:
-                pending.summarize(instructions=config.default_instructions, **summarize_kwargs)
-                pending.approve()
-            else:
-                pending.approve()
-
-        self.on("tool_result", _auto_handler)
 
     # ------------------------------------------------------------------
     # Tool query API
@@ -1645,7 +1447,7 @@ class Tract:
         keys that have a non-None value at some level in the chain.
 
         Args:
-            operation: Operation name ("chat", "merge", "compress", "orchestrate").
+            operation: Operation name ("chat", "merge", "compress").
             model: Call-level model override (sugar).
             temperature: Call-level temperature override (sugar).
             max_tokens: Call-level max_tokens override (sugar).
@@ -1808,12 +1610,11 @@ class Tract:
         Assumes the conversation context (system prompt, user messages) has
         already been committed. Use :meth:`chat` for the all-in-one path.
 
-        When ``validator`` is provided, the generation is routed through the
-        hook system via :class:`PendingGeneration`. Failed attempts are
-        committed and SKIP-annotated (if ``hide_retries=True``), so they
-        exist in the chain for audit/debugging but don't pollute the
-        compiled context. Retry metadata (attempt count, failure history)
-        is automatically attached to the final commit.
+        When ``validator`` is provided, failed attempts are committed and
+        SKIP-annotated (if ``hide_retries=True``), so they exist in the
+        chain for audit/debugging but don't pollute the compiled context.
+        Retry metadata (attempt count) is automatically attached to the
+        final commit.
 
         Args:
             model: Model override for this call.
@@ -1828,8 +1629,7 @@ class Tract:
                 ``commit_reasoning=False`` on ``Tract.open()``.
             validator: Optional callable that validates the response text.
                 Takes the response text, returns (ok, diagnosis). When
-                provided, generates a :class:`PendingGeneration` that is
-                routed through hooks or auto_retry.
+                provided, retries with steering on validation failure.
             max_retries: Maximum retry attempts when validator is set (default 3).
             hide_retries: If True (default), SKIP-annotate failed attempts
                 and steering messages so they don't appear in compiled
@@ -1867,104 +1667,66 @@ class Tract:
                 reasoning=reasoning, **kwargs,
             )
 
-        # Hook-based validation path: build PendingGeneration
-        from tract.hooks.generation import PendingGeneration
+        # Validation retry loop
+        import dataclasses as _dc
 
-        # Initial generation (produces ChatResponse with committed response)
-        initial_response = self._generate_once(
-            model=model, temperature=temperature,
-            max_tokens=max_tokens, llm_config=llm_config,
-            message=message, metadata=metadata,
-            reasoning=reasoning, **kwargs,
-        )
-
-        # Track intermediate commit hashes for deferred SKIP annotation.
-        # During retry, the LLM needs to see the failed response + steering
-        # so it can course-correct. SKIP annotations are applied only after
-        # the final response is approved.
         intermediate_hashes: list[str] = []
+        last_diagnosis: str | None = None
 
-        # Closure: steer by committing steering user message.
-        # Failed response is already committed by _generate_once.
-        # We record hashes but defer SKIP annotations to approve time.
-        def _steer_fn(guidance_text: str) -> None:
-            # Record the failed response hash
-            failed_hash = self.head
-            if failed_hash:
-                intermediate_hashes.append(failed_hash)
-            # Commit steering user message
-            steering_info = self.user(guidance_text)
-            intermediate_hashes.append(steering_info.commit_hash)
-
-        # Closure: re-generate (compile + LLM call + commit)
-        def _generate_fn() -> ChatResponse:
-            return self._generate_once(
+        for attempt in range(max_retries + 1):
+            response = self._generate_once(
                 model=model, temperature=temperature,
                 max_tokens=max_tokens, llm_config=llm_config,
                 message=message, metadata=metadata,
                 reasoning=reasoning, **kwargs,
             )
 
-        # Closure: finalize the approved response.
-        # 1. SKIP-annotate all intermediate commits (if hide_retries)
-        # 2. Attach retry metadata to the final commit (if retries occurred)
-        def _commit_response_fn(
-            chat_resp: ChatResponse, retry_meta: dict | None
-        ) -> ChatResponse:
-            import dataclasses as _dc
+            ok, diagnosis = validator(response.text)
+            if ok:
+                # SKIP-annotate intermediate commits if hiding retries
+                if hide_retries and intermediate_hashes:
+                    for h in intermediate_hashes:
+                        self.annotate(h, Priority.SKIP,
+                                      reason="retry: hidden intermediate")
 
-            # SKIP-annotate intermediate commits (deferred from retry time)
-            if hide_retries and intermediate_hashes:
-                for h in intermediate_hashes:
-                    self.annotate(h, Priority.SKIP,
-                                  reason="retry: hidden intermediate")
+                # Attach retry metadata to the final commit
+                if attempt > 0 and response.commit_info:
+                    retry_meta = {"retry_attempts": attempt}
+                    existing = response.commit_info.metadata or {}
+                    merged = {**existing, **retry_meta}
+                    self._commit_repo.update_metadata(
+                        response.commit_info.commit_hash, merged
+                    )
+                    self._session.commit()
+                    updated_info = response.commit_info.model_copy(
+                        update={"metadata": merged}
+                    )
+                    response = _dc.replace(response, commit_info=updated_info)
 
-            # Attach retry metadata to the final commit
-            if retry_meta and chat_resp.commit_info:
-                existing = chat_resp.commit_info.metadata or {}
-                merged = {**existing, **retry_meta}
-                self._commit_repo.update_metadata(
-                    chat_resp.commit_info.commit_hash, merged
-                )
-                self._session.commit()
-                # CommitInfo is Pydantic (model_copy), ChatResponse is frozen dataclass
-                updated_info = chat_resp.commit_info.model_copy(
-                    update={"metadata": merged}
-                )
-                return _dc.replace(chat_resp, commit_info=updated_info)
-            return chat_resp
+                return response
 
-        pending = PendingGeneration(
-            operation="generate",
-            tract=self,
-            response_text=initial_response.text,
-            validator=validator,
-            retry_prompt=retry_prompt,
-            hide_retries=hide_retries,
-            _chat_response=initial_response,
-            _generate_fn=_generate_fn,
-            _steer_fn=_steer_fn,
-            _commit_response_fn=_commit_response_fn,
+            last_diagnosis = diagnosis
+
+            # Record failed response hash for deferred SKIP
+            failed_hash = self.head
+            if failed_hash:
+                intermediate_hashes.append(failed_hash)
+
+            # Steer with diagnosis if not last attempt
+            if attempt < max_retries:
+                steering = retry_prompt or "Your previous response did not pass validation. Please try again."
+                if diagnosis:
+                    steering = f"{steering}\n\nDiagnosis: {diagnosis}"
+                steering_info = self.user(steering)
+                intermediate_hashes.append(steering_info.commit_hash)
+
+        # All retries exhausted
+        from tract.exceptions import RetryExhaustedError
+        raise RetryExhaustedError(
+            attempts=max_retries + 1,
+            last_diagnosis=last_diagnosis or "validation failed",
+            last_result=response.text,
         )
-
-        # Route through hooks or auto_retry
-        if self._hooks.get("generate") or self._hooks.get("*"):
-            self._fire_hook(pending)
-            if pending.status == "approved" and pending._result is not None:
-                return pending._result
-            # If hook rejected, raise (caller needs a ChatResponse)
-            if pending.status == "rejected":
-                from tract.exceptions import RetryExhaustedError
-                raise RetryExhaustedError(
-                    attempts=pending.retry_count + 1,
-                    last_diagnosis=pending.rejection_reason or "rejected by hook",
-                    last_result=pending.response_text,
-                )
-            return initial_response
-        else:
-            # No hook registered: use auto_retry for validation
-            from tract.hooks.retry import auto_retry
-            return auto_retry(pending, max_retries=max_retries)
 
     def _generate_once(
         self,
@@ -2114,8 +1876,8 @@ class Tract:
             t.user(text, message=message, name=name, metadata=metadata)
             response = t.generate(model=model, temperature=temperature, ...)
 
-        When ``validator`` is provided, the generation is routed through
-        the hook system. See :meth:`generate` for details on retry behavior.
+        When ``validator`` is provided, retries with steering on failure.
+        See :meth:`generate` for details on retry behavior.
 
         Args:
             text: The user message text.
@@ -2131,8 +1893,7 @@ class Tract:
                 reasoning commits for this call.
             validator: Optional callable that validates the response text.
                 Takes the response text, returns (ok, diagnosis). When
-                provided, generates a :class:`PendingGeneration` routed
-                through hooks or auto_retry.
+                provided, retries with steering on validation failure.
             max_retries: Maximum retry attempts when validator is set (default 3).
             hide_retries: If True (default), SKIP-annotate failed attempts
                 and steering messages so they don't appear in compiled context.
@@ -2395,6 +2156,8 @@ class Tract:
         include_reasoning: bool = ...,
         order: None = None,
         check_safety: bool = ...,
+        strategy: str = ...,
+        strategy_k: int = ...,
     ) -> CompiledContext: ...
 
     @overload
@@ -2407,6 +2170,8 @@ class Tract:
         include_reasoning: bool = ...,
         order: list[str],
         check_safety: bool = ...,
+        strategy: str = ...,
+        strategy_k: int = ...,
     ) -> tuple[CompiledContext, list[ReorderWarning]]: ...
 
     def compile(
@@ -2418,6 +2183,8 @@ class Tract:
         include_reasoning: bool = False,
         order: list[str] | None = None,
         check_safety: bool = True,
+        strategy: str = "full",
+        strategy_k: int = 5,
     ) -> CompiledContext | tuple[CompiledContext, list[ReorderWarning]]:
         """Compile the current context into LLM-ready messages.
 
@@ -2433,23 +2200,18 @@ class Tract:
             check_safety: If True (default) and ``order`` is provided, run
                 structural safety checks that warn about EDIT-before-target
                 and broken response chains.
+            strategy: Compile strategy. ``"full"`` (default) compiles all
+                commits with full content. ``"messages"`` emits only commit
+                messages (lightweight). ``"adaptive"`` keeps the last
+                ``strategy_k`` commits at full detail and earlier ones as
+                messages only.
+            strategy_k: Number of recent commits to keep at full detail
+                when using the ``"adaptive"`` strategy. Default 5.
 
         Returns:
             :class:`CompiledContext` when ``order`` is None (default).
             ``(CompiledContext, list[ReorderWarning])`` when ``order`` is provided.
         """
-        # Evaluate compile-triggered triggers (before compilation)
-        if (
-            self._trigger_evaluator is not None
-            and not self._in_batch
-            and not self._orchestrating
-        ):
-            self._trigger_evaluator.evaluate(trigger="compile")
-
-        # Check orchestrator triggers (after trigger evaluation)
-        if not self._orchestrating and not self._in_batch:
-            self._check_orchestrator_triggers("compile")
-
         current_head = self.head
         if current_head is None:
             empty = CompiledContext(messages=[], token_count=0, commit_count=0, token_source="")
@@ -2457,9 +2219,15 @@ class Tract:
                 return empty, []
             return empty
 
+        # Strategy kwargs to forward to the compiler
+        _strategy_kw = dict(strategy=strategy, strategy_k=strategy_k)
+
         # If order provided, bypass cache entirely and do a full compile + reorder
         if order is not None:
-            result = self._compiler.compile(self._tract_id, current_head, include_reasoning=include_reasoning)
+            result = self._compiler.compile(
+                self._tract_id, current_head,
+                include_reasoning=include_reasoning, **_strategy_kw,
+            )
             warnings = []
             if check_safety:
                 from tract.operations.compression import check_reorder_safety
@@ -2468,8 +2236,16 @@ class Tract:
             reordered = self._inject_tools(reordered)
             return reordered, warnings
 
-        # Time-travel, edit annotations, and include_reasoning: always full compile, don't touch snapshot
-        if at_time is not None or at_commit is not None or include_edit_annotations or include_reasoning:
+        # Non-default strategy, time-travel, edit annotations, and
+        # include_reasoning: always full compile, don't touch snapshot
+        _bypass_cache = (
+            strategy != "full"
+            or at_time is not None
+            or at_commit is not None
+            or include_edit_annotations
+            or include_reasoning
+        )
+        if _bypass_cache:
             result = self._compiler.compile(
                 self._tract_id,
                 current_head,
@@ -2477,6 +2253,7 @@ class Tract:
                 at_commit=at_commit,
                 include_edit_annotations=include_edit_annotations,
                 include_reasoning=include_reasoning,
+                **_strategy_kw,
             )
             # Apply API-reported token override if available for the
             # resolved head commit (tiktoken is temporary; API is truth).
@@ -3744,7 +3521,7 @@ class Tract:
         multi-turn agent loops, evaluation pipelines).
 
         For most use cases, prefer :meth:`chat`, :meth:`generate`,
-        :meth:`run`, or :meth:`~tract.hooks.pending.Pending.consult`.
+        or :meth:`run`.
 
         Returns:
             The LLM client instance.
@@ -3798,8 +3575,7 @@ class Tract:
         Args:
             _configs: OperationConfigs instance with typed fields.
             **operation_configs: Operation name -> LLMConfig mappings.
-                Valid names: ``"chat"``, ``"merge"``, ``"compress"``,
-                ``"orchestrate"``.
+                Valid names: ``"chat"``, ``"merge"``, ``"compress"``.
 
         Raises:
             TypeError: If both positional and keyword arguments provided,
@@ -3836,7 +3612,7 @@ class Tract:
             )
             return
         # Keyword path: validate and construct OperationConfigs
-        _valid_ops = {"chat", "merge", "compress", "orchestrate", "message"}
+        _valid_ops = {"chat", "merge", "compress", "message"}
         for name, cfg in operation_configs.items():
             if not isinstance(cfg, LLMConfig):
                 raise TypeError(
@@ -3884,8 +3660,7 @@ class Tract:
         Args:
             _clients: OperationClients instance with typed fields.
             **operation_clients: Operation name -> client mappings.
-                Valid names: ``"chat"``, ``"merge"``, ``"compress"``,
-                ``"orchestrate"``.
+                Valid names: ``"chat"``, ``"merge"``, ``"compress"``.
 
         Raises:
             TypeError: If both positional and keyword arguments provided.
@@ -3910,7 +3685,7 @@ class Tract:
             self._operation_clients = _clients
             self._log_config_change("operation_client", source="api")
             return
-        _valid_ops = {"chat", "merge", "compress", "orchestrate", "message"}
+        _valid_ops = {"chat", "merge", "compress", "message"}
         for name in operation_clients:
             if name not in _valid_ops:
                 raise ValueError(
@@ -4017,7 +3792,7 @@ class Tract:
         Args:
             _prompts: OperationPrompts instance with typed fields.
             **prompt_overrides: Operation name -> prompt string mappings.
-                Valid names: ``"compress"``, ``"merge"``, ``"orchestrate"``,
+                Valid names: ``"compress"``, ``"merge"``,
                 ``"message"``, ``"commit_message"``.
 
         Raises:
@@ -4040,7 +3815,7 @@ class Tract:
                 source="api",
             )
             return
-        _valid_ops = {"compress", "merge", "orchestrate", "message", "commit_message"}
+        _valid_ops = {"compress", "merge", "message", "commit_message"}
         for name, val in prompt_overrides.items():
             if not isinstance(val, str):
                 raise TypeError(
@@ -4199,24 +3974,14 @@ class Tract:
         strategy: str = "auto",
         no_ff: bool = False,
         auto_commit: bool = False,
-        review: bool = False,
         model: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
         llm_config: LLMConfig | None = None,
         delete_branch: bool | None = None,
         message: str | None = None,
-        triggered_by: str | None = None,
-    ) -> MergeResult | PendingMerge:
+    ) -> MergeResult:
         """Merge a source branch into the current branch.
-
-        Fast-forward and clean merges proceed without hooks. Only the
-        conflict path supports hook interception.
-
-        Three-tier routing for conflict merges:
-        1. ``review=True``: Returns :class:`PendingMerge` to the caller.
-        2. Hook registered (``t.on("merge", handler)``): Fires the handler.
-        3. No hook: Auto-approves if resolutions available, else returns result.
 
         Args:
             source_branch: Name of the branch to merge.
@@ -4225,9 +3990,6 @@ class Tract:
             strategy: ``"auto"`` (default) or ``"semantic"``.
             no_ff: If True, always create a merge commit (no fast-forward).
             auto_commit: If True, auto-commit even with resolved conflicts.
-                Kept for backward compatibility; ``review=False`` with a
-                resolver achieves the same with hook support.
-            review: If True, return PendingMerge for conflict review.
             model: Override model for the default resolver.
             temperature: Override temperature for the default resolver.
             max_tokens: Override max_tokens for the default resolver.
@@ -4236,13 +3998,10 @@ class Tract:
                 If None (default), uses ``config.delete_branch_on_merge``.
             message: Optional merge commit message. If not provided, a
                 default message is generated.
-            triggered_by: Optional provenance string.
 
         Returns:
-            :class:`MergeResult` (fast-forward, clean, or approved conflict) or
-            :class:`PendingMerge` (if ``review=True`` and conflicts exist).
+            :class:`MergeResult`.
         """
-        from tract.hooks.merge import PendingMerge as _PendingMerge
         from tract.models.merge import MergeResult
         from tract.operations.merge import merge_branches
 
@@ -4285,88 +4044,15 @@ class Tract:
             no_ff=no_ff,
         )
 
-        # Fast-forward and clean merges: no hook interception
-        if result.merge_type in ("fast_forward", "clean"):
-            self._session.commit()
-
-            if delete_branch and (result.committed or result.merge_type == "fast_forward"):
-                from tract.operations.branch import delete_branch as _delete_branch
-
-                _delete_branch(
-                    source_branch,
-                    self._tract_id,
-                    self._ref_repo,
-                    self._commit_repo,
-                    self._parent_repo,
-                    force=True,
-                )
-                self._session.commit()
-
-            self._cache.clear()
-            return result
-
-        # Conflict path: build PendingMerge if resolutions available,
-        # review requested, or merge hooks registered
-        has_hook = "merge" in self._hooks or "*" in self._hooks
-        if result.merge_type == "conflict" and (
-            result.resolutions or review or has_hook
-        ):
-            current_branch = self._ref_repo.get_current_branch(self._tract_id) or ""
-
-            pending = _PendingMerge(
-                operation="merge",
-                tract=self,
-                resolutions=dict(result.resolutions),
-                source_branch=source_branch,
-                target_branch=current_branch,
-                conflicts=list(result.conflicts),
-                triggered_by=triggered_by,
-            )
-
-            # Store MergeResult for execute phase
-            pending._merge_result = result  # type: ignore[attr-defined]
-            pending._message = message  # type: ignore[attr-defined]
-            pending._delete_branch = delete_branch  # type: ignore[attr-defined]
-
-            # Set execute function
-            def _execute_merge_fn(p: _PendingMerge) -> MergeResult:
-                # Update resolutions on the merge result from the (possibly edited) pending
-                p._merge_result.resolutions = dict(p.resolutions)  # type: ignore[attr-defined]
-                committed_result = self.commit_merge(
-                    p._merge_result,  # type: ignore[attr-defined]
-                    message=p._message,  # type: ignore[attr-defined]
-                )
-                if p._delete_branch:  # type: ignore[attr-defined]
-                    from tract.operations.branch import delete_branch as _delete_branch
-
-                    _delete_branch(
-                        source_branch,
-                        self._tract_id,
-                        self._ref_repo,
-                        self._commit_repo,
-                        self._parent_repo,
-                        force=True,
-                    )
-                    self._session.commit()
-                return committed_result
-
-            pending._execute_fn = _execute_merge_fn
-
-            # Auto-commit backward compatibility
-            if auto_commit and len(result.resolutions) >= len(result.conflicts):
-                return self.commit_merge(result, message=message)
-
-            # Three-tier routing for conflict path:
-            if review:
-                return pending
-
-            self._fire_hook(pending)
-            if pending.status == "approved" and pending._result is not None:
-                return pending._result
-            return pending
-
-        # Conflict without resolutions (no resolver): return as-is
         self._session.commit()
+
+        # Auto-commit conflict merges with full resolutions
+        if (
+            result.merge_type == "conflict"
+            and auto_commit
+            and len(result.resolutions) >= len(result.conflicts)
+        ):
+            result = self.commit_merge(result, message=message)
 
         if delete_branch and (result.committed or result.merge_type == "fast_forward"):
             from tract.operations.branch import delete_branch as _delete_branch
@@ -4520,36 +4206,25 @@ class Tract:
         target_branch: str,
         *,
         resolver: object | None = None,
-        review: bool = False,
-        triggered_by: str | None = None,
-    ) -> RebaseResult | PendingRebase:
+    ) -> RebaseResult:
         """Rebase the current branch onto a target branch.
 
         Replays current branch's commits on top of the target branch tip,
         producing new commits with new hashes.
-
-        Three-tier routing determines what happens after planning:
-        1. ``review=True``: Returns :class:`PendingRebase` to the caller.
-        2. Hook registered (``t.on("rebase", handler)``): Fires the handler.
-        3. No hook: Auto-approves (executes immediately).
 
         Args:
             target_branch: Name of the branch to rebase onto.
             resolver: Optional resolver for semantic safety warnings.
                 Falls back to ``self._default_resolver`` if configured
                 via :meth:`configure_llm`.
-            review: If True, return PendingRebase for manual review.
-            triggered_by: Optional provenance string.
 
         Returns:
-            :class:`RebaseResult` (if auto-approved or hook approves) or
-            :class:`PendingRebase` (if ``review=True``).
+            :class:`RebaseResult`.
 
         Raises:
             RebaseError: On merge commits in range, resolver abort, etc.
             SemanticSafetyError: If safety warnings and no resolver.
         """
-        from tract.hooks.rebase import PendingRebase as _PendingRebase
         from tract.models.merge import RebaseResult
         from tract.operations.rebase import execute_rebase, plan_rebase
 
@@ -4573,61 +4248,23 @@ class Tract:
 
         commits_to_replay, target_tip, warnings, current_branch, current_tip = plan
 
-        # Build PendingRebase
-        pending = _PendingRebase(
-            operation="rebase",
-            tract=self,
-            replay_plan=[c.commit_hash for c in commits_to_replay],
-            target_base=target_tip,
+        result = execute_rebase(
+            tract_id=self._tract_id,
+            commits_to_replay=commits_to_replay,
+            target_tip=target_tip,
+            current_branch=current_branch,
+            current_tip=current_tip,
+            commit_repo=self._commit_repo,
+            ref_repo=self._ref_repo,
+            parent_repo=self._parent_repo,
+            blob_repo=self._blob_repo,
+            commit_engine=self._commit_engine,
+            event_repo=self._event_repo,
             warnings=warnings,
-            triggered_by=triggered_by,
         )
-
-        # Store full CommitRow list for execute phase
-        pending._commit_rows = commits_to_replay  # type: ignore[attr-defined]
-        pending._current_branch = current_branch  # type: ignore[attr-defined]
-        pending._current_tip = current_tip  # type: ignore[attr-defined]
-
-        # Set execute function
-        def _execute_rebase_fn(p: _PendingRebase) -> RebaseResult:
-            # Filter commit rows to match the (possibly modified) replay plan
-            remaining_hashes = set(p.replay_plan)
-            rows_to_replay = [
-                c for c in p._commit_rows  # type: ignore[attr-defined]
-                if c.commit_hash in remaining_hashes
-            ]
-            # Maintain original order
-            hash_order = {h: i for i, h in enumerate(p.replay_plan)}
-            rows_to_replay.sort(key=lambda c: hash_order.get(c.commit_hash, 0))
-
-            result = execute_rebase(
-                tract_id=self._tract_id,
-                commits_to_replay=rows_to_replay,
-                target_tip=p.target_base,
-                current_branch=p._current_branch,  # type: ignore[attr-defined]
-                current_tip=p._current_tip,  # type: ignore[attr-defined]
-                commit_repo=self._commit_repo,
-                ref_repo=self._ref_repo,
-                parent_repo=self._parent_repo,
-                blob_repo=self._blob_repo,
-                commit_engine=self._commit_engine,
-                event_repo=self._event_repo,
-                warnings=p.warnings,
-            )
-            self._session.commit()
-            self._cache.clear()
-            return result
-
-        pending._execute_fn = _execute_rebase_fn
-
-        # Three-tier routing:
-        if review:
-            return pending
-
-        self._fire_hook(pending)
-        if pending.status == "approved" and pending._result is not None:
-            return pending._result
-        return pending
+        self._session.commit()
+        self._cache.clear()
+        return result
 
     def compress(
         self,
@@ -4637,7 +4274,6 @@ class Tract:
         to_commit: str | None = None,
         target_tokens: int | None = None,
         preserve: list[str] | None = None,
-        review: bool = False,
         content: str | None = None,
         instructions: str | None = None,
         system_prompt: str | None = None,
@@ -4645,24 +4281,14 @@ class Tract:
         temperature: float | None = None,
         max_tokens: int | None = None,
         llm_config: LLMConfig | None = None,
-        validator: Callable[[str], tuple[bool, str | None]] | None = None,
-        max_retries: int = 3,
-        token_tolerance: int | None = None,
-        triggered_by: str | None = None,
         two_stage: bool | None = None,
-    ) -> CompressResult | PendingCompress:
+        triggered_by: str | None = None,
+    ) -> CompressResult:
         """Compress commit chains into summaries.
 
         Supports two content modes:
         - **Manual** (``content`` provided): Uses your text as the summary.
         - **LLM** (``configure_llm()`` called): Uses LLM for summarization.
-
-        Three-tier routing determines what happens after summaries are generated:
-        1. ``review=True``: Returns :class:`PendingCompress` to the caller
-           for manual inspection and approval.
-        2. Hook registered (``t.on("compress", handler)``): Fires the hook
-           handler with the :class:`PendingCompress`; handler decides.
-        3. No hook: Auto-approves (commits immediately).
 
         PINNED commits survive verbatim. SKIP commits are excluded.
         Original commits remain in DB (non-destructive).
@@ -4673,8 +4299,6 @@ class Tract:
             to_commit: End of range (inclusive).
             target_tokens: Target token count for summaries.
             preserve: Hashes to treat as temporarily PINNED.
-            review: If True, return PendingCompress for manual review
-                instead of auto-committing or firing hooks.
             content: Manual summary text (bypasses LLM).
             instructions: Extra guidance appended to the **user message** of the
                 summarization LLM call (the default prompt is preserved). This
@@ -4698,34 +4322,25 @@ class Tract:
             temperature: Override temperature for LLM summarization.
             max_tokens: Override max_tokens for LLM summarization.
             llm_config: Full LLMConfig override for this call.
-            validator: Optional callable that validates the summary text.
-                Takes the summary text, returns (ok, diagnosis). When provided,
-                validation is handled by the hook layer: summaries are validated
-                via ``PendingCompress.validate()`` and retried via ``auto_retry``.
-            max_retries: Maximum retry attempts when validator is set (default 3).
-            token_tolerance: Additive token tolerance for summary validation.
-                When set, summaries up to ``target_tokens + token_tolerance``
-                are accepted. Defaults to 500 when ``None``. Use 0 for strict
-                enforcement (only ``target_tokens`` allowed).
-            triggered_by: Optional provenance string (e.g. "trigger:auto_compress").
-                Passed to the PendingCompress for trigger feedback routing.
             two_stage: When True and LLM is available, generate guidance first
                 (what should the summary focus on?) then generate summaries using
-                that guidance. The guidance is stored on PendingCompress and is
-                editable via edit_guidance(). When None/False, uses one-shot
-                summarization.
+                that guidance. When None/False, uses one-shot summarization.
 
         Returns:
-            :class:`CompressResult` (if auto-approved or hook approves) or
-            :class:`PendingCompress` (if ``review=True`` or validation exhausted).
+            :class:`CompressResult`.
 
         Raises:
             DetachedHeadError: If HEAD is detached.
             CompressionError: On various error conditions.
             LLMConfigError: If explicit LLM params given without client.
         """
-        from tract.hooks.compress import PendingCompress as _PendingCompress
-        from tract.operations.compression import compress_range
+        from tract.operations.compression import (
+            _classify_by_priority,
+            _commit_compression,
+            _partition_around_pinned,
+            _resolve_commit_range,
+            compress_range,
+        )
 
         # Guard: detached HEAD blocks compression
         if self._ref_repo.is_detached(self._tract_id):
@@ -4765,8 +4380,8 @@ class Tract:
         if effective_system_prompt is None and self._operation_prompts.compress is not None:
             effective_system_prompt = self._operation_prompts.compress
 
-        # compress_range() always returns PendingCompress now
-        pending = compress_range(
+        # Step 1: Generate summaries via compress_range
+        range_result = compress_range(
             tract_id=self._tract_id,
             commit_repo=self._commit_repo,
             blob_repo=self._blob_repo,
@@ -4788,78 +4403,27 @@ class Tract:
             instructions=instructions,
             system_prompt=effective_system_prompt,
             type_registry=self._custom_type_registry,
-            triggered_by=triggered_by,
             two_stage=two_stage or False,
         )
 
-        # Wire the PendingCompress to this Tract instance
-        pending.tract = self  # type: ignore[assignment]
-        pending._execute_fn = self._finalize_compression
-
-        # Thread user validator into PendingCompress for hook-layer validation
-        if validator is not None:
-            pending._user_validator = validator
-            pending._user_max_retries = max_retries
-        if token_tolerance is not None:
-            pending._token_tolerance = token_tolerance
-
-        # Three-tier routing:
-        # 1. review=True: return to caller for manual inspection
-        if review:
-            return pending
-
-        # 2. Fire hook system (handles stacked handlers, auto-approve, logging)
-        # If validation is needed (validator, target_tokens, or retention criteria)
-        # but no hook registered, use auto_retry as the default handler.
-        # Manual mode (content=) skips auto_retry since there's no LLM to retry.
-        has_retention = (
-            pending._retention_criteria is not None
-            and any(bool(criteria) for criteria in pending._retention_criteria)
+        # Step 2: Re-resolve range data for the commit phase
+        head_hash = self._ref_repo.get_head(self._tract_id)
+        branch_name = self._ref_repo.get_current_branch(self._tract_id)
+        range_commits = _resolve_commit_range(
+            self._commit_repo, self._ref_repo, self._annotation_repo,
+            self._tract_id, head_hash,
+            commits=commits, from_commit=from_commit, to_commit=to_commit,
         )
-        needs_validation = (
-            content is None
-            and (validator is not None or target_tokens is not None or has_retention)
+        pinned_commits, _important, normal_commits, skip_commits = (
+            _classify_by_priority(range_commits, self._annotation_repo, preserve=preserve)
         )
-        has_hook = self._hooks.get("compress") or self._hooks.get("*")
-        if needs_validation and not has_hook:
-            from tract.hooks.retry import auto_retry
-            auto_retry(pending, max_retries=max_retries)
-            if pending.status == "approved" and pending._result is not None:
-                return pending._result
-            return pending
-        else:
-            self._fire_hook(pending)
-            if pending.status == "approved" and pending._result is not None:
-                return pending._result
-            return pending
+        normal_commits = normal_commits + _important
+        pinned_hashes = {r.commit_hash for r in pinned_commits}
+        skip_hashes = {r.commit_hash for r in skip_commits}
+        groups = _partition_around_pinned(range_commits, pinned_hashes, skip_hashes)
+        original_tokens = sum(c.token_count for c in normal_commits)
 
-    def _finalize_compression(
-        self, pending: PendingCompress,
-    ) -> CompressResult:
-        """Finalize a pending compression by creating commits.
-
-        Called by PendingCompress.approve() via the _execute_fn closure,
-        or directly by approve_compression().
-
-        Args:
-            pending: The PendingCompress to finalize.
-
-        Returns:
-            CompressResult with committed compression details.
-        """
-        from tract.operations.compression import _commit_compression
-
-        if self._event_repo is None:
-            from tract.exceptions import CompressionError
-            raise CompressionError("Compression repository not available")
-
-        # If inside a hook, nested operations (e.g. tool_result) may have
-        # advanced HEAD. Refresh the expected head so the TOCTOU guard passes.
-        expected_head = pending._head_hash
-        if self._in_hook:
-            expected_head = self._ref_repo.get_head(self._tract_id)
-
-        # Use savepoint for atomic rollback on partial failure
+        # Step 3: Commit compression
         nested = self._session.begin_nested()
         try:
             result = _commit_compression(
@@ -4870,21 +4434,21 @@ class Tract:
                 commit_engine=self._commit_engine,
                 token_counter=self._token_counter,
                 event_repo=self._event_repo,
-                summaries=pending.summaries,
-                range_commits=pending._range_commits,
-                pinned_commits=pending._pinned_commits,
-                normal_commits=pending._normal_commits,
-                pinned_hashes=pending._pinned_hashes,
-                skip_hashes=pending._skip_hashes,
-                groups=pending._groups,
-                original_tokens=pending.original_tokens,
-                target_tokens=pending._target_tokens,
-                instructions=pending._instructions,
-                system_prompt=pending._system_prompt,
-                branch_name=pending._branch_name,
+                summaries=range_result.summary_commits,
+                range_commits=range_commits,
+                pinned_commits=pinned_commits,
+                normal_commits=normal_commits,
+                pinned_hashes=pinned_hashes,
+                skip_hashes=skip_hashes,
+                groups=groups,
+                original_tokens=original_tokens,
+                target_tokens=target_tokens,
+                instructions=instructions,
+                system_prompt=effective_system_prompt,
+                branch_name=branch_name,
                 type_registry=self._custom_type_registry,
-                expected_head=expected_head,
-                generation_config=getattr(pending, '_generation_config', None),
+                expected_head=head_hash,
+                generation_config=range_result.generation_config,
             )
         except Exception:
             nested.rollback()
@@ -4894,19 +4458,6 @@ class Tract:
         self._cache.clear()
 
         return result
-
-    def approve_compression(
-        self, pending: PendingCompress,
-    ) -> CompressResult:
-        """Finalize a pending compression (alternative to pending.approve()).
-
-        Args:
-            pending: The PendingCompress to finalize.
-
-        Returns:
-            CompressResult with committed compression details.
-        """
-        return self._finalize_compression(pending)
 
     def compress_tool_calls(
         self,
@@ -5088,18 +4639,11 @@ class Tract:
         orphan_retention_days: int = 7,
         archive_retention_days: int | None = None,
         branch: str | None = None,
-        review: bool = False,
-        triggered_by: str | None = None,
-    ) -> GCResult | PendingGC:
+    ) -> GCResult:
         """Garbage-collect unreachable commits.
 
         Removes commits not reachable from any branch tip, subject to
-        configurable retention triggers.
-
-        Three-tier routing determines what happens after planning:
-        1. ``review=True``: Returns :class:`PendingGC` to the caller.
-        2. Hook registered (``t.on("gc", handler)``): Fires the handler.
-        3. No hook: Auto-approves (executes immediately).
+        configurable retention periods.
 
         Args:
             orphan_retention_days: Days before orphaned commits become
@@ -5109,18 +4653,14 @@ class Tract:
                 means archives are never removed.
             branch: If set, only check this branch for reachability.
                 WARNING: commits reachable from other branches may be removed.
-            review: If True, return PendingGC for manual review.
-            triggered_by: Optional provenance string.
 
         Returns:
-            :class:`GCResult` (if auto-approved or hook approves) or
-            :class:`PendingGC` (if ``review=True``).
+            :class:`GCResult`.
 
         Raises:
             CompressionError: If compression repository is not available.
         """
         from tract.exceptions import CompressionError
-        from tract.hooks.gc import PendingGC as _PendingGC
         from tract.operations.compression import execute_gc, plan_gc
 
         if self._event_repo is None:
@@ -5141,47 +4681,17 @@ class Tract:
             branch=branch,
         )
 
-        # Build PendingGC
-        pending = _PendingGC(
-            operation="gc",
-            tract=self,
-            commits_to_remove=[c.commit_hash for c in commits_to_remove],
-            tokens_to_free=tokens_to_free,
-            triggered_by=triggered_by,
+        # Execute phase: remove commits
+        result = execute_gc(
+            tract_id=self._tract_id,
+            commits_to_remove=commits_to_remove,
+            commit_repo=self._commit_repo,
+            blob_repo=self._blob_repo,
+            event_repo=self._event_repo,
         )
-
-        # Store the full CommitRow list for execute phase
-        pending._commit_rows = commits_to_remove  # type: ignore[attr-defined]
-
-        # Set execute function
-        def _execute_gc_fn(p: _PendingGC) -> GCResult:
-            # Filter commit rows to match the (possibly modified) hash list
-            remaining_hashes = set(p.commits_to_remove)
-            rows_to_remove = [
-                c for c in p._commit_rows  # type: ignore[attr-defined]
-                if c.commit_hash in remaining_hashes
-            ]
-            result = execute_gc(
-                tract_id=self._tract_id,
-                commits_to_remove=rows_to_remove,
-                commit_repo=self._commit_repo,
-                blob_repo=self._blob_repo,
-                event_repo=self._event_repo,
-            )
-            self._cache.clear()
-            self._session.commit()
-            return result
-
-        pending._execute_fn = _execute_gc_fn
-
-        # Three-tier routing:
-        if review:
-            return pending
-
-        self._fire_hook(pending)
-        if pending.status == "approved" and pending._result is not None:
-            return pending._result
-        return pending
+        self._cache.clear()
+        self._session.commit()
+        return result
 
     def record_usage(
         self,
@@ -5356,138 +4866,6 @@ class Tract:
             self._in_batch = False
             self._session.commit = _real_commit  # type: ignore[assignment]
 
-
-    # ------------------------------------------------------------------
-    # Trigger management
-    # ------------------------------------------------------------------
-
-    def configure_triggers(
-        self,
-        triggers: list | None = None,
-        *,
-        cooldown_seconds: float = 0,
-    ) -> None:
-        """Configure the trigger evaluator.
-
-        Creates a TriggerEvaluator with the given triggers, enabling
-        automatic trigger evaluation on compile() and commit() calls.
-
-        Args:
-            triggers: List of Trigger instances to register.
-            cooldown_seconds: Minimum seconds between re-evaluations
-                of the same trigger. Default 0 (no cooldown).
-        """
-        from tract.triggers.evaluator import TriggerEvaluator as _TriggerEvaluator
-
-        self._trigger_evaluator = _TriggerEvaluator(
-            tract=self,
-            triggers=triggers,
-            trigger_repo=self._trigger_repo,
-            cooldown_seconds=cooldown_seconds,
-        )
-
-    def register_trigger(self, trigger: object) -> None:
-        """Register a single trigger with the evaluator.
-
-        If no evaluator exists, one is created automatically.
-
-        Args:
-            trigger: A Trigger instance to register.
-        """
-        if self._trigger_evaluator is None:
-            self.configure_triggers()
-        self._trigger_evaluator.register(trigger)  # type: ignore[union-attr]
-
-    def unregister_trigger(self, trigger_name: str) -> None:
-        """Remove a trigger by name.
-
-        No-op if no evaluator exists.
-
-        Args:
-            trigger_name: The name of the trigger to remove.
-        """
-        if self._trigger_evaluator is not None:
-            self._trigger_evaluator.unregister(trigger_name)
-
-    def pause_all_triggers(self) -> None:
-        """Pause all trigger evaluation (emergency kill switch).
-
-        No-op if no evaluator exists.
-        """
-        if self._trigger_evaluator is not None:
-            self._trigger_evaluator.pause()
-
-    def resume_all_triggers(self) -> None:
-        """Resume all trigger evaluation.
-
-        No-op if no evaluator exists.
-        """
-        if self._trigger_evaluator is not None:
-            self._trigger_evaluator.resume()
-
-    def list_triggers(self) -> list[dict]:
-        """Return info about all registered triggers.
-
-        Returns:
-            List of dicts with keys: name, fires_on, priority, config.
-        """
-        if self._trigger_evaluator is None:
-            return []
-        result = []
-        for trig in self._trigger_evaluator.triggers:
-            config = {}
-            if hasattr(trig, "to_config") and callable(trig.to_config):
-                try:
-                    config = trig.to_config()
-                except Exception:
-                    pass
-            result.append({
-                "name": trig.name,
-                "fires_on": trig.fires_on,
-                "priority": trig.priority,
-                "config": config,
-            })
-        return result
-
-    def save_trigger_config(self, config_data: dict) -> None:
-        """Persist trigger configuration to _trace_meta.
-
-        Args:
-            config_data: Dictionary of trigger configuration to persist.
-        """
-        import json as _json
-
-        from sqlalchemy import select as _select
-
-        from tract.storage.schema import TraceMetaRow
-
-        stmt = _select(TraceMetaRow).where(TraceMetaRow.key == "trigger_config")
-        existing = self._session.execute(stmt).scalar_one_or_none()
-        if existing is None:
-            self._session.add(
-                TraceMetaRow(key="trigger_config", value=_json.dumps(config_data))
-            )
-        else:
-            existing.value = _json.dumps(config_data)
-        self._session.commit()
-
-    def load_trigger_config(self) -> dict | None:
-        """Load trigger configuration from _trace_meta.
-
-        Returns:
-            Dictionary of trigger configuration, or None if not set.
-        """
-        import json as _json
-
-        from sqlalchemy import select as _select
-
-        from tract.storage.schema import TraceMetaRow
-
-        stmt = _select(TraceMetaRow).where(TraceMetaRow.key == "trigger_config")
-        row = self._session.execute(stmt).scalar_one_or_none()
-        if row is None:
-            return None
-        return _json.loads(row.value)
 
     def register_content_type(self, name: str, model: type[BaseModel]) -> None:
         """Register a custom content type for this tract instance.
@@ -5668,747 +5046,6 @@ class Tract:
         self._tool_executor.lock_tool(tool_name)
 
     # ------------------------------------------------------------------
-    # Orchestrator facade
-    # ------------------------------------------------------------------
-
-    def _set_orchestrating(self, flag: bool) -> None:
-        """Set the orchestrating recursion guard flag.
-
-        Called by the Orchestrator to prevent trigger evaluation from
-        re-triggering orchestrator runs.
-
-        Args:
-            flag: True when orchestrating, False when done.
-        """
-        self._orchestrating = flag
-
-    def _check_orchestrator_triggers(self, trigger: str) -> None:
-        """Check if orchestrator triggers should fire.
-
-        Called from compile() and commit() after trigger evaluation,
-        guarded by ``not self._orchestrating and not self._in_batch``.
-
-        Args:
-            trigger: The trigger type ("compile" or "commit").
-        """
-        if self._orchestrator is None:
-            return
-        # Lazy import to avoid circular dependency
-        from tract.orchestrator.loop import Orchestrator as _Orchestrator
-
-        if not isinstance(self._orchestrator, _Orchestrator):
-            return
-
-        orch: _Orchestrator = self._orchestrator  # type: ignore[assignment]
-        triggers = orch._config.triggers
-        if triggers is None:
-            return
-
-        try:
-            _trig_autonomy = triggers.autonomy
-
-            if trigger == "compile" and triggers.on_compile:
-                self.orchestrate(trigger_autonomy=_trig_autonomy)
-                return  # Only fire once per trigger check
-
-            if trigger == "commit":
-                fired = False
-
-                if triggers.on_commit_count is not None:
-                    self._trigger_commit_count += 1
-                    if self._trigger_commit_count >= triggers.on_commit_count:
-                        self._trigger_commit_count = 0
-                        self.orchestrate(trigger_autonomy=_trig_autonomy)
-                        fired = True
-
-                if not fired and triggers.on_token_threshold is not None:
-                    status = self.status()
-                    if (
-                        status.token_budget_max
-                        and status.token_budget_max > 0
-                    ):
-                        pct = status.token_count / status.token_budget_max
-                        if pct >= triggers.on_token_threshold:
-                            if not self._token_trigger_fired:
-                                self._token_trigger_fired = True
-                                self.orchestrate(
-                                    trigger_autonomy=_trig_autonomy
-                                )
-                        else:
-                            # Reset cooldown when usage drops below threshold
-                            self._token_trigger_fired = False
-        except Exception:
-            # Trigger errors must not break commit/compile
-            import logging
-
-            logging.getLogger(__name__).debug(
-                "Orchestrator trigger error", exc_info=True
-            )
-
-    def configure_orchestrator(
-        self,
-        config: OrchestratorConfig | None = None,
-        llm_callable: Callable | None = None,
-    ) -> None:
-        """Configure the orchestrator for this tract.
-
-        Creates an Orchestrator instance and stores it for later use
-        by :meth:`orchestrate` and trigger checks.
-
-        Args:
-            config: An OrchestratorConfig instance, or None for defaults.
-            llm_callable: Optional callable for LLM calls. If not
-                provided and no tract LLM client is configured, a
-                warning is logged.
-        """
-        from tract.orchestrator import Orchestrator as _Orchestrator
-        from tract.orchestrator import OrchestratorConfig as _OrchestratorConfig
-
-        if config is None:
-            config = _OrchestratorConfig()
-
-        self._orchestrator = _Orchestrator(
-            self, config=config, llm_callable=llm_callable
-        )
-
-        if llm_callable is None and not self._has_llm_client("orchestrate"):
-            import logging
-
-            logging.getLogger(__name__).warning(
-                "Orchestrator configured without LLM. "
-                "Call configure_llm() or provide llm_callable."
-            )
-
-    def configure_agent_loop(self, loop: object) -> None:
-        """Set a custom agent loop for :meth:`orchestrate`.
-
-        When set, :meth:`orchestrate` delegates to this loop instead of the
-        built-in :class:`~tract.orchestrator.loop.Orchestrator`.  The loop
-        must conform to the :class:`~tract.llm.protocols.AgentLoop` protocol.
-
-        Args:
-            loop: An object implementing ``run()`` and ``stop()``.
-        """
-        self._agent_loop = loop
-
-    def orchestrate(
-        self,
-        *,
-        config: OrchestratorConfig | None = None,
-        llm_callable: Callable | None = None,
-        trigger_autonomy: AutonomyLevel | None = None,
-        agent_loop: object | None = None,
-    ) -> OrchestratorResult:
-        """Run the orchestrator agent loop.
-
-        Convenience method that creates or reuses an Orchestrator
-        and runs it.  When an :class:`~tract.llm.protocols.AgentLoop` is
-        configured (via *agent_loop=*, :meth:`configure_agent_loop`, or
-        ``Tract.open(agent_loop=...)``), delegates to that loop instead.
-
-        Args:
-            config: Optional OrchestratorConfig override.
-            llm_callable: Optional LLM callable override.
-            trigger_autonomy: Optional autonomy override from a trigger.
-                When set, effective autonomy is min(ceiling, trigger_autonomy).
-            agent_loop: Optional AgentLoop override for this call only.
-                Takes precedence over :meth:`configure_agent_loop`.
-
-        Returns:
-            OrchestratorResult from the orchestrator run.
-        """
-        # Dispatch to external agent loop if configured
-        loop = agent_loop or self._agent_loop
-        if loop is not None:
-            return self._run_agent_loop(loop)
-
-        from tract.orchestrator import Orchestrator as _Orchestrator
-
-        # Step 1: Resolve per-operation config BEFORE the three-way branch
-        orch_resolved = self._resolve_llm_config("orchestrate")
-
-        # Step 2: If operation-level config found, apply to config (mutation-safe)
-        if orch_resolved:
-            if config is not None:
-                # Caller provided config -- only fill in None/default fields
-                # Use dataclasses.replace() to avoid mutating the caller's object
-                overrides: dict = {}
-                if config.model is None and "model" in orch_resolved:
-                    overrides["model"] = orch_resolved["model"]
-                if config.temperature == 0.0 and "temperature" in orch_resolved:
-                    overrides["temperature"] = orch_resolved["temperature"]
-                if config.max_tokens is None and "max_tokens" in orch_resolved:
-                    overrides["max_tokens"] = orch_resolved["max_tokens"]
-                # Collect remaining resolved fields into extra_llm_kwargs
-                _orch_known = {"model", "temperature", "max_tokens"}
-                extra = {k: v for k, v in orch_resolved.items() if k not in _orch_known}
-                if extra and config.extra_llm_kwargs is None:
-                    overrides["extra_llm_kwargs"] = extra
-                if overrides:
-                    config = replace(config, **overrides)
-            else:
-                # No caller config -- create one from operation defaults
-                from tract.orchestrator.config import OrchestratorConfig as _OrchestratorConfig
-                _orch_known = {"model", "temperature", "max_tokens"}
-                extra = {k: v for k, v in orch_resolved.items() if k not in _orch_known}
-                config = _OrchestratorConfig(
-                    model=orch_resolved.get("model"),
-                    temperature=orch_resolved.get("temperature", 0.0),
-                    max_tokens=orch_resolved.get("max_tokens"),
-                    extra_llm_kwargs=extra if extra else None,
-                )
-
-        # Step 3: Three-way branch (now with resolved config)
-        # If overrides provided, create a new orchestrator
-        if config is not None or llm_callable is not None:
-            orch = _Orchestrator(
-                self, config=config, llm_callable=llm_callable
-            )
-            return orch.run(trigger_autonomy=trigger_autonomy)
-
-        # If existing orchestrator, reuse it
-        if self._orchestrator is not None:
-            orch_inst: _Orchestrator = self._orchestrator  # type: ignore[assignment]
-            orch_inst.reset()
-            return orch_inst.run(trigger_autonomy=trigger_autonomy)
-
-        # Create one with defaults
-        orch = _Orchestrator(self)
-        return orch.run(trigger_autonomy=trigger_autonomy)
-
-    def _run_agent_loop(self, loop: object) -> OrchestratorResult:
-        """Dispatch orchestration to an external AgentLoop.
-
-        Builds assessment and tools, hands off to the loop, wraps the
-        result into an OrchestratorResult, and records provenance.
-
-        Args:
-            loop: An object conforming to the AgentLoop protocol.
-
-        Returns:
-            OrchestratorResult wrapping the loop's result.
-        """
-        from tract.orchestrator.assessment import build_context_assessment
-        from tract.orchestrator.config import OrchestratorState as _OrchestratorState
-        from tract.orchestrator.models import AgentLoopResult as _AgentLoopResult
-        from tract.orchestrator.models import OrchestratorResult as _OrchestratorResult
-        from tract.toolkit.executor import ToolExecutor as _ToolExecutor
-
-        # Build assessment
-        assessment = build_context_assessment(self)
-
-        # Get tools
-        tools = self.as_tools(profile="self")
-
-        # Build execute_tool callable
-        executor = _ToolExecutor(self)
-
-        def execute_tool(tool_name: str, arguments: dict) -> object:
-            return executor.execute(tool_name, arguments)
-
-        # Build messages
-        from tract.prompts.orchestrator import ORCHESTRATOR_SYSTEM_PROMPT
-
-        messages = [
-            {"role": "system", "content": ORCHESTRATOR_SYSTEM_PROMPT},
-            {"role": "user", "content": assessment},
-        ]
-
-        # Dispatch to external loop
-        self._orchestrating = True
-        try:
-            result = loop.run(  # type: ignore[union-attr]
-                messages=messages,
-                tools=tools,
-                execute_tool=execute_tool,
-            )
-        finally:
-            self._orchestrating = False
-
-        # Normalize result
-        if isinstance(result, _AgentLoopResult):
-            steps = result.steps
-            completed = result.completed
-            total_usage = result.total_usage
-            model = result.model
-        else:
-            # Duck-type: try to extract fields
-            steps = getattr(result, "steps", [])
-            completed = getattr(result, "completed", True)
-            total_usage = getattr(result, "total_usage", None)
-            model = getattr(result, "model", None)
-
-        # Record provenance: aggregate usage
-        if total_usage is not None:
-            try:
-                self.record_usage(total_usage)
-            except Exception:
-                pass  # Best-effort provenance
-
-        return _OrchestratorResult(
-            steps=steps,
-            state=_OrchestratorState.IDLE,
-            assessment=assessment,
-            total_tool_calls=len(steps),
-            total_usage=total_usage,
-            model=model,
-        )
-
-    def stop_orchestrator(self) -> None:
-        """Stop the running orchestrator or agent loop immediately.
-
-        No-op if no orchestrator or agent loop is configured.
-        """
-        if self._agent_loop is not None and hasattr(self._agent_loop, "stop"):
-            self._agent_loop.stop()  # type: ignore[union-attr]
-        if self._orchestrator is not None:
-            from tract.orchestrator.loop import Orchestrator as _Orchestrator
-
-            if isinstance(self._orchestrator, _Orchestrator):
-                self._orchestrator.stop()  # type: ignore[union-attr]
-
-    def pause_orchestrator(self) -> None:
-        """Pause the running orchestrator gracefully.
-
-        No-op if no orchestrator is configured.
-        """
-        if self._orchestrator is not None:
-            from tract.orchestrator.loop import Orchestrator as _Orchestrator
-
-            if isinstance(self._orchestrator, _Orchestrator):
-                self._orchestrator.pause()  # type: ignore[union-attr]
-
-    # ------------------------------------------------------------------
-    # Dynamic operations
-    # ------------------------------------------------------------------
-
-    def register_operation(
-        self,
-        spec: object,
-        *,
-        review: bool = False,
-    ) -> type | None:
-        """Register a dynamic hookable operation.
-
-        SECURITY: The caller is responsible for vetting code strings in the spec
-        before registration. When LLMs generate specs, the host application should
-        inspect the spec (especially ActionDef.code) before calling this method.
-
-        Args:
-            spec: The OperationSpec with fields and action code.
-            review: If True, compile and return the Pending subclass for inspection
-                without activating the operation. Call again with review=False to activate.
-
-        Returns:
-            If review=True, the compiled Pending subclass. Otherwise None.
-        """
-        cls = self._operation_registry.register(spec)
-        if review:
-            self._operation_registry.unregister(spec.name)
-            return cls
-        self._custom_hookable_ops.add(spec.name)
-        return None
-
-    def unregister_operation(self, name: str) -> None:
-        """Remove a dynamic operation and clean up all associated state."""
-        self._operation_registry.unregister(name)
-        self._custom_hookable_ops.discard(name)
-        self.off(name)
-
-    def fire(
-        self,
-        operation: str,
-        fields: dict | None = None,
-        *,
-        execute_fn: object | None = None,
-        review: bool = False,
-        triggered_by: str | None = None,
-    ) -> object:
-        """Fire a dynamic operation.
-
-        Creates a Pending instance from the registered OperationSpec,
-        attaches execute_fn (wrapped with provenance recording),
-        and routes through _fire_hook().
-
-        Args:
-            operation: Registered operation name.
-            fields: Dict of operation-specific fields.
-            execute_fn: Optional finalizer called on approve().
-            review: If True, return the Pending for manual review.
-            triggered_by: Provenance string.
-
-        Returns:
-            If review=True: the Pending instance.
-            If approved with execute_fn: the execute_fn's return value.
-            If approved without execute_fn: the Pending (status=APPROVED).
-            If rejected/unresolved: the Pending.
-        """
-        from tract.hooks.pending import PendingStatus
-
-        spec = self._operation_registry.get_spec(operation)
-        cls = self._operation_registry.get_class(operation)
-        if cls is None or spec is None:
-            raise ValueError(f"Unknown dynamic operation: {operation!r}")
-
-        resolved_fields = _validate_dynamic_fields(fields or {}, spec.fields)
-        pending = cls(tract=self, fields=resolved_fields, triggered_by=triggered_by)
-
-        original_fn = execute_fn
-        if original_fn is not None:
-            def _wrapped_execute(p):
-                result = original_fn(p)
-                if self._event_repo is not None:
-                    self._event_repo.save_event(
-                        event_id=uuid.uuid4().hex,
-                        tract_id=self._tract_id,
-                        event_type=f"custom:{operation}",
-                        branch_name=None,
-                        created_at=datetime.now(timezone.utc),
-                        original_tokens=0,
-                        compressed_tokens=0,
-                        params_json=p.fields if p.fields else None,
-                    )
-                return result
-            pending._execute_fn = _wrapped_execute
-        else:
-            # No-op execute_fn so approve() works without raising
-            pending._execute_fn = lambda p: None
-
-        if review:
-            return pending
-
-        self._fire_hook(pending)
-
-        if pending.status == PendingStatus.APPROVED and original_fn is not None:
-            return pending._result
-        return pending
-
-    # ------------------------------------------------------------------
-    # Hook system
-    # ------------------------------------------------------------------
-
-    _HOOKABLE_OPS: set[str] = {"compress", "gc", "rebase", "merge", "trigger", "tool_result"}
-
-    def on(
-        self,
-        operation: str,
-        handler: Callable,
-        *,
-        name: str | None = None,
-        before: str | bool | None = None,
-        after: str | None = None,
-        at: int | None = None,
-    ) -> None:
-        """Register a hook handler for an operation.
-
-        Multiple handlers can be stacked for the same operation. They fire
-        in registration order; the first handler that resolves the pending
-        (approve/reject/pass_through) stops iteration.
-
-        Args:
-            operation: Operation name ("compress", "gc", "rebase", "merge",
-                "trigger", "tool_result", or "*" for catch-all).
-            handler: Callable that takes a Pending subclass. Handler calls
-                methods on the Pending (approve, reject, pass_through, etc.).
-            name: Display name for the handler. Defaults to
-                ``handler.__name__`` or ``repr(handler)``.
-            before: Insert before a named handler. ``True`` to prepend.
-                ``False`` is ignored (treated as ``None``).
-            after: Insert after a named handler.
-            at: Insert at a specific index (0-based). ``len(list)`` appends.
-
-        Raises:
-            ValueError: If operation is not hookable, duplicate name,
-                multiple positioning args, or named target not found.
-            IndexError: If ``at`` is out of range.
-        """
-        _all_hookable = self._HOOKABLE_OPS | self._custom_hookable_ops
-        if operation != "*" and operation not in _all_hookable:
-            raise ValueError(
-                f"Cannot hook '{operation}': not a hookable operation. "
-                f"Hookable operations: {', '.join(sorted(_all_hookable))}"
-            )
-
-        # Normalize before=False to None
-        if before is False:
-            before = None
-
-        # Validate at most one positioning arg
-        positioning_count = sum(x is not None for x in (before, after, at))
-        if positioning_count > 1:
-            raise ValueError(
-                "Only one of 'before', 'after', or 'at' can be specified."
-            )
-
-        # Resolve name
-        explicit_name = name is not None
-        entry_name = name if explicit_name else getattr(handler, "__name__", repr(handler))
-
-        # Ensure list exists
-        if operation not in self._hooks:
-            self._hooks[operation] = []
-
-        entries = self._hooks[operation]
-        existing_names = {e.name for e in entries}
-
-        # Check name uniqueness -- strict for explicit names, auto-suffix for auto-derived
-        if entry_name in existing_names:
-            if explicit_name:
-                raise ValueError(
-                    f"A handler named {entry_name!r} is already registered for "
-                    f"'{operation}'. Use a unique name or remove the existing handler first."
-                )
-            # Auto-suffix: find the next available index
-            base = entry_name
-            idx = 2
-            while entry_name in existing_names:
-                entry_name = f"{base}_{idx}"
-                idx += 1
-
-        entry = _HookEntry(name=entry_name, handler=handler)
-
-        # Positioning
-        if before is True:
-            entries.insert(0, entry)
-        elif isinstance(before, str):
-            idx = self._find_hook_entry_index(entries, before, "before")
-            entries.insert(idx, entry)
-        elif after is not None:
-            idx = self._find_hook_entry_index(entries, after, "after")
-            entries.insert(idx + 1, entry)
-        elif at is not None:
-            if at < 0 or at > len(entries):
-                raise IndexError(
-                    f"Index {at} is out of range for {len(entries)} handlers "
-                    f"on '{operation}'. Valid range: 0..{len(entries)}."
-                )
-            entries.insert(at, entry)
-        else:
-            entries.append(entry)
-
-    @staticmethod
-    def _find_hook_entry_index(
-        entries: list[_HookEntry], target_name: str, param: str
-    ) -> int:
-        """Find the index of a named hook entry, or raise ValueError."""
-        for i, e in enumerate(entries):
-            if e.name == target_name:
-                return i
-        raise ValueError(
-            f"No handler named {target_name!r} found ({param}= target). "
-            f"Registered names: {[e.name for e in entries]}"
-        )
-
-    def off(
-        self,
-        operation: str,
-        handler: Callable | str | None = None,
-        *,
-        _persist: bool = True,
-    ) -> None:
-        """Remove hook handler(s) for an operation.
-
-        Args:
-            operation: Operation name to remove the handler for.
-            handler: If a Callable, remove by identity.  If a str, remove
-                by name.  If ``None`` (default), remove *all* handlers for
-                the operation.
-        """
-        if handler is None:
-            self._hooks.pop(operation, None)
-        elif isinstance(handler, str):
-            entries = self._hooks.get(operation, [])
-            self._hooks[operation] = [e for e in entries if e.name != handler]
-            if not self._hooks.get(operation):
-                self._hooks.pop(operation, None)
-        else:
-            entries = self._hooks.get(operation, [])
-            self._hooks[operation] = [e for e in entries if e.handler is not handler]
-            if not self._hooks.get(operation):
-                self._hooks.pop(operation, None)
-
-        # Persist soft-delete if available
-        if _persist:
-            repo = self._persistence_repo
-            if repo is not None:
-                if handler is None:
-                    repo.delete_hook_wiring(self._tract_id, operation)
-                    self._session.commit()
-                elif isinstance(handler, str):
-                    repo.delete_hook_wiring_by_name(self._tract_id, handler)
-                    self._session.commit()
-
-    @property
-    def hooks(self) -> dict[str, list[Callable]]:
-        """Currently registered hook handlers (copy)."""
-        return {op: [e.handler for e in entries] for op, entries in self._hooks.items()}
-
-    @property
-    def hook_names(self) -> dict[str, list[str]]:
-        """Names of registered hook handlers."""
-        return {op: [e.name for e in entries] for op, entries in self._hooks.items()}
-
-    @property
-    def hook_log(self) -> list[HookEvent]:
-        """Hook activity log (copy)."""
-        return list(self._hook_log)
-
-    def list_hooks(self) -> dict:
-        """Return structured hook registration and recent activity.
-
-        Returns a dict with two keys:
-
-        * ``handlers`` -- list of dicts with ``operation``, ``name`` for each
-          registered handler (sorted by operation).
-        * ``log`` -- list of dicts with ``timestamp``, ``operation``,
-          ``handler_name``, ``resolved``, ``result`` for the most recent
-          20 hook events.
-        """
-        handlers: list[dict[str, str]] = []
-        for op, entries in sorted(self._hooks.items()):
-            for e in entries:
-                handlers.append({"operation": op, "name": e.name})
-
-        log: list[dict] = []
-        for evt in self._hook_log[-20:]:
-            log.append({
-                "timestamp": evt.timestamp.isoformat(),
-                "operation": evt.operation,
-                "handler_name": evt.handler_name,
-                "resolved": evt.resolved,
-                "result": evt.result,
-            })
-
-        return {"handlers": handlers, "log": log}
-
-    def pprint_hooks(self) -> None:
-        """Pretty-print registered hooks and recent activity using Rich."""
-        from tract.formatting import pprint_hooks
-        pprint_hooks(self.list_hooks())
-
-    def print_hooks(self) -> None:
-        """Print registered hooks and recent activity.
-
-        .. deprecated::
-            Use :meth:`pprint_hooks` for Rich-formatted output, or
-            :meth:`list_hooks` for structured data.
-        """
-        self.pprint_hooks()
-
-    def _fire_hook(self, pending: Pending) -> None:
-        """Route a Pending through the hook system.
-
-        Three-tier routing:
-        1. Specific hook(s) for this operation
-        2. Catch-all ``"*"`` hook(s)
-        3. Auto-approve (no hooks)
-
-        Stacked handlers fire in registration order. The first handler that
-        resolves the pending (approve/reject) stops iteration.  Handlers
-        that call ``pass_through()`` are logged and iteration continues;
-        if no handler ultimately approves or rejects, the pending is
-        auto-approved (nobody objected).
-
-        Recursion guard: if already inside a hook handler, auto-approve.
-        This prevents direct recursion (compress -> hook -> compress) and
-        indirect cycles (compress -> hook -> gc -> hook -> compress).
-
-        Unresolved handler guard: if all handlers return without calling
-        approve(), reject(), or pass_through(), emit a warning.
-
-        Args:
-            pending: A Pending subclass instance.
-        """
-        import logging
-        import warnings
-
-        from tract.hooks.pending import PendingStatus
-
-        now = datetime.now
-
-        # Recursion guard
-        if self._in_hook:
-            pending.approve()
-            self._hook_log.append(
-                HookEvent(now(), pending.operation, "(recursion guard)", True, "skipped")
-            )
-            return
-
-        # Find handlers: specific > catch-all > auto-approve
-        entries = self._hooks.get(pending.operation) or self._hooks.get("*")
-
-        if not entries:
-            pending.approve()
-            self._hook_log.append(
-                HookEvent(now(), pending.operation, "(none)", True, "auto-approved")
-            )
-            return
-
-        self._in_hook = True
-        last_handler_name = "(unknown)"
-        try:
-            for entry in entries:
-                last_handler_name = entry.name
-                entry.handler(pending)
-
-                if pending.status == PendingStatus.APPROVED:
-                    self._hook_log.append(
-                        HookEvent(now(), pending.operation, last_handler_name, True, "approved")
-                    )
-                    break
-                elif pending.status == PendingStatus.REJECTED:
-                    self._hook_log.append(
-                        HookEvent(now(), pending.operation, last_handler_name, True, "rejected")
-                    )
-                    break
-                elif pending.status == PendingStatus.PASSED_THROUGH:
-                    self._hook_log.append(
-                        HookEvent(now(), pending.operation, last_handler_name, True, "passed_through")
-                    )
-                    # Reset to PENDING so the next handler can act
-                    pending.status = PendingStatus.PENDING
-                # else: status is still PENDING (handler did nothing) -- continue
-        except Exception:
-            logger = logging.getLogger(__name__)
-            logger.warning(
-                "Hook handler for '%s' raised an exception. "
-                "The pending operation remains unresolved.",
-                pending.operation,
-                exc_info=True,
-            )
-            raise
-        finally:
-            self._in_hook = False
-
-        # Post-loop resolution
-        if pending.status == PendingStatus.PENDING:
-            # Check if the last handler logged a pass_through (meaning all
-            # handlers either passed through or did nothing).  If the most
-            # recent log entry for this operation is "passed_through", treat
-            # as auto-approve.
-            recent = [
-                e for e in self._hook_log
-                if e.operation == pending.operation
-            ]
-            if recent and recent[-1].result == "passed_through":
-                # All handlers passed through -- auto-approve (nobody objected)
-                pending.status = PendingStatus.APPROVED
-                if pending._execute_fn is not None:
-                    pending._result = pending._execute_fn(pending)
-                self._hook_log.append(
-                    HookEvent(now(), pending.operation, "(auto)", True, "auto-approved")
-                )
-            else:
-                self._hook_log.append(
-                    HookEvent(now(), pending.operation, last_handler_name, False, "unresolved")
-                )
-                warnings.warn(
-                    f"Hook handler for '{pending.operation}' returned without calling "
-                    f"approve() or reject(). The pending operation remains unresolved.",
-                    stacklevel=2,
-                )
-
-    # ------------------------------------------------------------------
     # File-based persistence (.tract/ directory)
     # ------------------------------------------------------------------
 
@@ -6447,121 +5084,19 @@ class Tract:
         return target
 
     def _load_persisted_state(self) -> None:
-        """Load persisted hooks, dynamic ops, and configs from DB + files.
+        """Load persisted configs from DB.
 
         Called during Tract.open() after all repos are initialized.
-        For :memory: databases, only loads DB-stored inline handlers.
         """
-        import importlib.util
         import json as _json
         import logging
-        import sys
 
         logger = logging.getLogger(__name__)
         repo = self._persistence_repo
         if repo is None:
             return
 
-        # 1. Load dynamic op specs from DB
-        for spec_row in repo.get_dynamic_ops(self._tract_id):
-            try:
-                from tract.hooks.dynamic import spec_from_dict
-                spec = spec_from_dict(_json.loads(spec_row.spec_json))
-                if not self._operation_registry.is_registered(spec.name):
-                    self._operation_registry.register(spec)
-                    self._custom_hookable_ops.add(spec.name)
-            except Exception:
-                logger.warning(
-                    "Failed to load dynamic op '%s': skipping.",
-                    spec_row.name,
-                    exc_info=True,
-                )
-                self._quarantined.append(f"dynamic_op:{spec_row.name}")
-
-        # 2. Load hook wirings from DB -> import and register handlers
-        for wiring in repo.get_hook_wirings(self._tract_id):
-            if not wiring.enabled:
-                continue
-
-            handler = None
-            source_name = wiring.handler_path or f"inline:{wiring.operation}"
-
-            if wiring.handler_source == "file" and wiring.handler_path:
-                td = self.tract_dir
-                if td is None:
-                    continue
-                file_path = td / wiring.handler_path
-                if not file_path.exists():
-                    logger.warning(
-                        "Hook file '%s' not found: skipping.", file_path
-                    )
-                    self._quarantined.append(f"hook:{source_name}")
-                    continue
-                try:
-                    mod_name = f"_tract_hook_{wiring.handler_path.replace('/', '_').replace('.py', '')}"
-                    spec = importlib.util.spec_from_file_location(
-                        mod_name, str(file_path)
-                    )
-                    if spec is None or spec.loader is None:
-                        raise ImportError(f"Cannot create module spec for {file_path}")
-                    module = importlib.util.module_from_spec(spec)
-                    sys.modules[mod_name] = module
-                    spec.loader.exec_module(module)
-                    handler = getattr(module, wiring.handler_function, None)
-                    if handler is None:
-                        raise ImportError(
-                            f"Function '{wiring.handler_function}' not found in {file_path}"
-                        )
-                except Exception:
-                    logger.warning(
-                        "Failed to import hook '%s': quarantining.",
-                        source_name,
-                        exc_info=True,
-                    )
-                    self._quarantined.append(f"hook:{source_name}")
-                    continue
-
-            elif wiring.handler_source == "inline" and wiring.handler_code:
-                try:
-                    ns: dict = {}
-                    exec(compile(wiring.handler_code, f"<hook:{wiring.operation}>", "exec"), ns)
-                    handler = ns.get(wiring.handler_function)
-                    if handler is None:
-                        raise ImportError(
-                            f"Function '{wiring.handler_function}' not found in inline code"
-                        )
-                except Exception:
-                    logger.warning(
-                        "Failed to compile inline hook for '%s': quarantining.",
-                        wiring.operation,
-                        exc_info=True,
-                    )
-                    self._quarantined.append(f"hook:{source_name}")
-                    continue
-
-            if handler is not None:
-                try:
-                    # Extract name from handler_path: "hooks/foo.py" -> "foo"
-                    hook_name = source_name
-                    if wiring.handler_path:
-                        import os
-                        hook_name = os.path.splitext(
-                            os.path.basename(wiring.handler_path)
-                        )[0]
-                    _all_hookable = self._HOOKABLE_OPS | self._custom_hookable_ops
-                    if wiring.operation in _all_hookable or wiring.operation == "*":
-                        self.on(wiring.operation, handler, name=hook_name)
-                except Exception:
-                    logger.warning(
-                        "Failed to register hook '%s': quarantining.",
-                        source_name,
-                        exc_info=True,
-                    )
-                    self._quarantined.append(f"hook:{source_name}")
-
-        # 3. Load operation configs from DB (for future use)
-        # Currently configs are loaded via load_trigger_config; this
-        # provides a more general mechanism.
+        # Load operation configs from DB
         for config_row in repo.get_operation_configs(self._tract_id):
             try:
                 _json.loads(config_row.config_json)  # validate JSON
@@ -6572,149 +5107,6 @@ class Tract:
                     exc_info=True,
                 )
                 self._quarantined.append(f"config:{config_row.config_key}")
-
-    def save_hook(
-        self,
-        name: str,
-        code: str,
-        operation: str,
-        *,
-        priority: int = 100,
-    ) -> "Path":
-        """Write a hook handler to .tract/hooks/{name}.py and register in DB.
-
-        Args:
-            name: Hook name (used as filename without .py).
-            code: Python source code with a ``handler(pending)`` function.
-            operation: Operation to hook (``"compress"``, ``"gc"``, etc.).
-            priority: Handler priority (lower fires first).
-
-        Returns:
-            Path to the written file.
-
-        Raises:
-            ValueError: If operation is not hookable.
-            SyntaxError: If code has syntax errors (validated before writing).
-            RuntimeError: If database is in-memory.
-        """
-        from pathlib import Path
-
-        # Validate operation is hookable
-        _all_hookable = self._HOOKABLE_OPS | self._custom_hookable_ops
-        if operation != "*" and operation not in _all_hookable:
-            raise ValueError(
-                f"Cannot hook '{operation}': not a hookable operation. "
-                f"Hookable operations: {', '.join(sorted(_all_hookable))}"
-            )
-
-        # Validate syntax
-        compile(code, f"{name}.py", "exec")
-
-        # Write file
-        hooks_dir = self._ensure_tract_dir("hooks")
-        file_path = hooks_dir / f"{name}.py"
-        file_path.write_text(code, encoding="utf-8")
-
-        # Save DB entry
-        handler_path = f"hooks/{name}.py"
-        repo = self._persistence_repo
-        if repo is not None:
-            from tract.storage.schema import HookWiringRow
-
-            # Remove existing wiring for same path if any
-            repo.delete_hook_wiring_by_name(self._tract_id, name)
-
-            wiring = HookWiringRow(
-                tract_id=self._tract_id,
-                operation=operation,
-                handler_source="file",
-                handler_path=handler_path,
-                handler_function="handler",
-                handler_code=None,
-                priority=priority,
-                enabled=True,
-                created_at=datetime.now(timezone.utc),
-            )
-            repo.save_hook_wiring(wiring)
-            self._session.commit()
-
-        # Register the handler in-memory
-        import importlib.util
-        import sys
-
-        mod_name = f"_tract_hook_hooks_{name}"
-        spec = importlib.util.spec_from_file_location(mod_name, str(file_path))
-        if spec is not None and spec.loader is not None:
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[mod_name] = module
-            spec.loader.exec_module(module)
-            handler_fn = getattr(module, "handler", None)
-            if handler_fn is not None:
-                # Remove existing hook with same name if any
-                # _persist=False: save_hook handles DB directly
-                try:
-                    self.off(operation, name, _persist=False)
-                except (ValueError, KeyError):
-                    pass
-                self.on(operation, handler_fn, name=name)
-
-        return file_path
-
-    def save_trigger(
-        self,
-        name: str,
-        code: str,
-        *,
-        config: dict | None = None,
-    ) -> "Path":
-        """Write a trigger to .tract/triggers/{name}.py and register in DB.
-
-        Args:
-            name: Trigger name (used as filename without .py).
-            code: Python source code with a Trigger subclass or instance.
-            config: Optional configuration dict.
-
-        Returns:
-            Path to the written file.
-
-        Raises:
-            SyntaxError: If code has syntax errors (validated before writing).
-            RuntimeError: If database is in-memory.
-        """
-        # Validate syntax
-        compile(code, f"{name}.py", "exec")
-
-        # Write file
-        triggers_dir = self._ensure_tract_dir("triggers")
-        file_path = triggers_dir / f"{name}.py"
-        file_path.write_text(code, encoding="utf-8")
-
-        # Save DB entry (as a dynamic op spec for tracking)
-        import json as _json
-
-        repo = self._persistence_repo
-        if repo is not None:
-            from tract.storage.schema import DynamicOpSpecRow
-
-            # Remove existing if any
-            repo.delete_dynamic_op(self._tract_id, f"trigger:{name}")
-
-            spec_data = {
-                "type": "trigger",
-                "name": name,
-                "path": f"triggers/{name}.py",
-                "config": config,
-            }
-            spec_row = DynamicOpSpecRow(
-                tract_id=self._tract_id,
-                name=f"trigger:{name}",
-                spec_json=_json.dumps(spec_data),
-                created_at=datetime.now(timezone.utc),
-            )
-            repo.save_dynamic_op(spec_row)
-            self._session.commit()
-
-        return file_path
 
     def save_workflow(
         self,
@@ -6746,117 +5138,6 @@ class Tract:
         file_path.write_text(code, encoding="utf-8")
 
         return file_path
-
-    def delete_hook(self, name: str) -> None:
-        """Remove a saved hook (file + DB entry).
-
-        Args:
-            name: The hook name (filename without .py).
-        """
-        # Remove DB entry
-        repo = self._persistence_repo
-        if repo is not None:
-            repo.delete_hook_wiring_by_name(self._tract_id, name)
-            self._session.commit()
-
-        # Remove file
-        td = self.tract_dir
-        if td is not None:
-            file_path = td / "hooks" / f"{name}.py"
-            if file_path.exists():
-                file_path.unlink()
-
-        # Remove in-memory hook registration
-        for op in list(self._hooks.keys()):
-            entries = self._hooks[op]
-            self._hooks[op] = [e for e in entries if e.name != name]
-            if not self._hooks[op]:
-                del self._hooks[op]
-
-    def delete_trigger(self, name: str) -> None:
-        """Remove a saved trigger (file + DB entry).
-
-        Args:
-            name: The trigger name (filename without .py).
-        """
-        # Remove DB entry
-        repo = self._persistence_repo
-        if repo is not None:
-            repo.delete_dynamic_op(self._tract_id, f"trigger:{name}")
-            self._session.commit()
-
-        # Remove file
-        td = self.tract_dir
-        if td is not None:
-            file_path = td / "triggers" / f"{name}.py"
-            if file_path.exists():
-                file_path.unlink()
-
-    def list_saved_hooks(self) -> list[dict]:
-        """List all persisted hooks with their status.
-
-        Returns:
-            List of dicts with keys: name, operation, priority, enabled,
-            handler_source, handler_path, created_at.
-        """
-        repo = self._persistence_repo
-        if repo is None:
-            return []
-
-        result = []
-        for wiring in repo.get_hook_wirings(self._tract_id):
-            # Determine if quarantined
-            source_name = wiring.handler_path or f"inline:{wiring.operation}"
-            is_quarantined = f"hook:{source_name}" in self._quarantined
-
-            # Extract display name from path
-            hook_name = source_name
-            if wiring.handler_path:
-                import os
-                hook_name = os.path.splitext(os.path.basename(wiring.handler_path))[0]
-
-            result.append({
-                "name": hook_name,
-                "operation": wiring.operation,
-                "priority": wiring.priority,
-                "enabled": wiring.enabled,
-                "handler_source": wiring.handler_source,
-                "handler_path": wiring.handler_path,
-                "quarantined": is_quarantined,
-                "created_at": wiring.created_at,
-            })
-        return result
-
-    def list_saved_triggers(self) -> list[dict]:
-        """List all persisted triggers with their status.
-
-        Returns:
-            List of dicts with keys: name, path, config, created_at.
-        """
-        import json as _json
-
-        repo = self._persistence_repo
-        if repo is None:
-            return []
-
-        result = []
-        for spec_row in repo.get_dynamic_ops(self._tract_id):
-            if not spec_row.name.startswith("trigger:"):
-                continue
-            try:
-                data = _json.loads(spec_row.spec_json)
-            except Exception:
-                data = {}
-            trigger_name = spec_row.name.removeprefix("trigger:")
-            is_quarantined = f"dynamic_op:{spec_row.name}" in self._quarantined
-            result.append({
-                "name": trigger_name,
-                "path": data.get("path"),
-                "config": data.get("config"),
-                "quarantined": is_quarantined,
-                "created_at": spec_row.created_at,
-            })
-        return result
 
     def close(self) -> None:
         """Close the session and dispose the engine."""

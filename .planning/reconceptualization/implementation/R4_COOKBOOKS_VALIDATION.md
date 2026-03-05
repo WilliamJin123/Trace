@@ -371,7 +371,7 @@ Run each cookbook file and verify output:
 
 ## End State
 
-After R4, the reconceptualization is complete:
+After R4, the reconceptualization is complete (except the promotion loop, deferred to R5):
 - Substrate operations untouched and fully tested
 - Rule engine: create rules, evaluate conditions, process events, resolve configs
 - Default loop: compile -> LLM -> tools -> repeat

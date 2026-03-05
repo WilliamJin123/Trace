@@ -801,45 +801,6 @@ class TestCompressionModels:
         with pytest.raises(AttributeError):
             result.compression_id = "changed"  # type: ignore[misc]
 
-    def test_pending_compress_edit_summary(self):
-        """edit_summary() replaces text at index."""
-        from unittest.mock import MagicMock
-
-        from tract.hooks.compress import PendingCompress
-
-        mock_tract = MagicMock()
-        pending = PendingCompress(
-            operation="compress",
-            tract=mock_tract,
-            summaries=["draft 1", "draft 2"],
-            source_commits=["a", "b"],
-            preserved_commits=[],
-            original_tokens=500,
-            estimated_tokens=100,
-        )
-        pending.edit_summary(0, "revised draft 1")
-        assert pending.summaries[0] == "revised draft 1"
-        assert pending.summaries[1] == "draft 2"
-
-    def test_pending_compress_approve_no_fn(self):
-        """approve() without _execute_fn raises RuntimeError."""
-        from unittest.mock import MagicMock
-
-        from tract.hooks.compress import PendingCompress
-
-        mock_tract = MagicMock()
-        pending = PendingCompress(
-            operation="compress",
-            tract=mock_tract,
-            summaries=["draft"],
-            source_commits=["a"],
-            preserved_commits=[],
-            original_tokens=500,
-            estimated_tokens=100,
-        )
-        with pytest.raises(RuntimeError, match="no execute function"):
-            pending.approve()
-
     def test_gc_result_frozen(self):
         """GCResult is immutable."""
         from tract.models.compression import GCResult

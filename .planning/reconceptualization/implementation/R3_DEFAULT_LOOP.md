@@ -110,9 +110,11 @@ def run_loop(
     for step in range(cfg.max_steps):
         steps = step + 1
 
-        # 1. Compile
+        # 1. Compile (active rules override LoopConfig defaults)
         try:
-            compiled = tract.compile(strategy=cfg.strategy, strategy_k=cfg.strategy_k)
+            strategy = tract.get_config("compile_strategy") or cfg.strategy
+            strategy_k = tract.get_config("compile_strategy_k") or cfg.strategy_k
+            compiled = tract.compile(strategy=strategy, strategy_k=strategy_k)
         except Exception as e:
             return LoopResult("error", f"Compile failed: {e}", steps, total_tool_calls)
 

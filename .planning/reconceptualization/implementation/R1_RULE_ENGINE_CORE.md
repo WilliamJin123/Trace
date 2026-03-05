@@ -133,6 +133,11 @@ class RuleIndex:
 
         Rules at distance 0 (closest to HEAD) override rules at distance N
         with the same (trigger, name) key.
+
+        Distance computation: walk_ancestry() returns commits in root-to-head
+        order. Distance is computed as: distance = len(rule_commits) - 1 - index.
+        This gives distance 0 to the commit closest to HEAD (last in the list)
+        and the highest distance to the root-most rule commit.
         """
 
     def get_by_trigger(self, trigger: str) -> list[RuleEntry]:
@@ -197,10 +202,16 @@ class PatternCondition:
 
 class ThresholdCondition:
     """Numeric comparison on a metric."""
+
+    VALID_OPS = {">", "<", "==", ">=", "<=", "!="}
+
     def evaluate(self, params: dict, ctx: EvalContext) -> bool:
         # params: {"metric": str, "op": str, "value": number}
         # Built-in metrics: token_count, total_tokens, commit_count,
         #                    age_hours, branch_depth
+        op = params.get("op", "")
+        if op not in self.VALID_OPS:
+            raise ValueError(f"Invalid threshold operator: {op!r}. Valid: {sorted(self.VALID_OPS)}")
         ...
 
 class AllCondition:
@@ -259,6 +270,11 @@ def _get_metric(name: str, ctx: EvalContext) -> float:
     called during a "compile" event, which would cause infinite recursion.
     All metrics must use pre-computed values from ctx.metrics or lightweight
     queries (log length, commit fields).
+
+    NOTE (cold start): total_tokens defaults to 0 when no compile cache exists
+    (first compile in a session). This means token-based threshold rules will
+    not fire until after the first compile populates the cache. This is by
+    design to avoid expensive traversals on every event fire.
     """
     # Check pre-computed metrics first (set by _fire_rules in tract.py)
     if ctx.metrics and name in ctx.metrics:

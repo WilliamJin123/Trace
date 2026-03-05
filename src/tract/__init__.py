@@ -18,8 +18,10 @@ from tract.models.content import (
     FreeformContent,
     InstructionContent,
     ArtifactContent,
+    MetadataContent,
     OutputContent,
     ReasoningContent,
+    RuleContent,
     ToolIOContent,
     validate_content,
 )
@@ -62,9 +64,6 @@ from tract.models.merge import (
 # Compression models
 from tract.models.compression import CompressResult, GCResult, ReorderWarning, ToolCompactResult, ToolDropResult
 
-# Hook system
-from tract.hooks import Pending, PendingCompress, PendingToolResult, ValidationResult, HookRejection
-
 # Compression prompts (for extending or selecting system prompts)
 from tract.prompts.summarize import (
     DEFAULT_SUMMARIZE_SYSTEM,
@@ -72,19 +71,6 @@ from tract.prompts.summarize import (
     TOOL_SUMMARIZE_SYSTEM,
     TOOL_CONTEXT_SUMMARIZE_SYSTEM,
 )
-
-# Trigger engine
-from tract.triggers import Trigger, TriggerEvaluator
-from tract.triggers.builtin import (
-    ArchiveTrigger,
-    BranchTrigger,
-    CompressTrigger,
-    GCTrigger,
-    MergeTrigger,
-    PinTrigger,
-    RebaseTrigger,
-)
-from tract.models.trigger import TriggerAction, EvaluationResult, TriggerLogEntry
 
 # Session and spawn models
 from tract.session import Session
@@ -101,34 +87,8 @@ from tract.llm.protocols import LLMClient, AgentLoop
 from tract.toolkit.models import ToolDefinition, ToolProfile, ToolConfig, ToolResult
 from tract.toolkit.executor import ToolExecutor
 
-# Orchestrator
-from tract.orchestrator import (
-    AgentLoopResult,
-    Orchestrator,
-    OrchestratorConfig,
-    AutonomyLevel,
-    OrchestratorState,
-    TriggerConfig,
-    ToolCallDecision,
-    ToolCallReview,
-    StepResult,
-    OrchestratorResult,
-    auto_approve,
-    log_and_approve,
-    cli_prompt,
-    reject_all,
-    auto_approve_tool_call,
-    log_and_approve_tool_call,
-    reject_all_tool_call,
-    make_log_handler,
-    make_reject_handler,
-)
-
 # Tool tracking
 from tract.models.tools import hash_tool_schema
-
-# Retry protocol
-from tract.retry import RetryResult, retry_with_steering
 
 # Exceptions
 from tract.exceptions import (
@@ -154,10 +114,6 @@ from tract.exceptions import (
     GCError,
     SpawnError,
     SessionError,
-    TriggerExecutionError,
-    TriggerConfigError,
-    OrchestratorError,
-    RetryExhaustedError,
     TagNotRegisteredError,
     CurationError,
 )
@@ -174,6 +130,8 @@ __all__ = [
     "ArtifactContent",
     "OutputContent",
     "FreeformContent",
+    "RuleContent",
+    "MetadataContent",
     "validate_content",
     "BUILTIN_TYPE_HINTS",
     "ContentTypeHints",
@@ -244,30 +202,10 @@ __all__ = [
     "GCError",
     "SpawnError",
     "SessionError",
-    "TriggerExecutionError",
-    "TriggerConfigError",
-    "OrchestratorError",
-    "RetryExhaustedError",
     "TagNotRegisteredError",
     "CurationError",
     # Tool tracking
     "hash_tool_schema",
-    # Retry protocol
-    "RetryResult",
-    "retry_with_steering",
-    # Trigger engine
-    "Trigger",
-    "TriggerEvaluator",
-    "CompressTrigger",
-    "PinTrigger",
-    "BranchTrigger",
-    "MergeTrigger",
-    "RebaseTrigger",
-    "GCTrigger",
-    "ArchiveTrigger",
-    "TriggerAction",
-    "EvaluationResult",
-    "TriggerLogEntry",
     # Compression models
     "CompressResult",
     "GCResult",
@@ -278,12 +216,6 @@ __all__ = [
     "CONVERSATION_SUMMARIZE_SYSTEM",
     "TOOL_SUMMARIZE_SYSTEM",
     "TOOL_CONTEXT_SUMMARIZE_SYSTEM",
-    # Hook system
-    "Pending",
-    "PendingCompress",
-    "PendingToolResult",
-    "ValidationResult",
-    "HookRejection",
     # Multi-agent / session
     "Session",
     "SessionContent",
@@ -298,24 +230,4 @@ __all__ = [
     "ToolConfig",
     "ToolResult",
     "ToolExecutor",
-    # Orchestrator
-    "Orchestrator",
-    "OrchestratorConfig",
-    "AutonomyLevel",
-    "OrchestratorState",
-    "TriggerConfig",
-    "ToolCallDecision",
-    "ToolCallReview",
-    "StepResult",
-    "OrchestratorResult",
-    "AgentLoopResult",
-    "auto_approve",
-    "log_and_approve",
-    "cli_prompt",
-    "reject_all",
-    "auto_approve_tool_call",
-    "log_and_approve_tool_call",
-    "reject_all_tool_call",
-    "make_log_handler",
-    "make_reject_handler",
 ]

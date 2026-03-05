@@ -261,13 +261,10 @@ BUILTIN_TYPE_HINTS["metadata"] = ContentTypeHints(
 ```
 
 **Key design point:** Both types have `compression_priority=100` so the
-compression engine preserves them. The compiler skips them because their
-default_priority is "pinned" (rules stay visible) or "skip" (metadata hidden).
+compression engine preserves them. The compiler skips them via the `compilable`
+flag on ContentTypeHints.
 
-Wait -- RuleContent should NOT be compiled to messages. But "pinned" means
-it IS included. We need a different mechanism.
-
-**Solution:** Add a `compilable` flag to ContentTypeHints:
+**Add a `compilable` flag to ContentTypeHints:**
 
 ```python
 @dataclass(frozen=True)
@@ -337,6 +334,7 @@ Strategy implementations:
 - `"full"` -- current behavior (all content)
 - `"messages"` -- commit messages only, no content bodies. For each commit,
   use the commit `message` field instead of blob content. Free (no blob reads).
+  **Fallback for empty/None message**: use `f"[{commit.content_type}] {commit.commit_hash[:8]}"`.
 - `"adaptive"` -- last K commits at full detail, everything before at messages-only.
   Non-destructive read-time lens.
 
@@ -349,11 +347,30 @@ For "adaptive", split effective_commits into two groups:
 - `head = effective_commits[:-k]` -- messages only
 Build messages for each group with appropriate detail level.
 
-**Cache key change:** The compile cache in `engine/cache.py` is currently keyed
-on `head_hash` only. Strategy must be part of the key or different strategies
-at the same HEAD will return wrong cached results. Change `CacheManager.get()`
-and `CacheManager.put()` to use a composite key: `(head_hash, strategy, strategy_k)`.
-Update the `_cache` type to `OrderedDict[tuple[str, str, int], CompileSnapshot]`.
+**Cache design:** The compile cache key stays as `head_hash` (unchanged). The cache
+always stores the `"full"` strategy snapshot. Other strategies (`"messages"`,
+`"adaptive"`) are derived at read time from the full snapshot:
+
+- `"messages"` — iterate the full snapshot's commits, replace content with commit
+  messages. No separate cache entry.
+- `"adaptive(k)"` — split the full snapshot at index `-k`: tail keeps full content,
+  head replaces with commit messages. No separate cache entry.
+
+This preserves the existing O(1) incremental patching (`extend_for_append`,
+`patch_for_edit`, `patch_for_annotate`) without modification. The derivation
+functions live in the compiler, not the cache:
+
+```python
+def _apply_strategy(self, snapshot: CompileSnapshot, strategy: str, k: int) -> CompiledContext:
+    """Derive a strategy-specific view from the canonical full snapshot."""
+    if strategy == "full":
+        return self._snapshot_to_context(snapshot)
+    elif strategy == "messages":
+        return self._derive_messages_only(snapshot)
+    elif strategy == "adaptive":
+        return self._derive_adaptive(snapshot, k)
+    raise ValueError(f"Unknown compile strategy: {strategy!r}")
+```
 
 **Modify `tract.py` compile():**
 

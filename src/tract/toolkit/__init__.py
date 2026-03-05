@@ -14,7 +14,7 @@ from tract.toolkit.profiles import (
     get_profile,
 )
 
-from tract.orchestrator.models import ToolCall
+from tract.protocols import ToolCall
 
 
 __all__ = [

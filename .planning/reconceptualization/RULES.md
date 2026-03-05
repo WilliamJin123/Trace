@@ -42,7 +42,8 @@ The `trigger` field determines when the engine checks this rule:
 
 ```
 "active"                  # continuously in effect (configs)
-"commit"                  # after every commit
+"pre_commit"              # before a commit is persisted (can block)
+"commit"                  # after every commit (reactive: redaction, tagging)
 "compile"                 # before every compile
 "compress"                # when compression is attempted
 "merge"                   # when merge is attempted
@@ -189,6 +190,10 @@ committing one new rule — no modification to existing transition logic.
 ```
 {mode: "same_context"}
 ```
+**Note:** When stages share a branch via same_context, all rules on that branch
+apply to both stages. Stage-specific rules need manual condition guards (e.g.,
+tag-based) to scope behavior. Use same_context only when full branch isolation
+is overkill (e.g., implementation→validation).
 
 **new_agent** — fresh context, handoff payload only:
 ```
@@ -380,11 +385,16 @@ fires "compress" trigger). Engine tracks evaluation depth. At depth > 3,
 nested events execute the raw operation without rule evaluation. Same
 pattern as the current hook system's `_fire_hook` guard.
 
-### DAG Traversal Sharing
+### DAG Traversal
 
-compile() reads content commits; the rule engine reads rule commits. Both
-walk the same ancestry. Shared primitive: `walk_ancestry(filter)` where
-the filter selects by content type. One traversal, two consumers.
+compile() and the rule engine both walk commit ancestry, but their needs differ:
+- The compiler needs the full chain for edit resolution and priority filtering.
+- The rule engine only needs rule commits (content_type="rule").
+
+These are **separate walks** — the compiler keeps its own `_walk_chain` (which
+handles merge blocks, edit maps, etc.), while the rule engine uses a simpler
+`walk_ancestry(content_type_filter={"rule"})` that only collects rule commits.
+The overhead of a second walk is minimal (rule commits are sparse in the DAG).
 
 ## Extensibility
 

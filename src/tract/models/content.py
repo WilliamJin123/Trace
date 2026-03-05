@@ -11,9 +11,9 @@ Built-in types and the discriminated union remain module-level.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Annotated, Literal, Union
+from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, Field, TypeAdapter, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from tract.exceptions import ContentValidationError
 from tract.models.session import SessionContent
@@ -82,6 +82,37 @@ class FreeformContent(BaseModel):
     payload: dict
 
 
+class RuleContent(BaseModel):
+    """Rule definition: trigger + condition + action, scoped by DAG placement.
+
+    Rules are first-class commits. They configure behavior (configs, event
+    responses, transitions) without being compiled into LLM messages.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    content_type: Literal["rule"] = "rule"
+    name: str
+    trigger: str
+    condition: dict[str, Any] | None = None
+    action: dict[str, Any]
+
+
+class MetadataContent(BaseModel):
+    """Structured metadata attached to commits via the content system.
+
+    Used for annotations, tags, and structured data that should be
+    preserved in the DAG but not compiled to LLM messages.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    content_type: Literal["metadata"] = "metadata"
+    kind: str
+    data: dict[str, Any] = Field(default_factory=dict)
+    path: str | None = None
+
+
 # ---------------------------------------------------------------------------
 # Discriminated union
 # ---------------------------------------------------------------------------
@@ -96,6 +127,8 @@ ContentPayload = Annotated[
         OutputContent,
         FreeformContent,
         SessionContent,
+        RuleContent,
+        MetadataContent,
     ],
     Field(discriminator="content_type"),
 ]
@@ -113,6 +146,8 @@ BUILTIN_CONTENT_TYPES: set[str] = {
     "output",
     "freeform",
     "session",
+    "rule",
+    "metadata",
 }
 
 
@@ -181,6 +216,9 @@ class ContentTypeHints:
     default_role: str = "assistant"
     compression_priority: int = 50  # 0=compress first, 100=protect
     aggregation_rule: str = "concatenate"
+    format_roles: frozenset[str] = frozenset()
+    summary_instruction: str = ""
+    compilable: bool = True
 
 
 BUILTIN_TYPE_HINTS: dict[str, ContentTypeHints] = {
@@ -223,5 +261,15 @@ BUILTIN_TYPE_HINTS: dict[str, ContentTypeHints] = {
         default_priority="pinned",
         default_role="system",
         compression_priority=95,  # Protect session boundaries from compression
+    ),
+    "rule": ContentTypeHints(
+        format_roles=frozenset({"system"}),
+        summary_instruction="Preserve rule name and trigger. Omit condition/action details.",
+        compilable=False,
+    ),
+    "metadata": ContentTypeHints(
+        format_roles=frozenset({"system"}),
+        summary_instruction="Preserve metadata kind and key data points.",
+        compilable=False,
     ),
 }

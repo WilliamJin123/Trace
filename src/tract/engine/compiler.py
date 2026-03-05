@@ -73,6 +73,8 @@ class DefaultContextCompiler:
         at_commit: str | None = None,
         include_edit_annotations: bool = False,
         include_reasoning: bool = False,
+        strategy: str = "full",
+        strategy_k: int = 5,
     ) -> CompiledContext:
         """Compile commits into structured messages for LLM consumption.
 
@@ -86,6 +88,13 @@ class DefaultContextCompiler:
             include_reasoning: If True, promote reasoning commits from
                 default SKIP to NORMAL priority so they appear in output.
                 Explicit annotations always take precedence.
+            strategy: Compile strategy. ``"full"`` (default) compiles all
+                commits with full content. ``"messages"`` emits only commit
+                messages (lightweight). ``"adaptive"`` keeps the last
+                ``strategy_k`` commits at full detail and earlier ones as
+                messages only.
+            strategy_k: Number of recent commits to keep at full detail
+                when using the ``"adaptive"`` strategy. Default 5.
 
         Returns:
             CompiledContext with messages, token count, and metadata.
@@ -95,6 +104,12 @@ class DefaultContextCompiler:
         """
         if at_time is not None and at_commit is not None:
             raise ValueError("Cannot specify both at_time and at_commit; use one or the other.")
+
+        _valid_strategies = ("full", "messages", "adaptive")
+        if strategy not in _valid_strategies:
+            raise ValueError(
+                f"Invalid compile strategy {strategy!r}; must be one of {_valid_strategies}"
+            )
 
         # Step 1: Walk commit chain (head -> root), then reverse to root -> head
         commits = self._walk_chain(head_hash, at_time=at_time, at_commit=at_commit)
@@ -133,7 +148,10 @@ class DefaultContextCompiler:
             generation_configs.append(config)
 
         # Step 5-6: Map to messages
-        messages = self._build_messages(effective_commits, edit_map, include_edit_annotations)
+        messages = self._build_messages(
+            effective_commits, edit_map, include_edit_annotations,
+            strategy=strategy, strategy_k=strategy_k,
+        )
 
         # Step 7: Count tokens on compiled output
         messages_dicts = [
@@ -338,8 +356,13 @@ class DefaultContextCompiler:
         edit_map: dict[str, CommitRow],
         priority_map: dict[str, Priority],
     ) -> list[CommitRow]:
-        """Build the effective commit list after edit resolution and priority filtering."""
+        """Build the effective commit list after edit resolution and priority filtering.
+
+        Also filters out commits whose content type has ``compilable=False``
+        in the built-in type hints.
+        """
         from tract.models.commit import CommitOperation
+        from tract.models.content import ContentTypeHints as _CTH
 
         effective: list[CommitRow] = []
         for c in commits:
@@ -348,6 +371,10 @@ class DefaultContextCompiler:
                 continue
             # Skip commits with SKIP priority
             if priority_map.get(c.commit_hash) == Priority.SKIP:
+                continue
+            # Skip commits whose content type is not compilable
+            hints = BUILTIN_TYPE_HINTS.get(c.content_type, _CTH())
+            if not hints.compilable:
                 continue
             # Include the commit (possibly with substituted content via edit_map)
             effective.append(c)
@@ -404,15 +431,51 @@ class DefaultContextCompiler:
         effective_commits: list[CommitRow],
         edit_map: dict[str, CommitRow],
         include_edit_annotations: bool,
+        *,
+        strategy: str = "full",
+        strategy_k: int = 5,
     ) -> list[Message]:
-        """Convert effective commits to Message objects."""
+        """Convert effective commits to Message objects.
+
+        When *strategy* is ``"messages"``, every commit is rendered as a
+        lightweight message containing only the commit message (or a
+        fallback ``[content_type] commit`` string).
+
+        When *strategy* is ``"adaptive"``, the last *strategy_k* commits
+        keep full content and earlier commits get the messages-only
+        treatment.
+        """
         messages: list[Message] = []
 
-        for c in effective_commits:
-            # Determine which commit's content to use
-            source_commit = edit_map.get(c.commit_hash, c)
+        # For adaptive strategy, determine the index where full detail starts
+        if strategy == "adaptive":
+            full_start = max(0, len(effective_commits) - strategy_k)
+        else:
+            full_start = 0
 
-            msg = self.build_message_for_commit(source_commit)
+        for i, c in enumerate(effective_commits):
+            # Decide whether this commit gets messages-only treatment
+            messages_only = (
+                strategy == "messages"
+                or (strategy == "adaptive" and i < full_start)
+            )
+
+            if messages_only:
+                # Lightweight: just the commit message
+                summary = c.message or f"[{c.content_type}] commit"
+                # Still need to resolve the role from the source commit
+                source_commit = edit_map.get(c.commit_hash, c)
+                blob = self._blob_repo.get(source_commit.content_hash)
+                if blob is not None:
+                    content_data = json.loads(blob.payload_json)
+                    role = self._map_role(source_commit.content_type, content_data)
+                else:
+                    role = "assistant"
+                msg = Message(role=role, content=summary, content_type=c.content_type)
+            else:
+                # Full content (existing logic)
+                source_commit = edit_map.get(c.commit_hash, c)
+                msg = self.build_message_for_commit(source_commit)
 
             # Add edit annotation if requested
             if include_edit_annotations and c.commit_hash in edit_map:

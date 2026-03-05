@@ -15,8 +15,6 @@ from tract import (
     CompressionError,
     DialogueContent,
     InstructionContent,
-    PendingCompress,
-    PendingToolResult,
     Priority,
     Tract,
     ToolDropResult,
@@ -186,86 +184,6 @@ class TestAutonomousMode:
         assert mock.last_messages is not None
         user_msg = mock.last_messages[-1]["content"]
         assert "focus on code decisions" in user_msg
-
-
-# ===========================================================================
-# 2. Collaborative mode tests
-# ===========================================================================
-
-
-class TestCollaborativeMode:
-    """Tests for LLM compression with review before commit."""
-
-    def test_compress_review_true(self):
-        """review=True returns PendingCompress with summaries."""
-        t, hashes = make_tract_with_commits(5)
-
-        mock = MockLLMClient()
-        t.configure_llm(mock)
-
-        result = t.compress(review=True)
-
-        assert isinstance(result, PendingCompress)
-        assert len(result.summaries) >= 1
-        assert len(result.source_commits) == 5
-        assert result.original_tokens > 0
-        assert result.estimated_tokens > 0
-
-    def test_pending_edit_summary(self):
-        """Edit a summary before approving."""
-        t, hashes = make_tract_with_commits(3)
-
-        mock = MockLLMClient(responses=["Original summary"])
-        t.configure_llm(mock)
-
-        pending = t.compress(review=True)
-        assert isinstance(pending, PendingCompress)
-
-        # Edit the summary
-        pending.edit_summary(0, "Edited summary text")
-        assert pending.summaries[0] == "Edited summary text"
-
-        # Approve
-        result = pending.approve()
-        assert isinstance(result, CompressResult)
-
-        # Verify edited text appears in compiled output
-        compiled = t.compile()
-        messages_text = " ".join(m.content for m in compiled.messages)
-        assert "Edited summary text" in messages_text
-
-    def test_pending_approve(self):
-        """PendingCompress.approve() creates commits and returns CompressResult."""
-        t, hashes = make_tract_with_commits(5)
-        old_head = t.head
-
-        mock = MockLLMClient()
-        t.configure_llm(mock)
-
-        pending = t.compress(review=True)
-        assert isinstance(pending, PendingCompress)
-
-        result = pending.approve()
-
-        assert isinstance(result, CompressResult)
-        assert result.new_head != old_head
-        assert len(result.summary_commits) >= 1
-        assert result.compression_id
-
-    def test_approve_compression_method(self):
-        """Tract.approve_compression() works as alternative to pending.approve()."""
-        t, hashes = make_tract_with_commits(5)
-
-        mock = MockLLMClient()
-        t.configure_llm(mock)
-
-        pending = t.compress(review=True)
-        assert isinstance(pending, PendingCompress)
-
-        result = t.approve_compression(pending)
-
-        assert isinstance(result, CompressResult)
-        assert len(result.summary_commits) >= 1
 
 
 # ===========================================================================
@@ -716,25 +634,6 @@ class TestStackedCompression:
         messages_text = " ".join(m.content for m in compiled_final.messages)
         assert "Re-compressed summary" in messages_text
 
-    def test_toctou_guard_blocks_stale_approve(self):
-        """Approving a PendingCompress after HEAD changed raises error."""
-        t, hashes = make_tract_with_commits(5)
-
-        mock = MockLLMClient()
-        t.configure_llm(mock)
-
-        # Plan compression (collaborative mode)
-        pending = t.compress(review=True)
-        assert isinstance(pending, PendingCompress)
-
-        # Add a new commit, changing HEAD
-        t.commit(DialogueContent(role="user", text="Sneaky new commit"))
-
-        # Approve should fail because HEAD changed
-        with pytest.raises(CompressionError, match="HEAD changed"):
-            pending.approve()
-
-
 # ===========================================================================
 # 7. Prompt variants tests
 # ===========================================================================
@@ -1006,211 +905,6 @@ class TestToolResultEdit:
             assert orig_ci is not None
 
 
-class TestPendingToolResult:
-    """Tests for PendingToolResult hook system."""
-
-    def test_hook_fires_on_tool_result(self):
-        """Handler receives PendingToolResult."""
-        received = []
-
-        def handler(pending):
-            received.append(pending)
-            pending.approve()
-
-        with Tract.open() as t:
-            t.on("tool_result", handler)
-            t.tool_result("c1", "grep", "verbose output")
-            assert len(received) == 1
-            assert received[0].tool_name == "grep"
-            assert received[0].content == "verbose output"
-
-    def test_hook_edit_result(self):
-        """Handler edits content, commit has new content."""
-
-        def handler(pending):
-            pending.edit_result("concise output")
-            pending.approve()
-
-        with Tract.open() as t:
-            t.on("tool_result", handler)
-            ci = t.tool_result("c1", "grep", "verbose output")
-            content = t.get_content(ci)
-            assert content == "concise output"
-
-    def test_hook_reject(self):
-        """Handler rejects, returns PendingToolResult not CommitInfo."""
-
-        def handler(pending):
-            pending.reject("too verbose")
-
-        with Tract.open() as t:
-            t.on("tool_result", handler)
-            result = t.tool_result("c1", "grep", "verbose")
-            assert isinstance(result, PendingToolResult)
-            assert result.status == "rejected"
-
-    def test_hook_no_fire_on_edit(self):
-        """edit= bypasses the hook."""
-        fired = []
-
-        def handler(pending):
-            fired.append(True)
-            pending.approve()
-
-        with Tract.open() as t:
-            t.on("tool_result", handler)
-            orig = t.tool_result("c1", "grep", "verbose")
-            fired.clear()  # Reset after first hook fire
-            t.tool_result("c1", "grep", "edited", edit=orig.commit_hash)
-            assert len(fired) == 0  # Hook did NOT fire for edit
-
-    def test_hook_passthrough(self):
-        """Handler approves without changes."""
-
-        def handler(pending):
-            pending.approve()
-
-        with Tract.open() as t:
-            t.on("tool_result", handler)
-            ci = t.tool_result("c1", "grep", "original content")
-            content = t.get_content(ci)
-            assert content == "original content"
-
-    def test_hook_carries_token_count(self):
-        """PendingToolResult has token_count set."""
-        received = []
-
-        def handler(pending):
-            received.append(pending)
-            pending.approve()
-
-        with Tract.open() as t:
-            t.on("tool_result", handler)
-            t.tool_result("c1", "grep", "some text with a few tokens")
-            assert received[0].token_count > 0
-
-    def test_no_hook_commits_directly(self):
-        """Without handler, commits directly as before."""
-        with Tract.open() as t:
-            ci = t.tool_result("c1", "grep", "direct output")
-            assert ci.commit_hash  # Got a CommitInfo back
-            content = t.get_content(ci)
-            assert content == "direct output"
-
-    def test_hook_summarize(self):
-        """Handler calls summarize(), LLM runs, original preserved."""
-        class MockLLM:
-            def chat(self, messages, **kwargs):
-                return {"choices": [{"message": {"content": "LLM-summarized"}}],
-                        "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}
-
-        def handler(pending):
-            pending.summarize(instructions="keep filenames only")
-            assert pending.original_content == "verbose grep output with many lines"
-            assert pending.content == "LLM-summarized"
-            pending.approve()
-
-        with Tract.open() as t:
-            t._llm_client = MockLLM()
-            t.on("tool_result", handler)
-            ci = t.tool_result("c1", "grep", "verbose grep output with many lines")
-            content = t.get_content(ci)
-            assert content == "LLM-summarized"
-
-    def test_review_returns_pending(self):
-        """review=True returns PendingToolResult without committing."""
-        with Tract.open() as t:
-            pending = t.tool_result("c1", "grep", "verbose", review=True)
-            assert isinstance(pending, PendingToolResult)
-            assert pending.status == "pending"
-            # Can approve manually
-            ci = pending.approve()
-            assert ci.commit_hash
-
-
-class TestToolSummarizationConfig:
-    """Tests for configure_tool_summarization()."""
-
-    def test_config_per_tool_instructions(self):
-        """Tool with instructions gets summarized."""
-        class MockLLM:
-            def chat(self, messages, **kwargs):
-                return {"choices": [{"message": {"content": "summarized grep output"}}],
-                        "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}
-
-        with Tract.open() as t:
-            t._llm_client = MockLLM()
-            t.configure_tool_summarization(
-                instructions={"grep": "summarize to filenames only"},
-            )
-            ci = t.tool_result("c1", "grep", "a]" * 500)  # verbose
-            content = t.get_content(ci)
-            assert content == "summarized grep output"
-
-    def test_config_auto_threshold(self):
-        """Results over threshold get summarized."""
-        class MockLLM:
-            def chat(self, messages, **kwargs):
-                return {"choices": [{"message": {"content": "auto-summarized"}}],
-                        "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}
-
-        with Tract.open() as t:
-            t._llm_client = MockLLM()
-            t.configure_tool_summarization(auto_threshold=10)
-            # Short content should pass through
-            ci_short = t.tool_result("c1", "grep", "hi")
-            content_short = t.get_content(ci_short)
-            assert content_short == "hi"
-            # Long content should get summarized
-            ci_long = t.tool_result("c2", "grep", "very verbose " * 100)
-            content_long = t.get_content(ci_long)
-            assert content_long == "auto-summarized"
-
-    def test_config_under_threshold_passthrough(self):
-        """Small results pass through unchanged."""
-        with Tract.open() as t:
-            t.configure_tool_summarization(auto_threshold=1000)
-            ci = t.tool_result("c1", "grep", "small result")
-            content = t.get_content(ci)
-            assert content == "small result"
-
-    def test_config_default_instructions(self):
-        """Unlisted tools use default_instructions when over threshold."""
-        received_instructions = []
-        class MockLLM:
-            def chat(self, messages, **kwargs):
-                # Capture the user prompt to check instructions
-                received_instructions.append(messages[-1]["content"])
-                return {"choices": [{"message": {"content": "default-summarized"}}],
-                        "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}
-
-        with Tract.open() as t:
-            t._llm_client = MockLLM()
-            t.configure_tool_summarization(
-                instructions={"grep": "filenames only"},
-                auto_threshold=10,
-                default_instructions="be concise",
-            )
-            ci = t.tool_result("c1", "unknown_tool", "verbose " * 100)
-            content = t.get_content(ci)
-            assert content == "default-summarized"
-            assert "be concise" in received_instructions[0]
-
-    def test_config_override_with_custom_handler(self):
-        """User can replace the auto handler with a custom one."""
-        with Tract.open() as t:
-            t.configure_tool_summarization(
-                instructions={"grep": "filenames only"},
-            )
-            # Override with custom handler (clear auto-handler first, then add custom)
-            t.off("tool_result")
-            def custom(pending):
-                pending.edit_result("custom edited")
-                pending.approve()
-            t.on("tool_result", custom)
-            ci = t.tool_result("c1", "grep", "verbose")
-            content = t.get_content(ci)
-            assert content == "custom edited"
 
 
 class TestCompressToolCallsAutoDetect:
@@ -1445,98 +1139,6 @@ class TestDropFailedToolTurns:
             assert result.tokens_freed > 0
 
 
-class TestSummarizeIncludeContext:
-    """Tests for context-aware summarize()."""
-
-    def test_summarize_include_context(self):
-        """include_context=True passes conversation context to the LLM."""
-        with Tract.open() as t:
-            t._llm_client = MockLLMClient(["Relevant summary."])
-            t.system("You are a code helper.")
-            t.user("Find the main function.")
-
-            t.assistant(
-                "Searching...",
-                metadata={"tool_calls": [{"id": "c1", "name": "grep", "arguments": {}}]},
-            )
-
-            pending = t.tool_result("c1", "grep", "verbose output " * 20, review=True)
-            pending.summarize(include_context=True)
-
-            # Verify context was included in the prompt
-            llm = t._llm_client
-            user_msg = llm.last_messages[1]["content"]
-            assert "conversation so far" in user_msg
-            assert "You are a code helper" in user_msg
-            assert "Find the main function" in user_msg
-
-            # Verify context-aware system prompt was used
-            sys_msg = llm.last_messages[0]["content"]
-            from tract.prompts.summarize import TOOL_CONTEXT_SUMMARIZE_SYSTEM
-            assert sys_msg == TOOL_CONTEXT_SUMMARIZE_SYSTEM
-
-    def test_summarize_custom_system_prompt(self):
-        """system_prompt= overrides the default system prompt."""
-        with Tract.open() as t:
-            t._llm_client = MockLLMClient(["Custom summary."])
-            t.system("test")
-
-            t.assistant(
-                "",
-                metadata={"tool_calls": [{"id": "c1", "name": "grep", "arguments": {}}]},
-            )
-
-            pending = t.tool_result("c1", "grep", "output", review=True)
-            pending.summarize(system_prompt="You are a custom summarizer.")
-
-            llm = t._llm_client
-            sys_msg = llm.last_messages[0]["content"]
-            assert sys_msg == "You are a custom summarizer."
-
-    def test_summarize_custom_system_prompt_with_context(self):
-        """Explicit system_prompt takes priority over TOOL_CONTEXT_SUMMARIZE_SYSTEM."""
-        with Tract.open() as t:
-            t._llm_client = MockLLMClient(["Summary."])
-            t.system("test")
-
-            t.assistant(
-                "",
-                metadata={"tool_calls": [{"id": "c1", "name": "grep", "arguments": {}}]},
-            )
-
-            pending = t.tool_result("c1", "grep", "output", review=True)
-            pending.summarize(include_context=True, system_prompt="Custom prompt.")
-
-            llm = t._llm_client
-            sys_msg = llm.last_messages[0]["content"]
-            assert sys_msg == "Custom prompt."
-            # Context should still be in the user message
-            user_msg = llm.last_messages[1]["content"]
-            assert "conversation so far" in user_msg
-
-    def test_configure_tool_summarization_include_context(self):
-        """include_context threads through configure_tool_summarization hook."""
-        with Tract.open() as t:
-            t._llm_client = MockLLMClient(["Auto summary."])
-            t.system("test context")
-            t.user("do something")
-
-            t.configure_tool_summarization(
-                instructions={"grep": "summarize grep results"},
-                include_context=True,
-            )
-
-            t.assistant(
-                "",
-                metadata={"tool_calls": [{"id": "c1", "name": "grep", "arguments": {}}]},
-            )
-            ci = t.tool_result("c1", "grep", "verbose " * 30)
-
-            # Verify the LLM was called with context
-            llm = t._llm_client
-            user_msg = llm.last_messages[1]["content"]
-            assert "conversation so far" in user_msg
-            assert "test context" in user_msg
 
 
 # ===========================================================================
@@ -1545,55 +1147,18 @@ class TestSummarizeIncludeContext:
 
 
 class TestTargetTokensEnforcement:
-    """Tests that target_tokens triggers retry validation."""
+    """Tests that target_tokens is passed through to compress."""
 
-    def test_compress_target_tokens_triggers_retry(self):
-        """When first response exceeds target, retry fires and shorter response is accepted."""
+    def test_compress_target_tokens_basic(self):
+        """Compress with target_tokens produces a result."""
         t, hashes = make_tract_with_commits(3)
 
-        # First response is long (~200 tokens), second is short
-        long_response = "word " * 200  # ~200 tokens (well over a target of 50)
-        short_response = "Short summary."
-
-        mock = MockLLMClient(responses=[long_response, short_response])
-        t.configure_llm(mock)
-
-        # Use token_tolerance=0 for strict enforcement so 200 tokens exceeds target=50
-        result = t.compress(target_tokens=50, token_tolerance=0)
-
-        assert isinstance(result, CompressResult)
-        # Retry should have been triggered: 2 calls total
-        assert mock._call_count == 2
-
-    def test_compress_target_tokens_within_tolerance_no_retry(self):
-        """Response within 1.2x target passes on first attempt."""
-        t, hashes = make_tract_with_commits(3)
-
-        # A short response that is within 1.2x of target
         short_response = "Brief summary of the conversation."
-
         mock = MockLLMClient(responses=[short_response])
         t.configure_llm(mock)
 
-        # Use a target large enough that the short response fits within 1.2x
         result = t.compress(target_tokens=200)
 
         assert isinstance(result, CompressResult)
-        # Should pass on first attempt -- no retry
         assert mock._call_count == 1
 
-    def test_compress_target_tokens_exhausted(self):
-        """When LLM always returns long responses, PendingCompress is rejected."""
-        t, hashes = make_tract_with_commits(3)
-
-        # Always returns a long response
-        long_response = "word " * 200
-
-        mock = MockLLMClient(responses=[long_response])
-        t.configure_llm(mock)
-
-        # Use token_tolerance=0 for strict enforcement so 200 tokens exceeds target=50
-        # Validation now handled by hook layer -- returns rejected PendingCompress
-        result = t.compress(target_tokens=50, token_tolerance=0, max_retries=2)
-        assert isinstance(result, PendingCompress)
-        assert result.status == "rejected"
