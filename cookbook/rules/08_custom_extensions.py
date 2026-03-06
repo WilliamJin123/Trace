@@ -32,11 +32,23 @@ class IncrementCounterAction:
 
 
 class UserMessageCountMetric:
-    """Custom metric: count user dialogue commits."""
+    """Custom metric: count user dialogue commits by inspecting stored content."""
     def compute(self, ctx) -> float:
-        return sum(1 for ci in ctx.tract.log()
-                   if ci.content_type == "dialogue"
-                   and ci.message and ci.message.startswith("user:"))
+        import json
+        count = 0
+        for ci in ctx.tract.log():
+            if ci.content_type != "dialogue":
+                continue
+            blob = ctx.tract._blob_repo.get(ci.content_hash)
+            if blob is None:
+                continue
+            try:
+                payload = json.loads(blob.payload_json)
+                if payload.get("role") == "user":
+                    count += 1
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return float(count)
 
 
 def main():

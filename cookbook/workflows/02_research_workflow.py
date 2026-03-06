@@ -18,10 +18,10 @@ def main():
         t.rule("ingest-strategy", trigger="active",
                action={"type": "set_config", "key": "compile_strategy", "value": "full"})
 
-        gate = lambda n, v: {"type": "require", "condition": {
+        gate = lambda v: {"type": "require", "condition": {
             "type": "threshold", "metric": "commit_count", "op": ">=", "value": v}}
-        t.rule("organize-gate", trigger="transition:organize", action=gate("organize", 6))
-        t.rule("synthesize-gate", trigger="transition:synthesize", action=gate("synth", 3))
+        t.rule("organize-gate", trigger="transition:organize", action=gate(6))
+        t.rule("synthesize-gate", trigger="transition:synthesize", action=gate(3))
 
         print("  Workflow rules created")
 
