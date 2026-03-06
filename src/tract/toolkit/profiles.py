@@ -15,7 +15,7 @@ from tract.toolkit.models import ToolConfig, ToolProfile
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# All 26 tool names (must match definitions.py)
+# All 29 tool names (must match definitions.py)
 # ---------------------------------------------------------------------------
 _ALL_TOOL_NAMES = [
     "commit",
@@ -44,6 +44,9 @@ _ALL_TOOL_NAMES = [
     "create_metadata",
     "get_config",
     "transition",
+    "directive",
+    "create_middleware",
+    "remove_middleware",
 ]
 
 # ---------------------------------------------------------------------------
@@ -153,11 +156,23 @@ SELF_PROFILE = ToolProfile(
         ),
         "get_config": ToolConfig(
             enabled=True,
-            description="Check a config value set by your active rules.",
+            description="Check a config value from your branch's DAG.",
         ),
         "transition": ToolConfig(
             enabled=True,
-            description="Transition to another branch using your rules.",
+            description="Transition to another branch with optional handoff.",
+        ),
+        "directive": ToolConfig(
+            enabled=True,
+            description="Set a named standing instruction in your context (deduplicated by name).",
+        ),
+        "create_middleware": ToolConfig(
+            enabled=True,
+            description="Create a Python middleware handler to validate or gate your operations.",
+        ),
+        "remove_middleware": ToolConfig(
+            enabled=True,
+            description="Remove a middleware handler you previously created.",
         ),
     },
 )
@@ -311,11 +326,23 @@ SUPERVISOR_PROFILE = ToolProfile(
         ),
         "get_config": ToolConfig(
             enabled=True,
-            description="Check a config value from the managed agent's active rules.",
+            description="Check a config value from the managed agent's DAG.",
         ),
         "transition": ToolConfig(
             enabled=True,
-            description="Transition the managed agent to another branch using rules.",
+            description="Transition the managed agent to another branch with optional handoff.",
+        ),
+        "directive": ToolConfig(
+            enabled=True,
+            description="Set a named standing instruction in the managed agent's context.",
+        ),
+        "create_middleware": ToolConfig(
+            enabled=True,
+            description="Create a Python middleware handler in the managed agent's context.",
+        ),
+        "remove_middleware": ToolConfig(
+            enabled=True,
+            description="Remove a middleware handler from the managed agent's context.",
         ),
     },
 )

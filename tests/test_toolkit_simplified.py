@@ -50,10 +50,25 @@ class TestNewToolDefinitions:
         names = {t.name for t in tools}
         assert "transition" in names
 
-    def test_total_tool_count(self, tract_instance):
-        """Should have 26 tools (22 original + 4 new)."""
+    def test_directive_exists(self, tract_instance):
         tools = get_all_tools(tract_instance)
-        assert len(tools) == 26
+        names = {t.name for t in tools}
+        assert "directive" in names
+
+    def test_create_middleware_exists(self, tract_instance):
+        tools = get_all_tools(tract_instance)
+        names = {t.name for t in tools}
+        assert "create_middleware" in names
+
+    def test_remove_middleware_exists(self, tract_instance):
+        tools = get_all_tools(tract_instance)
+        names = {t.name for t in tools}
+        assert "remove_middleware" in names
+
+    def test_total_tool_count(self, tract_instance):
+        """Should have 29 tools (22 original + 4 new + 3 config/middleware)."""
+        tools = get_all_tools(tract_instance)
+        assert len(tools) == 29
 
 
 # ---------------------------------------------------------------------------
@@ -158,6 +173,147 @@ class TestToolExecution:
         assert not result.success  # Blocked raises, caught by executor
         assert "blocked" in result.error.lower()
 
+    def test_directive_tool(self, tract_instance):
+        """directive tool creates a named instruction commit."""
+        executor = ToolExecutor(tract_instance)
+        result = executor.execute(
+            "directive",
+            {"name": "tone", "text": "Be concise and direct."},
+        )
+        assert result.success
+        assert "tone" in result.output
+
+    def test_directive_tool_with_priority(self, tract_instance):
+        """directive tool with explicit priority."""
+        executor = ToolExecutor(tract_instance)
+        result = executor.execute(
+            "directive",
+            {"name": "safety", "text": "Never share secrets.", "priority": "normal"},
+        )
+        assert result.success
+        assert "normal" in result.output
+
+    def test_directive_dedup_via_compile(self, tract_instance):
+        """Two directives with same name: only latest in compiled context."""
+        tract_instance.directive("proto", "Old protocol")
+        tract_instance.directive("proto", "New protocol")
+        compiled = tract_instance.compile()
+        texts = [m.content for m in compiled.messages]
+        assert any("New protocol" in t for t in texts)
+        assert not any("Old protocol" in t for t in texts)
+
+    def test_create_middleware_tool(self, tract_instance):
+        """create_middleware registers a handler from Python code."""
+        executor = ToolExecutor(tract_instance)
+        code = "def handler(ctx):\n    pass  # no-op middleware"
+        result = executor.execute(
+            "create_middleware",
+            {"event": "post_commit", "code": code, "description": "no-op"},
+        )
+        assert result.success
+        assert "post_commit" in result.output
+        assert "no-op" in result.output
+
+    def test_create_middleware_blocks_commit(self, tract_instance):
+        """create_middleware can create a handler that blocks commits."""
+        executor = ToolExecutor(tract_instance)
+        # pre_commit middleware receives ctx.pending (content model), not ctx.commit.
+        # Block when pending content text contains "BLOCKED".
+        code = (
+            "def handler(ctx):\n"
+            '    pending = ctx.pending\n'
+            '    if pending and hasattr(pending, "text") and "BLOCKED" in (pending.text or ""):\n'
+            '        raise BlockedError("pre_commit", "Blocked by middleware")\n'
+        )
+        result = executor.execute(
+            "create_middleware",
+            {"event": "pre_commit", "code": code},
+        )
+        assert result.success
+
+        # Normal commit should work
+        tract_instance.user("Normal message")
+
+        # Commit with BLOCKED in text should fail
+        from tract.exceptions import BlockedError
+
+        with pytest.raises(BlockedError):
+            tract_instance.commit(
+                {"content_type": "dialogue", "role": "user", "text": "BLOCKED content"},
+                message="test commit",
+            )
+
+    def test_create_middleware_syntax_error(self, tract_instance):
+        """create_middleware returns error for syntax errors."""
+        executor = ToolExecutor(tract_instance)
+        result = executor.execute(
+            "create_middleware",
+            {"event": "post_commit", "code": "def handler(ctx)\n    pass"},
+        )
+        assert result.success  # executor returns success, error in output
+        assert "ERROR" in result.output
+        assert "Syntax error" in result.output
+
+    def test_create_middleware_no_handler(self, tract_instance):
+        """create_middleware returns error if handler() not defined."""
+        executor = ToolExecutor(tract_instance)
+        result = executor.execute(
+            "create_middleware",
+            {"event": "post_commit", "code": "def my_func(ctx): pass"},
+        )
+        assert result.success
+        assert "ERROR" in result.output
+        assert "handler" in result.output
+
+    def test_create_middleware_restricted_imports(self, tract_instance):
+        """create_middleware blocks dangerous imports."""
+        executor = ToolExecutor(tract_instance)
+        code = "import os\ndef handler(ctx): pass"
+        result = executor.execute(
+            "create_middleware",
+            {"event": "post_commit", "code": code},
+        )
+        assert result.success
+        assert "ERROR" in result.output
+
+    def test_create_middleware_uses_re(self, tract_instance):
+        """create_middleware allows re module (available as global, not via import)."""
+        executor = ToolExecutor(tract_instance)
+        code = (
+            "def handler(ctx):\n"
+            '    if ctx.commit and ctx.commit.message:\n'
+            '        if not re.match(r"^[A-Z]", ctx.commit.message):\n'
+            '            raise BlockedError("pre_commit", "Must start with uppercase")\n'
+        )
+        result = executor.execute(
+            "create_middleware",
+            {"event": "pre_commit", "code": code},
+        )
+        assert result.success
+        assert "pre_commit" in result.output
+
+    def test_remove_middleware_tool(self, tract_instance):
+        """remove_middleware removes a handler by ID."""
+        # First create one
+        handler_id = tract_instance.use("post_commit", lambda ctx: None)
+        executor = ToolExecutor(tract_instance)
+        result = executor.execute(
+            "remove_middleware",
+            {"handler_id": handler_id},
+        )
+        assert result.success
+        assert "removed" in result.output
+
+    def test_remove_middleware_invalid_id(self, tract_instance):
+        """remove_middleware returns error for unknown ID."""
+        executor = ToolExecutor(tract_instance)
+        result = executor.execute(
+            "remove_middleware",
+            {"handler_id": "nonexistent_id"},
+        )
+        assert result.success  # executor catches errors, returned in output
+        assert "ERROR" in result.output
+
 
 # ---------------------------------------------------------------------------
 # Profiles
@@ -166,11 +322,14 @@ class TestToolExecution:
 
 class TestProfiles:
     def test_all_tool_names_includes_new(self):
-        """_ALL_TOOL_NAMES includes the 4 new tools."""
+        """_ALL_TOOL_NAMES includes the 4+3 new tools."""
         assert "configure" in _ALL_TOOL_NAMES
         assert "create_metadata" in _ALL_TOOL_NAMES
         assert "get_config" in _ALL_TOOL_NAMES
         assert "transition" in _ALL_TOOL_NAMES
+        assert "directive" in _ALL_TOOL_NAMES
+        assert "create_middleware" in _ALL_TOOL_NAMES
+        assert "remove_middleware" in _ALL_TOOL_NAMES
 
     def test_self_profile_includes_new(self, tract_instance):
         tools = get_all_tools(tract_instance)
@@ -180,6 +339,9 @@ class TestProfiles:
         assert "create_metadata" in names
         assert "get_config" in names
         assert "transition" in names
+        assert "directive" in names
+        assert "create_middleware" in names
+        assert "remove_middleware" in names
 
     def test_supervisor_profile_includes_new(self, tract_instance):
         tools = get_all_tools(tract_instance)
@@ -189,6 +351,9 @@ class TestProfiles:
         assert "create_metadata" in names
         assert "get_config" in names
         assert "transition" in names
+        assert "directive" in names
+        assert "create_middleware" in names
+        assert "remove_middleware" in names
 
     def test_full_profile_includes_new(self, tract_instance):
         tools = get_all_tools(tract_instance)
@@ -198,6 +363,9 @@ class TestProfiles:
         assert "create_metadata" in names
         assert "get_config" in names
         assert "transition" in names
+        assert "directive" in names
+        assert "create_middleware" in names
+        assert "remove_middleware" in names
 
     def test_profiles_still_work(self, tract_instance):
         """Existing profiles continue to work after adding new tools."""
@@ -220,6 +388,9 @@ class TestAsTools:
         names = {t["function"]["name"] for t in tools}
         assert "configure" in names
         assert "get_config" in names
+        assert "directive" in names
+        assert "create_middleware" in names
+        assert "remove_middleware" in names
 
     def test_as_tools_full_profile(self, tract_instance):
         tools = tract_instance.as_tools(profile="full", format="openai")
@@ -228,6 +399,9 @@ class TestAsTools:
         assert "create_metadata" in names
         assert "get_config" in names
         assert "transition" in names
+        assert "directive" in names
+        assert "create_middleware" in names
+        assert "remove_middleware" in names
 
     def test_as_callable_tools(self, tract_instance):
         """as_callable_tools includes new tools."""

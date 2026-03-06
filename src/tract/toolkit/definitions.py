@@ -680,6 +680,101 @@ def get_all_tools(tract: Tract) -> list[ToolDefinition]:
                 tract, target, handoff
             ),
         ),
+        # 27. directive
+        ToolDefinition(
+            name="directive",
+            description=(
+                "Create a named standing instruction that persists in the LLM context. "
+                "Directives are deduplicated by name: if you create two directives with "
+                "the same name, only the latest one appears in compiled context. "
+                "Use this to set behavioral rules like tone, format, or safety guidelines."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Unique directive name (e.g. 'tone', 'format', 'safety'). Same name = override.",
+                    },
+                    "text": {
+                        "type": "string",
+                        "description": "The instruction text that will appear in the LLM context.",
+                    },
+                    "priority": {
+                        "type": "string",
+                        "enum": ["pinned", "normal", "skip"],
+                        "description": "Priority level. Default 'pinned' (survives compression).",
+                    },
+                },
+                "required": ["name", "text"],
+            },
+            handler=lambda name, text, priority=None: _handle_directive(
+                tract, name, text, priority
+            ),
+        ),
+        # 28. create_middleware
+        ToolDefinition(
+            name="create_middleware",
+            description=(
+                "Create a middleware handler from Python code. The code must define a "
+                "function called `handler(ctx)` that receives a MiddlewareContext with "
+                "attributes: event, commit, tract, branch, head, target, pending. "
+                "To block an operation, raise BlockedError(event, reason). "
+                "Available in code: BlockedError, re, json, len, str, int, float, "
+                "bool, list, dict, set, tuple, range, enumerate, zip, sorted, "
+                "min, max, sum, any, all, isinstance, hasattr, getattr, print. "
+                "Example: 'def handler(ctx):\\n    if len(ctx.commit.message or \"\") > 500:\\n"
+                "        raise BlockedError(\"pre_commit\", \"Message too long\")'"
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "event": {
+                        "type": "string",
+                        "enum": [
+                            "pre_commit", "post_commit", "pre_compile",
+                            "pre_compress", "pre_merge", "pre_gc",
+                            "pre_transition", "post_transition",
+                        ],
+                        "description": "Event to hook into.",
+                    },
+                    "code": {
+                        "type": "string",
+                        "description": (
+                            "Python code defining a `handler(ctx)` function. "
+                            "Raise BlockedError(event, reasons) to block."
+                        ),
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Human-readable description of what this middleware does.",
+                    },
+                },
+                "required": ["event", "code"],
+            },
+            handler=lambda event, code, description="": _handle_create_middleware(
+                tract, event, code, description
+            ),
+        ),
+        # 29. remove_middleware
+        ToolDefinition(
+            name="remove_middleware",
+            description=(
+                "Remove a previously created middleware handler by its ID. "
+                "Use the handler_id returned by create_middleware."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "handler_id": {
+                        "type": "string",
+                        "description": "The handler ID returned by create_middleware.",
+                    },
+                },
+                "required": ["handler_id"],
+            },
+            handler=lambda handler_id: _handle_remove_middleware(tract, handler_id),
+        ),
     ]
 
     return tools
@@ -1014,5 +1109,81 @@ def _handle_transition(tract: Tract, target: str, handoff: str = "none") -> str:
     if result is None:
         return f"Transitioned to '{target}' (no handoff)"
     return f"Transitioned to '{target}' ({result.commit_hash[:8]})"
+
+
+def _handle_directive(
+    tract: Tract, name: str, text: str, priority: str | None
+) -> str:
+    from tract.models.annotations import Priority
+
+    prio = Priority(priority) if priority else None
+    info = tract.directive(name, text, priority=prio)
+    prio_label = priority or "pinned"
+    return f"Directive '{name}' set ({info.commit_hash[:8]}, priority={prio_label})"
+
+
+def _handle_create_middleware(
+    tract: Tract, event: str, code: str, description: str = ""
+) -> str:
+    """Compile LLM-generated Python into a middleware handler.
+
+    Uses compile() + restricted globals for safety:
+    - Only safe builtins (no __import__, exec, eval, open, etc.)
+    - BlockedError, re, json available
+    - Code must define handler(ctx)
+    """
+    import re as _re
+    import json as _json
+
+    from tract.exceptions import BlockedError as _BlockedError
+
+    # Safe builtins whitelist (inspired by smolagents LocalPythonExecutor)
+    _SAFE_BUILTINS = {
+        "len": len, "str": str, "int": int, "float": float, "bool": bool,
+        "list": list, "dict": dict, "set": set, "tuple": tuple,
+        "range": range, "enumerate": enumerate, "zip": zip,
+        "sorted": sorted, "min": min, "max": max, "sum": sum,
+        "any": any, "all": all, "isinstance": isinstance,
+        "hasattr": hasattr, "getattr": getattr, "print": print,
+        "True": True, "False": False, "None": None,
+        "ValueError": ValueError, "TypeError": TypeError,
+        "KeyError": KeyError, "RuntimeError": RuntimeError,
+    }
+
+    restricted_globals = {
+        "__builtins__": _SAFE_BUILTINS,
+        "BlockedError": _BlockedError,
+        "re": _re,
+        "json": _json,
+    }
+
+    try:
+        compiled = compile(code, "<middleware>", "exec")
+    except SyntaxError as exc:
+        return f"ERROR: Syntax error in middleware code: {exc}"
+
+    namespace: dict = {}
+    try:
+        exec(compiled, restricted_globals, namespace)  # noqa: S102
+    except Exception as exc:
+        return f"ERROR: Failed to execute middleware code: {exc}"
+
+    handler_fn = namespace.get("handler")
+    if handler_fn is None:
+        return "ERROR: Code must define a `handler(ctx)` function"
+    if not callable(handler_fn):
+        return "ERROR: `handler` must be callable"
+
+    handler_id = tract.use(event, handler_fn)
+    desc = f" ({description})" if description else ""
+    return f"Middleware registered on '{event}': {handler_id}{desc}"
+
+
+def _handle_remove_middleware(tract: Tract, handler_id: str) -> str:
+    try:
+        tract.remove_middleware(handler_id)
+        return f"Middleware {handler_id} removed"
+    except ValueError as exc:
+        return f"ERROR: {exc}"
 
 
