@@ -120,7 +120,7 @@ class TestGetAllTools:
             "gc", "list_branches", "get_commit",
             "configure_model", "tag", "untag", "query_by_tags",
             "register_tag", "get_tags", "list_tags",
-            "create_rule", "create_metadata", "get_config", "transition",
+            "configure", "create_metadata", "get_config", "transition",
         }
         assert names == expected
 
@@ -143,7 +143,7 @@ class TestProfiles:
             "tag", "untag", "query_by_tags",
             "register_tag", "get_tags", "list_tags",
             "configure_model",
-            "create_rule", "create_metadata", "get_config", "transition",
+            "configure", "create_metadata", "get_config", "transition",
         }
         assert self_names == expected
         assert len(self_tools) == 20

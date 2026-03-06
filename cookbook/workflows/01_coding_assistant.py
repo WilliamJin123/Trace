@@ -1,8 +1,8 @@
 """Coding Assistant Workflow: design -> implementation -> validation
 
-An agent-driven multi-stage workflow. Rules define stage-specific configs
-(temperature, compile strategy) and transition gates. The agent gets
-transition tools and decides when to move between stages -- one t.run()
+An agent-driven multi-stage workflow. Config sets stage-specific settings
+(temperature, compile strategy) and middleware gates transitions. The agent
+gets transition tools and decides when to move between stages -- one t.run()
 call drives the whole pipeline.
 
 Stages:
@@ -10,7 +10,8 @@ Stages:
   implementation -- low temperature (0.3), precise code generation
   validation     -- minimal temperature (0.1), deterministic testing
 
-Demonstrates: rules as stage configs, transition gates, agent-driven
+Demonstrates: t.configure() for stage configs, t.directive() for stage
+              instructions, pre_transition middleware gates, agent-driven
               stage navigation, compile strategy per stage
 
 Requires: LLM API key (uses Groq provider)
@@ -19,7 +20,7 @@ Requires: LLM API key (uses Groq provider)
 import sys
 from pathlib import Path
 
-from tract import Tract, resolve_all_configs
+from tract import Tract, BlockedError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import groq as llm
@@ -39,50 +40,54 @@ def main():
     ) as t:
 
         # =============================================================
-        # Stage configuration via rules
+        # Stage configuration via config and directives
         # =============================================================
 
-        print("=== Setting Up Workflow Rules ===\n")
+        print("=== Setting Up Workflow ===\n")
 
-        # Initial stage
-        t.rule("stage", trigger="active",
-               action={"type": "set_config", "key": "stage", "value": "design"})
+        # Initial stage and settings
+        t.configure(
+            stage="design",
+            temperature=0.9,
+            compile_strategy="full",
+        )
 
-        # Design stage: creative, full context
-        t.rule("design-temp", trigger="active",
-               action={"type": "set_config", "key": "temperature", "value": 0.9})
-        t.rule("design-strategy", trigger="active",
-               action={"type": "set_config", "key": "compile_strategy", "value": "full"})
+        # Directive: tell the agent about the workflow structure
+        t.directive(
+            "workflow-stages",
+            "This conversation follows a three-stage workflow:\n"
+            "1. DESIGN -- Brainstorm and outline architecture\n"
+            "2. IMPLEMENTATION -- Write precise, working code\n"
+            "3. VALIDATION -- Write tests and verify correctness\n"
+            "Use get_config to check the current stage. "
+            "Use transition to move between stages.",
+        )
 
         # Transition gates: require minimum commit count before advancing
-        t.rule(
-            "impl-gate",
-            trigger="transition:implementation",
-            action={
-                "type": "require",
-                "condition": {
-                    "type": "threshold",
-                    "metric": "commit_count",
-                    "op": ">=",
-                    "value": 6,
-                },
-            },
-        )
-        t.rule(
-            "validation-gate",
-            trigger="transition:validation",
-            action={
-                "type": "require",
-                "condition": {
-                    "type": "threshold",
-                    "metric": "commit_count",
-                    "op": ">=",
-                    "value": 3,
-                },
-            },
-        )
+        def impl_gate(ctx):
+            if ctx.target != "implementation":
+                return
+            count = len(ctx.tract.log())
+            if count < 6:
+                raise BlockedError(
+                    "pre_transition",
+                    [f"Need >= 6 commits for implementation (have {count})"],
+                )
 
-        configs = resolve_all_configs(t.rule_index)
+        def validation_gate(ctx):
+            if ctx.target != "validation":
+                return
+            count = len(ctx.tract.log())
+            if count < 3:
+                raise BlockedError(
+                    "pre_transition",
+                    [f"Need >= 3 commits for validation (have {count})"],
+                )
+
+        t.use("pre_transition", impl_gate)
+        t.use("pre_transition", validation_gate)
+
+        configs = t.get_all_configs()
         print(f"  Initial configs: {configs}")
 
         # =============================================================
@@ -115,6 +120,7 @@ def main():
             "When design is complete, transition to 'implementation' to write code. "
             "When implementation is complete, transition to 'validation' to write tests.",
             max_steps=15,
+            tool_names=["commit", "transition", "get_config", "status"],
             on_step=lambda step, _resp: print(f"  step {step}..."),
         )
 
@@ -126,7 +132,7 @@ def main():
 
         print(f"\n=== Final State ===\n")
 
-        final_configs = resolve_all_configs(t.rule_index)
+        final_configs = t.get_all_configs()
         print(f"  Active configs: {final_configs}")
 
         print(f"\n  Branches:")
@@ -144,6 +150,6 @@ if __name__ == "__main__":
 
 
 # --- See also ---
-# Rules:                getting_started/02_rules.py
-# Research workflow:    workflows/02_research_pipeline.py
-# Customer support:     workflows/03_customer_support.py
+# Config and directives:  getting_started/02_config_and_directives.py
+# Research workflow:       workflows/02_research_pipeline.py
+# Customer support:        workflows/03_customer_support.py

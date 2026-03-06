@@ -582,42 +582,26 @@ def get_all_tools(tract: Tract) -> list[ToolDefinition]:
             },
             handler=lambda: _handle_list_tags(tract),
         ),
-        # 23. create_rule
+        # 23. configure
         ToolDefinition(
-            name="create_rule",
+            name="configure",
             description=(
-                "Create a rule on the current branch. Rules fire automatically "
-                "on events (commit, compile, compress, merge, gc, transition) "
-                "and can set config, require/block actions, or trigger operations."
+                "Set config key-value pairs on the DAG. Well-known keys: "
+                "model, temperature, max_tokens, max_commit_tokens, "
+                "auto_compress_threshold, compact_tools, compile_strategy, "
+                "compile_strategy_k, handoff_summary_k. Unknown keys pass through."
             ),
             parameters={
                 "type": "object",
                 "properties": {
-                    "name": {
-                        "type": "string",
-                        "description": "Human-readable rule name.",
-                    },
-                    "trigger": {
-                        "type": "string",
-                        "description": (
-                            "When the rule fires: 'active', 'commit', 'compile', "
-                            "'compress', 'merge', 'gc', 'transition', 'transition:{target}'."
-                        ),
-                    },
-                    "action": {
+                    "settings": {
                         "type": "object",
-                        "description": "Action dict (e.g. {type: 'set_config', key: 'model', value: 'gpt-4o'}).",
-                    },
-                    "condition": {
-                        "type": "object",
-                        "description": "Optional condition dict (e.g. {token_budget_exceeded: true}).",
+                        "description": "Key-value config settings (e.g. {model: 'gpt-4o', temperature: 0.7}).",
                     },
                 },
-                "required": ["name", "trigger", "action"],
+                "required": ["settings"],
             },
-            handler=lambda name, trigger, action, condition=None: _handle_create_rule(
-                tract, name, trigger, action, condition
-            ),
+            handler=lambda settings: _handle_configure(tract, settings),
         ),
         # 24. create_metadata
         ToolDefinition(
@@ -652,8 +636,8 @@ def get_all_tools(tract: Tract) -> list[ToolDefinition]:
         ToolDefinition(
             name="get_config",
             description=(
-                "Resolve a config value from active rules. Uses DAG precedence "
-                "(closest rule to HEAD wins). Returns the value or null."
+                "Resolve a config value from the DAG. Uses DAG precedence "
+                "(closest config to HEAD wins). Returns the value or null."
             ),
             parameters={
                 "type": "object",
@@ -671,9 +655,8 @@ def get_all_tools(tract: Tract) -> list[ToolDefinition]:
         ToolDefinition(
             name="transition",
             description=(
-                "Transition to a target branch using rules. Evaluates gate "
-                "conditions, runs pre-transition actions, builds a handoff "
-                "payload, and switches to the target branch."
+                "Transition to a target branch with optional handoff. "
+                "Runs pre/post_transition middleware and switches to the target."
             ),
             parameters={
                 "type": "object",
@@ -682,10 +665,20 @@ def get_all_tools(tract: Tract) -> list[ToolDefinition]:
                         "type": "string",
                         "description": "Target branch name to transition to.",
                     },
+                    "handoff": {
+                        "type": "string",
+                        "description": (
+                            "Handoff mode: 'full' (compile all), 'summary' "
+                            "(adaptive), 'none' (default), or custom text."
+                        ),
+                        "default": "none",
+                    },
                 },
                 "required": ["target"],
             },
-            handler=lambda target: _handle_transition(tract, target),
+            handler=lambda target, handoff="none": _handle_transition(
+                tract, target, handoff
+            ),
         ),
     ]
 
@@ -993,15 +986,10 @@ def _handle_query_by_tags(tract: Tract, tags: list[str], match: str) -> str:
     return f"Found {len(results)} commits: {', '.join(short)}"
 
 
-def _handle_create_rule(
-    tract: Tract,
-    name: str,
-    trigger: str,
-    action: dict,
-    condition: dict | None,
-) -> str:
-    info = tract.rule(name=name, trigger=trigger, condition=condition, action=action)
-    return f"Created rule '{name}' ({info.commit_hash[:8]})"
+def _handle_configure(tract: Tract, settings: dict) -> str:
+    info = tract.configure(**settings)
+    keys = ", ".join(settings.keys())
+    return f"Configured {keys} ({info.commit_hash[:8]})"
 
 
 def _handle_create_metadata(
@@ -1021,10 +1009,10 @@ def _handle_get_config(tract: Tract, key: str) -> str:
     return f"Config '{key}': {value}"
 
 
-def _handle_transition(tract: Tract, target: str) -> str:
-    result = tract.transition(target)
+def _handle_transition(tract: Tract, target: str, handoff: str = "none") -> str:
+    result = tract.transition(target, handoff=handoff)
     if result is None:
-        return f"Transition to '{target}' blocked by rules"
+        return f"Transitioned to '{target}' (no handoff)"
     return f"Transitioned to '{target}' ({result.commit_hash[:8]})"
 
 

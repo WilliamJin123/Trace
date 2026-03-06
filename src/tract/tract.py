@@ -26,7 +26,7 @@ from tract.models.commit import CommitInfo, CommitMetadata, CommitOperation
 from tract.models.config import LLMConfig, Operator, OperationClients, OperationConfigs, OperationPrompts, TractConfig
 from tract.models.content import validate_content
 from tract.exceptions import (
-    BlockedByRuleError,
+    BlockedError,
     BranchNotFoundError,
     CommitNotFoundError,
     ContentValidationError,
@@ -66,10 +66,7 @@ if TYPE_CHECKING:
     from tract.models.session import SpawnInfo
     from tract.operations.diff import DiffResult
     from tract.operations.history import StatusInfo
-    from tract.rules.engine import RuleEngine
-    from tract.rules.index import RuleIndex
-    from tract.rules.models import EvalResult
-    from tract.rules.registries import ActionHandler, ConditionEvaluator, MetricProvider
+    from tract.operations.config_index import ConfigIndex
     from tract.storage.schema import CommitRow
     from tract.toolkit.executor import ToolExecutor
     from tract.protocols import ToolTurn
@@ -186,14 +183,12 @@ class Tract:
         self._commit_reasoning: bool = True
         self._auto_message_enabled: bool = False
 
-        # Rule engine state
-        self._rule_index: RuleIndex | None = None
-        self._rule_eval_depth: int = 0  # recursion guard, survives engine rebuild
-        self.__rule_engine: RuleEngine | None = None
+        # Config index (replaces rule engine)
+        self._config_index: ConfigIndex | None = None
 
-        # Extensibility registry (custom conditions, actions, metrics, triggers)
-        from tract.rules.registries import Registry
-        self._registry: Registry = Registry()
+        # Middleware state
+        self._middleware: dict[str, list[tuple[str, Callable]]] = {}
+        self._in_middleware_events: set[str] = set()
 
         # Persistence state
         self._db_path: str = ":memory:"
@@ -552,181 +547,179 @@ class Tract:
         return self._ref_repo.get_current_branch(self._tract_id)
 
     @property
-    def rule_index(self) -> RuleIndex:
-        """Get the current rule index (built/cached from DAG ancestry)."""
-        from tract.rules.index import RuleIndex as _RuleIndex
+    def config_index(self) -> ConfigIndex:
+        """Get the current config index (built/cached from DAG ancestry)."""
+        from tract.operations.config_index import ConfigIndex as _ConfigIndex
 
-        if self._rule_index is None or self._rule_index.is_stale:
+        if self._config_index is None or self._config_index.is_stale:
             head = self.head
             if head is None:
-                return _RuleIndex()
-            self._rule_index = _RuleIndex.build(
+                return _ConfigIndex()
+            self._config_index = _ConfigIndex.build(
                 self._commit_repo, self._blob_repo, head,
                 parent_repo=self._parent_repo,
-                annotation_repo=self._annotation_repo,
             )
-        return self._rule_index
+        return self._config_index
 
     def get_config(self, key: str, default: Any = None) -> Any:
-        """Resolve a config value from active rules.
+        """Resolve a config value from DAG.
 
         Uses DAG precedence: closest to HEAD wins.
         """
-        from tract.rules.config import resolve_config
+        return self.config_index.get(key, default=default)
 
-        return resolve_config(self.rule_index, key, default=default)
+    def get_all_configs(self) -> dict[str, Any]:
+        """Resolve all config key-value pairs from DAG."""
+        return self.config_index.get_all()
 
-    def register_condition(self, name: str, evaluator: ConditionEvaluator) -> None:
-        """Register a custom condition type for the rule engine."""
-        self._registry.register_condition(name, evaluator)
-        # Invalidate engine so it picks up new custom conditions
-        self.__rule_engine = None
+    # Well-known config key type validators
+    _WELL_KNOWN_CONFIG_TYPES: dict[str, type | tuple[type, ...]] = {
+        "model": (str,),
+        "temperature": (int, float),
+        "max_tokens": (int,),
+        "max_commit_tokens": (int,),
+        "auto_compress_threshold": (int,),
+        "compact_tools": (dict,),
+        "compile_strategy": (str,),
+        "compile_strategy_k": (int,),
+        "handoff_summary_k": (int,),
+    }
 
-    def register_action(self, name: str, handler: ActionHandler) -> None:
-        """Register a custom action type for the rule engine."""
-        self._registry.register_action(name, handler)
-        self.__rule_engine = None
+    def configure(self, **settings: Any) -> CommitInfo:
+        """Commit config to DAG. Well-known keys are type-checked.
 
-    def register_metric(self, name: str, provider: MetricProvider) -> None:
-        """Register a custom metric for threshold conditions."""
-        self._registry.register_metric(name, provider)
-
-    @property
-    def _rule_engine(self) -> RuleEngine:
-        """Get the rule engine (lazy init, re-created when index is stale)."""
-        if self.__rule_engine is None or self._rule_index is None or self._rule_index.is_stale:
-            from tract.rules.engine import RuleEngine as _RuleEngine
-
-            self.__rule_engine = _RuleEngine(
-                self.rule_index,
-                custom_conditions=self._registry.conditions or None,
-                custom_actions=self._registry.actions or None,
-            )
-        return self.__rule_engine
-
-    def _fire_rules(self, event: str, commit: CommitInfo | None = None) -> EvalResult:  # noqa: F821
-        """Fire rules for an event. Returns EvalResult.
-
-        Post-processes deferred actions (e.g., create_rule commits) after the
-        event pipeline completes.
+        Raises ValueError if a well-known key has the wrong type.
+        Unknown keys pass through without validation.
+        None values are valid (unset semantics).
         """
-        from tract.rules.models import EvalContext, EvalResult
+        from tract.models.content import ConfigContent
 
-        # Guard: prevent re-entrant rule firing (commit -> _fire_rules ->
-        # deferred rule() -> commit -> _fire_rules loop)
-        if getattr(self, "_firing_rules", False):
-            return EvalResult()
-        # If no rules exist at all, short-circuit
-        if len(self.rule_index) == 0:
-            return EvalResult()
+        for key, value in settings.items():
+            if value is not None and key in self._WELL_KNOWN_CONFIG_TYPES:
+                expected = self._WELL_KNOWN_CONFIG_TYPES[key]
+                if not isinstance(value, expected):
+                    raise ValueError(
+                        f"Config '{key}' expects {expected}, got {type(value).__name__}"
+                    )
+        content = ConfigContent(settings=settings)
+        info = self.commit(content, message=f"configure: {', '.join(settings)}")
+        if self._config_index is not None:
+            self._config_index.invalidate()
+        return info
 
-        self._firing_rules = True
+    def directive(
+        self,
+        name: str,
+        text: str,
+        *,
+        priority: Any = None,
+        message: str | None = None,
+        tags: list[str] | None = None,
+    ) -> CommitInfo:
+        """Commit a named standing instruction (compiled, override-by-name).
+
+        Default priority is PINNED. The compiler deduplicates by name:
+        same name -> closest to HEAD wins.
+        """
+        from tract.models.annotations import Priority as _Priority
+        from tract.models.content import InstructionContent
+
+        content = InstructionContent(text=text, name=name)
+        info = self.commit(
+            content,
+            message=message or f"directive: {name}",
+            tags=tags,
+        )
+        # Apply priority annotation
+        # Default is PINNED (matching InstructionContent type hint).
+        # When user explicitly requests NORMAL, annotate to override the
+        # type-hint default of PINNED.
+        actual_priority = priority if priority is not None else _Priority.PINNED
+        if priority is not None and actual_priority != _Priority.PINNED:
+            self.annotate(info.commit_hash, actual_priority)
+        return info
+
+    def use(self, event: str, handler: Callable) -> str:
+        """Register middleware. Returns handler ID for removal."""
+        import uuid as _uuid
+
+        from tract.middleware import VALID_EVENTS
+
+        if event not in VALID_EVENTS:
+            raise ValueError(
+                f"Unknown middleware event '{event}'. "
+                f"Valid events: {sorted(VALID_EVENTS)}"
+            )
+        handler_id = _uuid.uuid4().hex[:12]
+        self._middleware.setdefault(event, []).append((handler_id, handler))
+        return handler_id
+
+    def remove_middleware(self, handler_id: str) -> None:
+        """Remove a registered middleware handler."""
+        for event, handlers in self._middleware.items():
+            for i, (hid, _fn) in enumerate(handlers):
+                if hid == handler_id:
+                    handlers.pop(i)
+                    return
+        raise ValueError(f"Middleware handler '{handler_id}' not found")
+
+    def _run_middleware(self, event: str, **kwargs: Any) -> None:
+        """Run middleware handlers for an event.
+
+        Raises BlockedError if a handler blocks (pre_* events only).
+        """
+        if event in self._in_middleware_events:
+            return  # recursion guard
+        handlers = self._middleware.get(event, [])
+        if not handlers:
+            return
+        self._in_middleware_events.add(event)
         try:
-            # Pre-compute metrics so condition evaluators never call compile()
-            metrics: dict = {}
-            if self._cache:
-                head = self.head
-                if head:
-                    snapshot = self._cache.get(head)
-                    if snapshot:
-                        metrics["total_tokens"] = snapshot.token_count
-            metrics.setdefault("total_tokens", 0)
+            from tract.middleware import MiddlewareContext
 
-            ctx = EvalContext(
+            ctx = MiddlewareContext(
                 event=event,
-                commit=commit,
+                commit=kwargs.get("commit"),
+                tract=self,
                 branch=self.current_branch or "",
                 head=self.head or "",
-                tract=self,
-                metrics=metrics,
-                rule_index=self.rule_index,
+                target=kwargs.get("target"),
+                pending=kwargs.get("pending"),
             )
-            result = self._rule_engine.process_event(event, ctx)
-
-            # Post-process: commit deferred create_rule actions
-            for ar in result.action_results:
-                if ar.action_type == "create_rule" and ar.success and ar.data.get("deferred"):
-                    template = ar.data["template"]
-                    self.rule(
-                        name=template["name"],
-                        trigger=template["trigger"],
-                        condition=template.get("condition"),
-                        action=template["action"],
-                    )
-
-            return result
+            for _id, fn in handlers:
+                fn(ctx)
         finally:
-            self._firing_rules = False
+            self._in_middleware_events.discard(event)
 
-    def _fire_transition_rules(self, target: str) -> EvalResult:
-        """Collect rules from both 'transition' and 'transition:{target}'
-        triggers and process through a SINGLE gates->work->handoff->post pipeline."""
-        from tract.rules.models import EvalContext, EvalResult
-
-        if len(self.rule_index) == 0:
-            return EvalResult()
-
-        metrics: dict = {}
-        if self._cache:
-            head = self.head
-            if head:
-                snapshot = self._cache.get(head)
-                if snapshot:
-                    metrics["total_tokens"] = snapshot.token_count
-        metrics.setdefault("total_tokens", 0)
-
-        ctx = EvalContext(
-            event=f"transition:{target}",
-            commit=None,
-            branch=self.current_branch or "",
-            head=self.head or "",
-            tract=self,
-            metrics=metrics,
-            rule_index=self.rule_index,
-        )
-        return self._rule_engine.process_transition(target, ctx)
-
-    def transition(self, target: str, **kwargs: Any) -> CommitInfo | None:
-        """Transition to a target branch/stage using rules.
-
-        Evaluates transition rules on the current branch:
-        1. Gates: require/block rules
-        2. Work: pre-transition actions
-        3. Handoff: compile_filter to build payload
-        4. Switch to / create target branch
-        5. Commit handoff payload on target
+    def transition(
+        self,
+        target: str,
+        *,
+        handoff: str = "none",
+        **kwargs: Any,
+    ) -> CommitInfo | None:
+        """Transition to target branch with optional handoff.
 
         Args:
-            target: Target branch name.
+            target: Branch name.
+            handoff: "full" (compile all), "summary" (adaptive), "none",
+                     or custom text string.
 
         Returns:
-            CommitInfo of the handoff commit on the target, or None if blocked.
+            CommitInfo of the handoff commit on the target, or None if no handoff.
         """
-        eval_result = self._fire_transition_rules(target)
-        if eval_result.blocked:
-            return None
+        self._run_middleware("pre_transition", target=target)
 
-        # Extract compile_filter from handoff results
-        compile_filter = None
-        for ar in eval_result.action_results:
-            if ar.action_type == "compile_filter":
-                compile_filter = ar.data
-                break
+        payload = None
+        if handoff == "full":
+            payload = str(self.compile().to_dicts())
+        elif handoff == "summary":
+            k = self.get_config("handoff_summary_k") or 3
+            payload = str(self.compile(strategy="adaptive", strategy_k=k).to_dicts())
+        elif handoff != "none":
+            payload = handoff
 
-        source = self.current_branch
-
-        # Build handoff payload
-        if compile_filter:
-            mode = compile_filter.get("mode", "full")
-            if mode == "same_context":
-                return None  # rules already applied, no handoff needed
-            else:
-                payload_text = str(self.compile().to_dicts())
-        else:
-            payload_text = str(self.compile().to_dicts())
-
-        # Switch to target branch (create if needed)
-        existing = [b.name for b in self.list_branches()]
+        existing = {b.name for b in self.list_branches()}
         if target not in existing:
             from tract.operations.branch import create_branch
 
@@ -734,17 +727,12 @@ class Tract:
             self._session.commit()
         self.switch(target)
 
-        # Commit handoff payload
-        from tract.models.content import DialogueContent
+        result = None
+        if payload:
+            result = self.system(f"Context handoff:\n{payload}", message=f"handoff to {target}")
 
-        handoff_content = DialogueContent(
-            role="system",
-            text=f"Transition handoff from {source}.\n\n{payload_text}",
-        )
-        return self.commit(
-            handoff_content,
-            message=f"transition handoff from {source} to {target}",
-        )
+        self._run_middleware("post_transition", target=target)
+        return result
 
     @property
     def spawn_repo(self) -> SqliteSpawnPointerRepository | None:
@@ -997,6 +985,23 @@ class Tract:
         if all_tags:
             self._validate_tags(all_tags)
 
+        # Pre-commit middleware (can block)
+        self._run_middleware("pre_commit", pending=content)
+
+        # Config enforcement: max_commit_tokens
+        max_commit_tokens = self.get_config("max_commit_tokens")
+        if max_commit_tokens is not None:
+            # Estimate token count for the content
+            if isinstance(content, BaseModel):
+                from tract.engine.commit import extract_text_from_content as _extract
+                _est_text = _extract(content)
+                _est_tokens = self._token_counter.count_text(_est_text) if _est_text else 0
+                if _est_tokens > int(max_commit_tokens):
+                    raise BlockedError(
+                        "pre_commit",
+                        f"Exceeds max_commit_tokens ({max_commit_tokens})",
+                    )
+
         prev_head = self.head
 
         info = self._commit_engine.create_commit(
@@ -1039,52 +1044,9 @@ class Tract:
                             self._cache.put(info.commit_hash, patched)
                 # Do NOT clear cache -- other entries at different HEADs remain valid
 
-        # Fire post-commit rules (informational: deferred actions, no blocking)
-        self._fire_rules("commit", commit=info)
+        # Fire post-commit middleware
+        self._run_middleware("post_commit", commit=info)
 
-        return info
-
-    def rule(
-        self,
-        name: str,
-        *,
-        trigger: str,
-        condition: dict | None = None,
-        action: dict,
-        message: str | None = None,
-        tags: list[str] | None = None,
-    ) -> CommitInfo:
-        """Create a rule by committing a RuleContent to the current branch.
-
-        Args:
-            name: Stable identity for the rule (human-readable).
-            trigger: When the engine evaluates this rule
-                ("active", "commit", "compile", "compress", "merge",
-                 "gc", "transition", "transition:{target}").
-            condition: Condition dict or None (always fires).
-            action: Action dict (required).
-            message: Optional commit message. Defaults to "rule: {name}".
-            tags: Optional tags for the rule commit.
-
-        Returns:
-            CommitInfo for the rule commit.
-        """
-        from tract.models.content import RuleContent
-
-        content = RuleContent(
-            name=name,
-            trigger=trigger,
-            condition=condition,
-            action=action,
-        )
-        info = self.commit(
-            content,
-            message=message or f"rule: {name}",
-            tags=tags,
-        )
-        # Invalidate rule index after rule commit
-        if self._rule_index is not None:
-            self._rule_index.invalidate()
         return info
 
     def metadata(
@@ -2223,13 +2185,18 @@ class Tract:
         )
         return _dc.replace(response, prompt=text)
 
+    _TOOLS_SENTINEL = object()
+
     def run(
         self,
         task: str | None = None,
         *,
         max_steps: int = 50,
         system_prompt: str | None = None,
-        tools: list[dict] | None = None,
+        tools: list[dict] | None | object = _TOOLS_SENTINEL,
+        profile: str | object = "self",
+        tool_names: list[str] | None = None,
+        tool_handlers: dict[str, Callable] | None = None,
         llm_client: LLMClient | None = None,
         on_step: Callable | None = None,
     ) -> LoopResult:  # noqa: F821
@@ -2241,7 +2208,19 @@ class Tract:
             task: Task description (committed as user message).
             max_steps: Maximum loop iterations.
             system_prompt: System prompt prepended to context.
-            tools: Tool definitions (OpenAI format). Falls back to as_tools().
+            tools: Tool definitions (OpenAI format). Pass an explicit empty
+                list ``[]`` to send no tools. When omitted, tools are built
+                from ``profile`` / ``tool_names``.
+            profile: Tool profile name (``"self"``, ``"supervisor"``,
+                ``"full"``) or a :class:`ToolProfile` instance. Only used
+                when ``tools`` is not provided. Default ``"self"``.
+            tool_names: Subset of tool names to include. Only used when
+                ``tools`` is not provided. Filters the profile's tools to
+                just the named ones.
+            tool_handlers: Mapping of custom tool names to callables.
+                When the LLM calls a tool in this dict, the function is
+                called with the tool arguments as keyword args. Tools not
+                in this dict are dispatched to tract's built-in executor.
             llm_client: LLM client override.
             on_step: Step callback ``(step_num, response) -> None``.
 
@@ -2250,13 +2229,26 @@ class Tract:
         """
         from tract.loop import LoopConfig, LoopResult, run_loop
 
+        # Resolve tools
+        if tools is self._TOOLS_SENTINEL:
+            resolved_tools = self.as_tools(profile=profile, format="openai")
+            if tool_names is not None:
+                allowed = set(tool_names)
+                resolved_tools = [
+                    t for t in resolved_tools
+                    if t.get("function", {}).get("name") in allowed
+                ]
+        else:
+            resolved_tools = tools  # type: ignore[assignment]
+
         config = LoopConfig(max_steps=max_steps, system_prompt=system_prompt)
         return run_loop(
             self,
             task=task,
             config=config,
             llm_client=llm_client,
-            tools=tools,
+            tools=resolved_tools,
+            tool_handlers=tool_handlers,
             on_step=on_step,
         )
 
@@ -2473,10 +2465,8 @@ class Tract:
                 return empty, []
             return empty
 
-        # Pre-compile rule check (blockable)
-        compile_eval = self._fire_rules("compile")
-        if compile_eval.blocked:
-            raise BlockedByRuleError("compile", compile_eval.block_reasons)
+        # Pre-compile middleware (can block via BlockedError)
+        self._run_middleware("pre_compile")
 
         # Strategy kwargs to forward to the compiler
         _strategy_kw = dict(strategy=strategy, strategy_k=strategy_k)
@@ -3655,8 +3645,8 @@ class Tract:
             target, self._tract_id, self._commit_repo, self._ref_repo
         )
         self._session.commit()
-        if self._rule_index is not None:
-            self._rule_index.invalidate()
+        if self._config_index is not None:
+            self._config_index.invalidate()
         return commit_hash
 
     def branch(
@@ -3721,8 +3711,8 @@ class Tract:
             target, self._tract_id, self._commit_repo, self._ref_repo
         )
         self._session.commit()
-        if self._rule_index is not None:
-            self._rule_index.invalidate()
+        if self._config_index is not None:
+            self._config_index.invalidate()
         return commit_hash
 
     def list_branches(self) -> list[BranchInfo]:
@@ -4212,7 +4202,7 @@ class Tract:
 
             client = self._resolve_llm_client("message")
             llm_kwargs = self._resolve_llm_config(
-                "message", temperature=0.0, max_tokens=80,
+                "message", temperature=0.0, max_tokens=200,
             )
             messages = [
                 {"role": "system", "content": COMMIT_MESSAGE_SYSTEM},
@@ -4220,6 +4210,11 @@ class Tract:
             ]
             response = client.chat(messages, **llm_kwargs)
             summary = self._extract_content(response, client=client).strip()
+            # Strip <think>...</think> tags from models that emit reasoning.
+            # Also strip unclosed <think> blocks (model hit max_tokens mid-thought).
+            import re as _re
+            summary = _re.sub(r"<think>.*?</think>\s*", "", summary, flags=_re.DOTALL).strip()
+            summary = _re.sub(r"<think>.*", "", summary, flags=_re.DOTALL).strip()
             if not summary:
                 return _fallback_message(content_type, text)
             # Cap at 100 chars for safety
@@ -4292,10 +4287,8 @@ class Tract:
                     max_tokens=merge_config.get("max_tokens", 2048),
                 )
 
-        # Pre-merge rule check (blockable)
-        merge_eval = self._fire_rules("merge")
-        if merge_eval.blocked:
-            raise BlockedByRuleError("merge", merge_eval.block_reasons)
+        # Pre-merge middleware (can block)
+        self._run_middleware("pre_merge")
 
         result = merge_branches(
             tract_id=self._tract_id,
@@ -4336,8 +4329,8 @@ class Tract:
             self._session.commit()
 
         self._cache.clear()
-        if self._rule_index is not None:
-            self._rule_index.invalidate()
+        if self._config_index is not None:
+            self._config_index.invalidate()
         return result
 
     def commit_merge(
@@ -4415,8 +4408,8 @@ class Tract:
 
         # Clear compile cache
         self._cache.clear()
-        if self._rule_index is not None:
-            self._rule_index.invalidate()
+        if self._config_index is not None:
+            self._config_index.invalidate()
 
         return result
 
@@ -4536,8 +4529,8 @@ class Tract:
         )
         self._session.commit()
         self._cache.clear()
-        if self._rule_index is not None:
-            self._rule_index.invalidate()
+        if self._config_index is not None:
+            self._config_index.invalidate()
         return result
 
     def compress(
@@ -4654,10 +4647,8 @@ class Tract:
         if effective_system_prompt is None and self._operation_prompts.compress is not None:
             effective_system_prompt = self._operation_prompts.compress
 
-        # Pre-compress rule check (blockable)
-        compress_eval = self._fire_rules("compress")
-        if compress_eval.blocked:
-            raise BlockedByRuleError("compress", compress_eval.block_reasons)
+        # Pre-compress middleware (can block)
+        self._run_middleware("pre_compress")
 
         # Step 1: Generate summaries via compress_range
         range_result = compress_range(
@@ -4948,10 +4939,8 @@ class Tract:
         if self._parent_repo is None:
             raise CompressionError("Parent repository not available")
 
-        # Pre-GC rule check (blockable)
-        gc_eval = self._fire_rules("gc")
-        if gc_eval.blocked:
-            raise BlockedByRuleError("gc", gc_eval.block_reasons)
+        # Pre-GC middleware (can block)
+        self._run_middleware("pre_gc")
 
         # Plan phase: determine which commits to remove
         commits_to_remove, tokens_to_free = plan_gc(
@@ -5168,6 +5157,7 @@ class Tract:
         self,
         *,
         profile: str | object = "self",
+        tool_names: list[str] | None = None,
         overrides: dict[str, str] | None = None,
         format: str = "openai",
     ) -> list[dict]:
@@ -5179,6 +5169,9 @@ class Tract:
         Args:
             profile: A profile name (``"self"``, ``"supervisor"``, ``"full"``)
                 or a :class:`~tract.toolkit.models.ToolProfile` instance.
+            tool_names: Optional list of tool names to include. When provided,
+                only tools whose names are in this list are returned (applied
+                after profile filtering).
             overrides: Optional dict mapping tool names to replacement
                 descriptions.  Applied on top of the profile's descriptions.
             format: Output format -- ``"openai"`` (default) or ``"anthropic"``.
@@ -5210,6 +5203,11 @@ class Tract:
         for tool in all_tools:
             if tool.name.startswith("fire_") and tool.name not in filtered_names:
                 filtered.append(tool)
+
+        # Filter to specific tool names if requested
+        if tool_names is not None:
+            allowed = set(tool_names)
+            filtered = [t for t in filtered if t.name in allowed]
 
         # Apply overrides
         if overrides:

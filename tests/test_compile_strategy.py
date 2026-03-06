@@ -177,45 +177,30 @@ class TestStrategyEdgeCases:
 # ---------------------------------------------------------------------------
 
 
-class TestStrategyWithRules:
-    def test_rules_excluded_full(self):
-        """Rule commits are excluded from compile output with full strategy."""
+class TestStrategyWithNonCompilable:
+    def test_config_excluded_full(self):
+        """Config commits are excluded from compile output with full strategy."""
         t = Tract.open()
         t.user("Hello")
-        t.commit({
-            "content_type": "rule",
-            "name": "temp",
-            "trigger": "active",
-            "action": {"type": "set_config", "key": "temperature", "value": 0.3},
-        })
+        t.configure(temperature=0.3)
         t.assistant("World")
         compiled = t.compile(strategy="full")
-        assert compiled.commit_count == 2
+        assert len(compiled.messages) == 2
 
-    def test_rules_excluded_messages(self):
-        """Rule commits are excluded from compile output with messages strategy."""
+    def test_config_excluded_messages(self):
+        """Config commits are excluded from compile output with messages strategy."""
         t = Tract.open()
         t.user("Hello")
-        t.commit({
-            "content_type": "rule",
-            "name": "temp",
-            "trigger": "active",
-            "action": {"type": "set_config", "key": "temperature", "value": 0.3},
-        })
+        t.configure(temperature=0.3)
         t.assistant("World")
         compiled = t.compile(strategy="messages")
-        assert compiled.commit_count == 2
+        assert len(compiled.messages) == 2
 
-    def test_rules_excluded_adaptive(self):
-        """Rule commits are excluded from compile output with adaptive strategy."""
+    def test_config_excluded_adaptive(self):
+        """Config commits are excluded from compile output with adaptive strategy."""
         t = Tract.open()
         t.user("Hello")
-        t.commit({
-            "content_type": "rule",
-            "name": "temp",
-            "trigger": "active",
-            "action": {"type": "set_config", "key": "temperature", "value": 0.3},
-        })
+        t.configure(temperature=0.3)
         t.assistant("World")
         compiled = t.compile(strategy="adaptive")
-        assert compiled.commit_count == 2
+        assert len(compiled.messages) == 2

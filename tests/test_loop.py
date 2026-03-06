@@ -414,47 +414,39 @@ class TestTractRunFacade:
 
 
 # ---------------------------------------------------------------------------
-# Loop with rules
+# Loop with middleware / config
 # ---------------------------------------------------------------------------
 
 
-class TestLoopWithRules:
-    def test_config_from_rules(self, tract_instance):
-        """Active rules that set compile_strategy are respected."""
-        tract_instance.rule(
-            name="use-adaptive",
-            trigger="active",
-            action={"type": "set_config", "key": "compile_strategy", "value": "adaptive"},
-        )
-        client = MockLLMClient([_make_response("Rule-configured.")])
+class TestLoopWithMiddleware:
+    def test_config_from_configure(self, tract_instance):
+        """Config commits that set compile_strategy are respected."""
+        tract_instance.configure(compile_strategy="adaptive")
+        client = MockLLMClient([_make_response("Config-configured.")])
         result = run_loop(tract_instance, llm_client=client)
         assert result.status == "completed"
 
-    def test_loop_with_rule_commit(self, tract_instance):
-        """Rules can fire during loop execution (on commit events)."""
-        # Create a rule that fires on commit
-        tract_instance.rule(
-            name="on-commit-log",
-            trigger="commit",
-            action={"type": "set_config", "key": "last_commit_seen", "value": True},
-        )
+    def test_loop_with_post_commit_middleware(self, tract_instance):
+        """Middleware can fire during loop execution (on post_commit events)."""
+        # Register a post_commit handler that sets a flag
+        seen = []
+        tract_instance.use("post_commit", lambda ctx: seen.append(True))
         client = MockLLMClient([
             _make_response("Committing something", tool_calls=[{"name": "status", "arguments": {}}]),
-            _make_response("Done with rules."),
+            _make_response("Done with middleware."),
         ])
-        result = run_loop(tract_instance, task="Rule test", llm_client=client)
+        result = run_loop(tract_instance, task="Middleware test", llm_client=client)
         assert result.status == "completed"
 
-    def test_loop_blocked_by_rule(self, tract_instance):
-        """Block rule on compile stops the loop with 'blocked' status."""
-        from tract.exceptions import BlockedByRuleError
+    def test_loop_blocked_by_middleware(self, tract_instance):
+        """Block middleware on pre_compile stops the loop with 'blocked' status."""
+        from tract.exceptions import BlockedError
 
-        # Create a block rule on compile
-        tract_instance.rule(
-            name="block-compile",
-            trigger="compile",
-            action={"type": "block", "reason": "Context window full"},
-        )
+        # Register a pre_compile handler that raises BlockedError
+        def block_compile(ctx):
+            raise BlockedError("pre_compile", "Context window full")
+
+        tract_instance.use("pre_compile", block_compile)
         client = MockLLMClient([_make_response("Should not reach here.")])
         result = run_loop(tract_instance, task="Blocked loop", llm_client=client)
         assert result.status == "blocked"
@@ -464,77 +456,74 @@ class TestLoopWithRules:
 
 
 # ---------------------------------------------------------------------------
-# Rule blocking on operations (wired into tract.py)
+# Middleware blocking on operations (wired into tract.py)
 # ---------------------------------------------------------------------------
 
 
-class TestRuleBlocking:
+class TestMiddlewareBlocking:
     def test_compile_blocked(self, tract_instance):
-        """Block rule on compile raises BlockedByRuleError."""
-        from tract.exceptions import BlockedByRuleError
+        """Block middleware on pre_compile raises BlockedError."""
+        from tract.exceptions import BlockedError
 
         tract_instance.system("Some content")
-        tract_instance.rule(
-            name="block-compile",
-            trigger="compile",
-            action={"type": "block", "reason": "Budget exceeded"},
-        )
-        with pytest.raises(BlockedByRuleError, match="compile blocked"):
+
+        def block_compile(ctx):
+            raise BlockedError("pre_compile", "Budget exceeded")
+
+        tract_instance.use("pre_compile", block_compile)
+        with pytest.raises(BlockedError, match="pre_compile blocked"):
             tract_instance.compile()
 
-    def test_compile_not_blocked_without_rule(self, tract_instance):
-        """Compile works normally without block rules."""
+    def test_compile_not_blocked_without_middleware(self, tract_instance):
+        """Compile works normally without block middleware."""
         tract_instance.system("Hello")
         result = tract_instance.compile()
         assert result.token_count > 0
 
-    def test_commit_fires_rules_post_persist(self, tract_instance):
-        """Commit fires rules after persist (informational, not blocking)."""
-        # A set_config action on commit trigger should execute without error
-        tract_instance.rule(
-            name="on-commit",
-            trigger="commit",
-            action={"type": "set_config", "key": "committed", "value": True},
-        )
-        # This should succeed -- commit rules are informational
-        info = tract_instance.system("After rule")
+    def test_commit_fires_post_commit_middleware(self, tract_instance):
+        """Commit fires post_commit middleware after persist (informational)."""
+        seen = []
+        tract_instance.use("post_commit", lambda ctx: seen.append(True))
+        # This should succeed -- post_commit middleware is informational
+        info = tract_instance.system("After middleware")
         assert info.commit_hash
+        assert len(seen) == 1
 
     def test_compress_blocked(self, tmp_path):
-        """Block rule on compress raises BlockedByRuleError."""
-        from tract.exceptions import BlockedByRuleError
+        """Block middleware on pre_compress raises BlockedError."""
+        from tract.exceptions import BlockedError
 
         db = str(tmp_path / "block_compress.db")
         t = __import__("tract").Tract.open(db)
         # Add enough content to compress
         for i in range(5):
             t.system(f"Message {i}")
-        t.rule(
-            name="block-compress",
-            trigger="compress",
-            action={"type": "block", "reason": "Compression disabled"},
-        )
-        with pytest.raises(BlockedByRuleError, match="compress blocked"):
+
+        def block_compress(ctx):
+            raise BlockedError("pre_compress", "Compression disabled")
+
+        t.use("pre_compress", block_compress)
+        with pytest.raises(BlockedError, match="pre_compress blocked"):
             t.compress(content="manual summary")
 
     def test_gc_blocked(self, tmp_path):
-        """Block rule on gc raises BlockedByRuleError."""
-        from tract.exceptions import BlockedByRuleError
+        """Block middleware on pre_gc raises BlockedError."""
+        from tract.exceptions import BlockedError
 
         db = str(tmp_path / "block_gc.db")
         t = __import__("tract").Tract.open(db)
         t.system("Content")
-        t.rule(
-            name="block-gc",
-            trigger="gc",
-            action={"type": "block", "reason": "GC disabled"},
-        )
-        with pytest.raises(BlockedByRuleError, match="gc blocked"):
+
+        def block_gc(ctx):
+            raise BlockedError("pre_gc", "GC disabled")
+
+        t.use("pre_gc", block_gc)
+        with pytest.raises(BlockedError, match="pre_gc blocked"):
             t.gc()
 
     def test_merge_blocked(self, tmp_path):
-        """Block rule on merge raises BlockedByRuleError."""
-        from tract.exceptions import BlockedByRuleError
+        """Block middleware on pre_merge raises BlockedError."""
+        from tract.exceptions import BlockedError
 
         db = str(tmp_path / "block_merge.db")
         t = __import__("tract").Tract.open(db)
@@ -542,10 +531,10 @@ class TestRuleBlocking:
         t.branch("feature", switch=True)
         t.system("Feature content")
         t.switch("main")
-        t.rule(
-            name="block-merge",
-            trigger="merge",
-            action={"type": "block", "reason": "Merge frozen"},
-        )
-        with pytest.raises(BlockedByRuleError, match="merge blocked"):
+
+        def block_merge(ctx):
+            raise BlockedError("pre_merge", "Merge frozen")
+
+        t.use("pre_merge", block_merge)
+        with pytest.raises(BlockedError, match="pre_merge blocked"):
             t.merge("feature")

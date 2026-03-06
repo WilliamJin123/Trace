@@ -1,8 +1,8 @@
 """Research Pipeline: ingest -> organize -> synthesize
 
 An agent-driven research workflow. The agent ingests information, organizes
-it with tags and metadata, and synthesizes findings -- all governed by rules
-that gate transitions and configure compile strategies per stage.
+it with tags and metadata, and synthesizes findings -- all governed by config
+for compile strategies and middleware gates for transitions.
 
 Stages:
   ingest    -- full compile strategy, gather raw information
@@ -18,7 +18,7 @@ Requires: LLM API key (uses Groq provider)
 import sys
 from pathlib import Path
 
-from tract import Tract, resolve_all_configs
+from tract import Tract, BlockedError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import groq as llm
@@ -38,26 +38,43 @@ def main():
     ) as t:
 
         # =============================================================
-        # Stage rules and transition gates
+        # Stage config and transition gates
         # =============================================================
 
         print("=== Setting Up Research Pipeline ===\n")
 
         # Initial stage config
-        t.rule("stage", trigger="active",
-               action={"type": "set_config", "key": "stage", "value": "ingest"})
-        t.rule("ingest-strategy", trigger="active",
-               action={"type": "set_config", "key": "compile_strategy", "value": "full"})
-        t.rule("ingest-temp", trigger="active",
-               action={"type": "set_config", "key": "temperature", "value": 0.7})
+        t.configure(
+            stage="ingest",
+            compile_strategy="full",
+            temperature=0.7,
+        )
 
-        # Gates: require enough content before advancing
-        gate = lambda v: {"type": "require", "condition": {
-            "type": "threshold", "metric": "commit_count", "op": ">=", "value": v}}
-        t.rule("organize-gate", trigger="transition:organize", action=gate(6))
-        t.rule("synthesize-gate", trigger="transition:synthesize", action=gate(3))
+        # Transition gates via middleware
+        def organize_gate(ctx):
+            if ctx.target != "organize":
+                return
+            count = len(ctx.tract.log())
+            if count < 6:
+                raise BlockedError(
+                    "pre_transition",
+                    [f"Need >= 6 commits for organize (have {count})"],
+                )
 
-        print(f"  Initial configs: {resolve_all_configs(t.rule_index)}")
+        def synthesize_gate(ctx):
+            if ctx.target != "synthesize":
+                return
+            count = len(ctx.tract.log())
+            if count < 3:
+                raise BlockedError(
+                    "pre_transition",
+                    [f"Need >= 3 commits for synthesize (have {count})"],
+                )
+
+        t.use("pre_transition", organize_gate)
+        t.use("pre_transition", synthesize_gate)
+
+        print(f"  Initial configs: {t.get_all_configs()}")
 
         # =============================================================
         # Register tags the agent can use
@@ -113,6 +130,8 @@ def main():
             "metadata entries to classify the strategies. Then transition to "
             "'synthesize' and produce a comparative summary.",
             max_steps=20,
+            tool_names=["commit", "tag", "register_tag", "transition",
+                        "create_metadata", "get_config", "status"],
             on_step=lambda step, _resp: print(f"  step {step}..."),
         )
 

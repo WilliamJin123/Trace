@@ -1,14 +1,14 @@
 """Custom Tools: Adding domain-specific tools to the agent loop
 
-run_loop() gives the agent tract's built-in context tools by default. This
+t.run() gives the agent tract's built-in context tools by default. This
 example shows how to add your own tools alongside them -- the agent gets
 both tract tools (commit, log, status...) and your custom functions.
 
 Two techniques:
-  1. ToolProfile -- select which built-in tract tools the agent gets
-  2. Custom tool dicts -- add domain-specific functions in OpenAI format
+  1. tool_names -- select which built-in tract tools the agent gets
+  2. tool_handlers + custom tool dicts -- add domain-specific functions
 
-Demonstrates: ToolProfile, ToolConfig, as_tools(), custom tool dicts, run_loop()
+Demonstrates: tool_names, tool_handlers, custom tool dicts, t.run()
 
 Requires: LLM API key (uses Groq provider)
 """
@@ -16,7 +16,7 @@ Requires: LLM API key (uses Groq provider)
 import sys
 from pathlib import Path
 
-from tract import Tract, ToolProfile, ToolConfig, LoopConfig, run_loop
+from tract import Tract
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import groq as llm
@@ -50,7 +50,7 @@ def lookup_constant(name: str) -> str:
     return constants.get(name.lower(), f"Unknown constant: {name}")
 
 
-# OpenAI function-calling format
+# OpenAI function-calling format for custom tools
 CUSTOM_TOOLS = [
     {
         "type": "function",
@@ -82,6 +82,12 @@ CUSTOM_TOOLS = [
     },
 ]
 
+# Handlers: map tool names to the Python functions that execute them
+CUSTOM_HANDLERS = {
+    "calculator": calculator,
+    "lookup_constant": lookup_constant,
+}
+
 
 def main():
     if not llm.api_key:
@@ -92,27 +98,21 @@ def main():
         api_key=llm.api_key,
         base_url=llm.base_url,
         model=MODEL_ID,
+        auto_message=True,
     ) as t:
 
-        # --- 1. Select a subset of tract tools via ToolProfile ---
+        # --- 1. Select a slim subset of built-in tract tools ---
 
-        slim_profile = ToolProfile(
-            name="slim",
-            tool_configs={
-                "commit": ToolConfig(enabled=True),
-                "status": ToolConfig(enabled=True),
-                "log": ToolConfig(enabled=True),
-                "compile": ToolConfig(enabled=True),
-            },
+        tract_tools = t.as_tools(
+            tool_names=["commit", "status", "log", "compile"],
+            format="openai",
         )
-
-        tract_tools = t.as_tools(profile=slim_profile, format="openai")
         print(f"Tract tools ({len(tract_tools)}): "
               f"{[td['function']['name'] for td in tract_tools]}")
         print(f"Custom tools ({len(CUSTOM_TOOLS)}): "
               f"{[td['function']['name'] for td in CUSTOM_TOOLS]}")
 
-        # --- 2. Combine tract tools + custom tools ---
+        # --- 2. Combine tract tools + custom tool schemas ---
 
         all_tools = tract_tools + CUSTOM_TOOLS
 
@@ -123,18 +123,14 @@ def main():
             "for any arithmetic."
         )
 
-        # --- 3. Run with combined tools ---
+        # --- 3. Run with combined tools + handlers ---
 
-        config = LoopConfig(max_steps=8, stop_on_no_tool_call=True)
-
-        result = run_loop(
-            t,
-            task=(
-                "What is the circumference of a circle with radius 10? "
-                "Look up pi, then calculate 2 * pi * 10."
-            ),
-            config=config,
+        result = t.run(
+            "What is the circumference of a circle with radius 10? "
+            "Look up pi, then calculate 2 * pi * 10.",
+            max_steps=8,
             tools=all_tools,
+            tool_handlers=CUSTOM_HANDLERS,
             on_step=lambda step, _resp: print(f"  step {step}..."),
         )
 
@@ -146,6 +142,6 @@ if __name__ == "__main__":
 
 
 # --- See also ---
-# Quick start:      getting_started/01_quick_start.py
-# Rules:            getting_started/02_rules.py
-# Agent patterns:   agent/
+# Quick start:           getting_started/01_quick_start.py
+# Config & directives:   getting_started/02_config_and_directives.py
+# Agent patterns:        agent/

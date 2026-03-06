@@ -12,7 +12,7 @@ Quick reference for the commit/compile surface area:
 from tract import (
     Tract, InstructionContent, DialogueContent, ToolIOContent,
     ReasoningContent, ArtifactContent, OutputContent, FreeformContent,
-    RuleContent, MetadataContent, TractConfig, TokenBudgetConfig,
+    ConfigContent, MetadataContent, TractConfig, TokenBudgetConfig,
 )
 
 
@@ -49,11 +49,8 @@ def main():
     # FreeformContent — arbitrary dict payload
     t.commit(FreeformContent(payload={"custom_key": "custom_value"}))
 
-    # RuleContent — behavior rules (NOT compiled to LLM messages)
-    t.commit(RuleContent(
-        name="auto-compress", trigger="budget_exceeded",
-        action={"type": "compress"},
-    ))
+    # ConfigContent — key-value settings (NOT compiled to LLM messages)
+    t.commit(ConfigContent(settings={"temperature": 0.7, "model": "gpt-4o"}))
 
     # MetadataContent — annotations/tags (NOT compiled to LLM messages)
     t.commit(MetadataContent(kind="tag", data={"version": "1.0"}))

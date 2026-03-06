@@ -1,9 +1,9 @@
 """Quick Start -- From zero to working agent in 5 minutes
 
-The minimum setup: open a Tract, configure rules, run an agent loop, done.
+The minimum setup: open a Tract, configure settings, run an agent loop, done.
 One t.run() call handles compile -> LLM -> tools -> repeat automatically.
 
-Demonstrates: Tract.open(), system(), rules, t.run(), LoopResult
+Demonstrates: Tract.open(), system(), configure(), t.run(), LoopResult
 
 Requires: LLM API key (uses Groq provider)
 """
@@ -30,26 +30,23 @@ def main():
         model=MODEL_ID,
     ) as t:
 
-        # Rules configure behavior as data -- they travel with the conversation
-        t.rule("temperature", trigger="active",
-               action={"type": "set_config", "key": "temperature", "value": 0.7})
-        t.rule("compile-strategy", trigger="active",
-               action={"type": "set_config", "key": "compile_strategy", "value": "full"})
+        # Config settings travel with the conversation in the DAG
+        t.configure(temperature=0.7, compile_strategy="full")
 
         t.system(
-            "You are a helpful assistant. Answer questions concisely. "
-            "You have tools for managing your own context history."
+            "You are a helpful assistant. Answer questions concisely."
         )
 
         # One call: compiles context, calls LLM with tools, repeats until done
+        # tools=[] since this is pure Q&A -- no context-management tools needed
         result = t.run(
             "What are the three pillars of object-oriented programming? "
             "Explain each in one sentence.",
             max_steps=5,
+            tools=[],
             on_step=lambda step, _resp: print(f"  step {step}..."),
         )
         result.pprint()
-        t.compile().pprint(style="chat")
 
 
 if __name__ == "__main__":
@@ -57,6 +54,6 @@ if __name__ == "__main__":
 
 
 # --- See also ---
-# Rules in depth: getting_started/02_rules.py
-# Custom tools:   getting_started/03_custom_tools.py
-# Agent patterns: agent/
+# Config & directives: getting_started/02_config_and_directives.py
+# Custom tools:        getting_started/03_custom_tools.py
+# Agent patterns:      agent/

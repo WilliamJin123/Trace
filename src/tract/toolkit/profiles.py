@@ -40,7 +40,7 @@ _ALL_TOOL_NAMES = [
     "register_tag",
     "get_tags",
     "list_tags",
-    "create_rule",
+    "configure",
     "create_metadata",
     "get_config",
     "transition",
@@ -143,9 +143,9 @@ SELF_PROFILE = ToolProfile(
             enabled=True,
             description="Change the LLM model or temperature for your operations.",
         ),
-        "create_rule": ToolConfig(
+        "configure": ToolConfig(
             enabled=True,
-            description="Create a rule on your branch to automate context management.",
+            description="Set config key-value pairs on your branch to control behavior.",
         ),
         "create_metadata": ToolConfig(
             enabled=True,
@@ -301,9 +301,9 @@ SUPERVISOR_PROFILE = ToolProfile(
             enabled=True,
             description="List all registered tags in the managed agent's context.",
         ),
-        "create_rule": ToolConfig(
+        "configure": ToolConfig(
             enabled=True,
-            description="Create a rule on the managed agent's branch.",
+            description="Set config key-value pairs on the managed agent's branch.",
         ),
         "create_metadata": ToolConfig(
             enabled=True,

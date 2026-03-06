@@ -9,6 +9,7 @@ from tract.models.config import BudgetAction, LLMConfig, OperationPrompts, Tract
 from tract.models.content import (
     BUILTIN_TYPE_HINTS,
     ArtifactContent,
+    ConfigContent,
     ContentPayload,
     ContentTypeHints,
     DialogueContent,
@@ -23,6 +24,7 @@ from tract.models.content import (
 __all__ = [
     # Content types
     "InstructionContent",
+    "ConfigContent",
     "DialogueContent",
     "ToolIOContent",
     "ReasoningContent",

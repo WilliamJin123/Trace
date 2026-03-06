@@ -217,6 +217,27 @@ class CacheManager:
         if commit_row is None:
             return
 
+        # Skip commits whose content type is not compilable (e.g. config, metadata)
+        from tract.models.content import BUILTIN_TYPE_HINTS, ContentTypeHints as _CTH
+        hints = BUILTIN_TYPE_HINTS.get(commit_row.content_type, _CTH())
+        if not hints.compilable:
+            # Still advance the cache HEAD so subsequent appends chain correctly
+            self.put(
+                commit_info.commit_hash,
+                CompileSnapshot(
+                    head_hash=commit_info.commit_hash,
+                    messages=parent_snapshot.messages,
+                    commit_count=parent_snapshot.commit_count + 1,
+                    token_count=parent_snapshot.token_count,
+                    token_source=parent_snapshot.token_source,
+                    generation_configs=parent_snapshot.generation_configs,
+                    commit_hashes=parent_snapshot.commit_hashes,
+                    priorities=parent_snapshot.priorities,
+                    message_token_counts=parent_snapshot.message_token_counts,
+                ),
+            )
+            return
+
         # Skip commits whose content type has a default SKIP priority
         # (e.g. reasoning). These are excluded from compile() output, so
         # they must not enter the cache either.

@@ -30,10 +30,10 @@ def tract_instance(tmp_path):
 
 
 class TestNewToolDefinitions:
-    def test_create_rule_exists(self, tract_instance):
+    def test_configure_exists(self, tract_instance):
         tools = get_all_tools(tract_instance)
         names = {t.name for t in tools}
-        assert "create_rule" in names
+        assert "configure" in names
 
     def test_create_metadata_exists(self, tract_instance):
         tools = get_all_tools(tract_instance)
@@ -69,34 +69,29 @@ class TestToolExecution:
         assert result.success
         assert "Branch:" in result.output
 
-    def test_create_rule_tool(self, tract_instance):
-        """create_rule tool creates a rule commit."""
+    def test_configure_tool(self, tract_instance):
+        """configure tool creates a config commit."""
         executor = ToolExecutor(tract_instance)
         result = executor.execute(
-            "create_rule",
+            "configure",
             {
-                "name": "test-rule",
-                "trigger": "active",
-                "action": {"type": "set_config", "key": "foo", "value": "bar"},
+                "settings": {"model": "gpt-4o", "temperature": 0.7},
             },
         )
         assert result.success
-        assert "test-rule" in result.output
+        assert "Configured" in result.output
 
-    def test_create_rule_with_condition(self, tract_instance):
-        """create_rule with a condition dict."""
+    def test_configure_tool_single_key(self, tract_instance):
+        """configure tool with a single key-value setting."""
         executor = ToolExecutor(tract_instance)
         result = executor.execute(
-            "create_rule",
+            "configure",
             {
-                "name": "conditional-rule",
-                "trigger": "active",
-                "condition": {"token_budget_exceeded": True},
-                "action": {"type": "set_config", "key": "compress", "value": True},
+                "settings": {"compile_strategy": "adaptive"},
             },
         )
         assert result.success
-        assert "conditional-rule" in result.output
+        assert "compile_strategy" in result.output
 
     def test_create_metadata_tool(self, tract_instance):
         """create_metadata tool creates a metadata commit."""
@@ -124,27 +119,22 @@ class TestToolExecution:
         assert result.success
 
     def test_get_config_tool_not_set(self, tract_instance):
-        """get_config when no rules are set returns 'not set'."""
+        """get_config when no config is set returns 'not set'."""
         executor = ToolExecutor(tract_instance)
         result = executor.execute("get_config", {"key": "nonexistent"})
         assert result.success
         assert "not set" in result.output
 
-    def test_get_config_tool_with_rule(self, tract_instance):
-        """get_config resolves value from active rules."""
-        # set_config action format: {"type": "set_config", "key": ..., "value": ...}
-        tract_instance.rule(
-            name="set-model",
-            trigger="active",
-            action={"type": "set_config", "key": "model", "value": "gpt-4o"},
-        )
+    def test_get_config_tool_with_configure(self, tract_instance):
+        """get_config resolves value from DAG config commits."""
+        tract_instance.configure(model="gpt-4o")
         executor = ToolExecutor(tract_instance)
         result = executor.execute("get_config", {"key": "model"})
         assert result.success
         assert "gpt-4o" in result.output
 
-    def test_transition_tool_no_rules(self, tract_instance):
-        """transition without rules just transitions."""
+    def test_transition_tool_no_middleware(self, tract_instance):
+        """transition without middleware just transitions."""
         # Need some content first
         tract_instance.system("Hello")
         executor = ToolExecutor(tract_instance)
@@ -153,18 +143,20 @@ class TestToolExecution:
         assert "feature-x" in result.output
 
     def test_transition_tool_blocked(self, tract_instance):
-        """transition blocked by rules returns blocked message."""
+        """transition blocked by middleware returns error with blocked message."""
+        from tract.exceptions import BlockedError
+
         tract_instance.system("Setup")
-        # Create a blocking rule
-        tract_instance.rule(
-            name="block-transition",
-            trigger="transition:blocked-branch",
-            action={"type": "block", "reason": "Not allowed"},
-        )
+        # Register a pre_transition handler that blocks
+        def block_transition(ctx):
+            if ctx.target == "blocked-branch":
+                raise BlockedError("pre_transition", "Not allowed")
+
+        tract_instance.use("pre_transition", block_transition)
         executor = ToolExecutor(tract_instance)
         result = executor.execute("transition", {"target": "blocked-branch"})
-        assert result.success  # Tool execution succeeds
-        assert "blocked" in result.output.lower()
+        assert not result.success  # Blocked raises, caught by executor
+        assert "blocked" in result.error.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -175,7 +167,7 @@ class TestToolExecution:
 class TestProfiles:
     def test_all_tool_names_includes_new(self):
         """_ALL_TOOL_NAMES includes the 4 new tools."""
-        assert "create_rule" in _ALL_TOOL_NAMES
+        assert "configure" in _ALL_TOOL_NAMES
         assert "create_metadata" in _ALL_TOOL_NAMES
         assert "get_config" in _ALL_TOOL_NAMES
         assert "transition" in _ALL_TOOL_NAMES
@@ -184,7 +176,7 @@ class TestProfiles:
         tools = get_all_tools(tract_instance)
         filtered = SELF_PROFILE.filter_tools(tools)
         names = {t.name for t in filtered}
-        assert "create_rule" in names
+        assert "configure" in names
         assert "create_metadata" in names
         assert "get_config" in names
         assert "transition" in names
@@ -193,7 +185,7 @@ class TestProfiles:
         tools = get_all_tools(tract_instance)
         filtered = SUPERVISOR_PROFILE.filter_tools(tools)
         names = {t.name for t in filtered}
-        assert "create_rule" in names
+        assert "configure" in names
         assert "create_metadata" in names
         assert "get_config" in names
         assert "transition" in names
@@ -202,7 +194,7 @@ class TestProfiles:
         tools = get_all_tools(tract_instance)
         filtered = FULL_PROFILE.filter_tools(tools)
         names = {t.name for t in filtered}
-        assert "create_rule" in names
+        assert "configure" in names
         assert "create_metadata" in names
         assert "get_config" in names
         assert "transition" in names
@@ -226,13 +218,13 @@ class TestAsTools:
         """as_tools() includes new tools in output."""
         tools = tract_instance.as_tools(format="openai")
         names = {t["function"]["name"] for t in tools}
-        assert "create_rule" in names
+        assert "configure" in names
         assert "get_config" in names
 
     def test_as_tools_full_profile(self, tract_instance):
         tools = tract_instance.as_tools(profile="full", format="openai")
         names = {t["function"]["name"] for t in tools}
-        assert "create_rule" in names
+        assert "configure" in names
         assert "create_metadata" in names
         assert "get_config" in names
         assert "transition" in names
@@ -241,5 +233,5 @@ class TestAsTools:
         """as_callable_tools includes new tools."""
         callables = tract_instance.as_callable_tools()
         names = {c.__name__ for c in callables}
-        assert "create_rule" in names
+        assert "configure" in names
         assert "get_config" in names

@@ -1,31 +1,29 @@
 """Agent Quality Gates
 
-An LLM agent encounters require/block gates set up via rules. When the
-agent tries to transition to the next stage but doesn't meet the gate
-requirements, it adapts by doing more work to satisfy the conditions.
+An LLM agent encounters middleware-based gates when transitioning between
+stages. When the agent tries to transition but doesn't meet requirements,
+it adapts by doing more work.
 
-This demonstrates rules as agent guardrails -- the agent cannot skip
+This demonstrates middleware as agent guardrails -- the agent cannot skip
 stages or bypass quality checks, and must genuinely complete work before
 advancing.
 
-Tools exercised: create_rule, transition, commit, get_config, status,
+Tools exercised: configure, transition, commit, get_config, status,
                  log, compile, annotate, branch
 
-Demonstrates: Rule-based gates (require/block), agent adapting to gate
-              failures, quality enforcement without hardcoded checks,
-              BlockedByRuleError handling
+Demonstrates: Middleware gates, agent adapting to gate failures,
+              quality enforcement via BlockedError
 """
 
 import io
-import json
 import sys
 from pathlib import Path
 
 # Windows console encoding fix
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
-from tract import Tract
-from tract.toolkit import ToolConfig, ToolExecutor, ToolProfile
+from tract import Tract, BlockedError
+from tract.toolkit import ToolConfig, ToolProfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import groq as llm
@@ -37,25 +35,19 @@ MODEL_ID = llm.large
 GATE_PROFILE = ToolProfile(
     name="gate-navigator",
     tool_configs={
-        "create_rule": ToolConfig(
+        "configure": ToolConfig(
             enabled=True,
             description=(
-                "Create a rule on the current branch. Rules fire on events "
-                "and can set_config, require actions, or block actions.\n"
-                "For gates, use trigger='transition:{target}' with action "
-                "{type: 'require', threshold: N, message: '...'} to enforce "
-                "minimum commit counts before transitioning.\n"
-                "Use action {type: 'block', message: '...'} with a condition "
-                "to prevent transitions under certain circumstances."
+                "Set config key-value pairs on the DAG. Use for stage "
+                "tracking, model settings, and custom keys."
             ),
         ),
         "transition": ToolConfig(
             enabled=True,
             description=(
-                "Transition to a target branch/stage. Evaluates gate conditions "
-                "first. If a 'require' or 'block' rule prevents the transition, "
-                "returns None. The agent must do more work to satisfy the gate "
-                "and try again."
+                "Transition to a target branch/stage. Middleware gates may "
+                "block the transition via BlockedError. If blocked, the "
+                "agent must do more work and try again."
             ),
         ),
         "commit": ToolConfig(
@@ -69,8 +61,8 @@ GATE_PROFILE = ToolProfile(
         "get_config": ToolConfig(
             enabled=True,
             description=(
-                "Resolve a config value from active rules. Check 'stage' to "
-                "see which stage you're in, or any other rule-defined config."
+                "Resolve a config value from the DAG. Check 'stage' to "
+                "see which stage you're in, or any other config key."
             ),
         ),
         "status": ToolConfig(
@@ -91,8 +83,7 @@ GATE_PROFILE = ToolProfile(
         "annotate": ToolConfig(
             enabled=True,
             description=(
-                "Mark a commit as 'pinned' to protect it, or 'skip' to exclude. "
-                "Pinned artifacts may count toward quality thresholds."
+                "Mark a commit as 'pinned' to protect it, or 'skip' to exclude."
             ),
         ),
         "branch": ToolConfig(
@@ -114,7 +105,7 @@ def main():
         return
 
     print("=" * 70)
-    print("Agent Quality Gates: require/block rules as agent guardrails")
+    print("Agent Quality Gates: middleware as agent guardrails")
     print("=" * 70)
     print()
     print("  The agent encounters transition gates that enforce quality.")
@@ -133,9 +124,9 @@ def main():
         t.system(
             "You are a software engineer working through a gated workflow.\n\n"
             "GATE PROTOCOL:\n"
-            "- Each stage has rules that may block transitions if you haven't "
-            "done enough work.\n"
-            "- When a transition returns None/blocked, read the message to "
+            "- Each stage has middleware gates that may block transitions if "
+            "you haven't done enough work.\n"
+            "- When a transition raises BlockedError, read the message to "
             "understand what's missing, do the required work, then try again.\n"
             "- Use commit to record work (artifacts, analysis, deliverables).\n"
             "- Use transition to advance when ready.\n"
@@ -145,38 +136,28 @@ def main():
         # --- Phase 1: Set up gated workflow ---
         print("=== Phase 1: Set up gated stages ===\n")
 
-        # Create the research stage with a gate to implementation
+        # Create the research stage with a middleware gate
         t.branch("research", switch=True)
-        t.rule(
-            name="research-stage",
-            trigger="active",
-            action={"type": "set_config", "key": "stage", "value": "research"},
-        )
-        # Gate: require at least a few commits before transitioning to impl
-        t.rule(
-            name="research-gate",
-            trigger="transition:implementation",
-            action={
-                "type": "require",
-                "condition": {
-                    "type": "threshold",
-                    "metric": "commit_count",
-                    "op": ">=",
-                    "value": 3,
-                },
-                "message": "Need at least 3 research commits before implementation",
-            },
-        )
+        t.configure(stage="research")
+
+        # Gate: require at least 3 commits before transitioning to impl
+        def research_gate(ctx):
+            if ctx.target == "implementation":
+                status = ctx.tract.status()
+                if status.commit_count < 5:
+                    raise BlockedError(
+                        "pre_transition",
+                        f"Need at least 3 research commits before implementation "
+                        f"(currently {status.commit_count - 2} research commits)",
+                    )
+
+        t.use("pre_transition", research_gate)
         print("  Created 'research' branch with transition gate")
 
         # Create the implementation stage
         t.switch("main")
         t.branch("implementation", switch=True)
-        t.rule(
-            name="impl-stage",
-            trigger="active",
-            action={"type": "set_config", "key": "stage", "value": "implementation"},
-        )
+        t.configure(stage="implementation")
         print("  Created 'implementation' branch")
         t.switch("research")
 

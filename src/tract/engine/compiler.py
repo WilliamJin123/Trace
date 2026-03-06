@@ -360,7 +360,12 @@ class DefaultContextCompiler:
 
         Also filters out commits whose content type has ``compilable=False``
         in the built-in type hints.
+
+        Deduplicates named InstructionContent (directive override-by-name):
+        same name -> closest to HEAD wins.
         """
+        import json as _json
+
         from tract.models.commit import CommitOperation
         from tract.models.content import ContentTypeHints as _CTH
 
@@ -378,6 +383,27 @@ class DefaultContextCompiler:
                 continue
             # Include the commit (possibly with substituted content via edit_map)
             effective.append(c)
+
+        # Deduplicate named InstructionContent (directive override-by-name)
+        seen_names: dict[str, int] = {}
+        remove_indices: set[int] = set()
+        for i in range(len(effective) - 1, -1, -1):  # walk HEAD -> root
+            if effective[i].content_type != "instruction":
+                continue
+            # Resolve blob (use edit_map if available)
+            row = edit_map.get(effective[i].commit_hash, effective[i])
+            blob = self._blob_repo.get(row.content_hash)
+            if blob is None:
+                continue
+            payload = _json.loads(blob.payload_json)
+            name = payload.get("name")
+            if name:
+                if name in seen_names:
+                    remove_indices.add(i)
+                else:
+                    seen_names[name] = i
+        if remove_indices:
+            effective = [c for i, c in enumerate(effective) if i not in remove_indices]
 
         return effective
 

@@ -252,7 +252,7 @@ class TestRoundTrip:
 
 class TestBuiltinTypeHints:
     def test_all_builtin_types_present(self):
-        expected = {"instruction", "dialogue", "tool_io", "reasoning", "artifact", "output", "freeform", "session", "rule", "metadata"}
+        expected = {"instruction", "dialogue", "tool_io", "reasoning", "artifact", "output", "freeform", "session", "config", "metadata"}
         assert set(BUILTIN_TYPE_HINTS.keys()) == expected
 
     def test_instruction_is_pinned(self):
@@ -268,5 +268,5 @@ class TestBuiltinTypeHints:
         assert BUILTIN_CONTENT_TYPES == {
             "instruction", "dialogue", "tool_io", "reasoning",
             "artifact", "output", "freeform", "session",
-            "rule", "metadata",
+            "config", "metadata",
         }

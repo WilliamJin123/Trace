@@ -2,15 +2,15 @@
 
 An agent-driven support workflow. The agent triages a customer issue,
 attempts resolution, and escalates if the quality gate fails. Branches
-are used to explore alternative solutions, and rules enforce quality
-standards at each stage transition.
+are used to explore alternative solutions, and middleware gates enforce
+quality standards at each stage transition.
 
 Stages:
   triage   -- classify severity, gather context (temperature 0.5)
   resolve  -- propose and test solutions (temperature 0.3)
   escalate -- document failure, prepare handoff (temperature 0.1)
 
-Demonstrates: branching for solution exploration, quality gates,
+Demonstrates: branching for solution exploration, middleware quality gates,
               escalation on gate failure, compile strategy per stage
 
 Requires: LLM API key (uses Groq provider)
@@ -19,7 +19,7 @@ Requires: LLM API key (uses Groq provider)
 import sys
 from pathlib import Path
 
-from tract import Tract, resolve_all_configs
+from tract import Tract, BlockedError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import groq as llm
@@ -39,56 +39,46 @@ def main():
     ) as t:
 
         # =============================================================
-        # Stage rules, quality gates, and escalation threshold
+        # Stage config, quality gates, and escalation threshold
         # =============================================================
 
         print("=== Setting Up Support Workflow ===\n")
 
-        # Initial stage
-        t.rule("stage", trigger="active",
-               action={"type": "set_config", "key": "stage", "value": "triage"})
-
-        # Triage: moderate creativity for classification
-        t.rule("triage-temp", trigger="active",
-               action={"type": "set_config", "key": "temperature", "value": 0.5})
-        t.rule("triage-strategy", trigger="active",
-               action={"type": "set_config", "key": "compile_strategy", "value": "full"})
-
-        # Resolve gate: require enough triage context
-        t.rule(
-            "resolve-gate",
-            trigger="transition:resolve",
-            action={
-                "type": "require",
-                "condition": {
-                    "type": "threshold",
-                    "metric": "commit_count",
-                    "op": ">=",
-                    "value": 5,
-                },
-            },
+        # Initial stage config
+        t.configure(
+            stage="triage",
+            temperature=0.5,
+            compile_strategy="full",
+            max_resolution_attempts=2,
         )
 
-        # Escalation gate: low bar -- agent can always escalate
-        t.rule(
-            "escalate-gate",
-            trigger="transition:escalate",
-            action={
-                "type": "require",
-                "condition": {
-                    "type": "threshold",
-                    "metric": "commit_count",
-                    "op": ">=",
-                    "value": 3,
-                },
-            },
-        )
+        # Transition gates via middleware
+        def resolve_gate(ctx):
+            """Require enough triage context before resolving."""
+            if ctx.target != "resolve":
+                return
+            count = len(ctx.tract.log())
+            if count < 5:
+                raise BlockedError(
+                    "pre_transition",
+                    [f"Need >= 5 commits for resolve (have {count})"],
+                )
 
-        # Escalation config rule
-        t.rule("escalation-threshold", trigger="active",
-               action={"type": "set_config", "key": "max_resolution_attempts", "value": 2})
+        def escalate_gate(ctx):
+            """Low bar -- agent can always escalate after minimal context."""
+            if ctx.target != "escalate":
+                return
+            count = len(ctx.tract.log())
+            if count < 3:
+                raise BlockedError(
+                    "pre_transition",
+                    [f"Need >= 3 commits for escalate (have {count})"],
+                )
 
-        configs = resolve_all_configs(t.rule_index)
+        t.use("pre_transition", resolve_gate)
+        t.use("pre_transition", escalate_gate)
+
+        configs = t.get_all_configs()
         print(f"  Initial configs: {configs}")
 
         # =============================================================
@@ -153,6 +143,8 @@ def main():
             "3. ESCALATE (if needed): Document what was tried, create a metadata\n"
             "   entry with the escalation summary, tag as 'escalated'.",
             max_steps=20,
+            tool_names=["commit", "tag", "register_tag", "branch", "switch",
+                        "transition", "create_metadata", "get_config", "status"],
             on_step=lambda step, _resp: print(f"  step {step}..."),
         )
 

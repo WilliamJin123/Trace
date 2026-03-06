@@ -211,13 +211,26 @@ class CurationError(TraceError):
 class BlockedByRuleError(TraceError):
     """Raised when a rule blocks an operation.
 
-    Attributes:
-        event: The event that was blocked (e.g. "compile", "compress").
-        reasons: List of human-readable block reasons from rules.
+    .. deprecated:: Use :class:`BlockedError` instead.
     """
 
     def __init__(self, event: str, reasons: list[str]) -> None:
         self.event = event
         self.reasons = reasons
         reason_str = "; ".join(reasons) if reasons else "Blocked by rule"
+        super().__init__(f"{event} blocked: {reason_str}")
+
+
+class BlockedError(TraceError):
+    """An operation was blocked by config enforcement or middleware.
+
+    Attributes:
+        event: The event that was blocked (e.g. "pre_commit", "pre_compile").
+        reasons: List of human-readable block reasons.
+    """
+
+    def __init__(self, event: str, reasons: list[str] | str) -> None:
+        self.event = event
+        self.reasons = reasons if isinstance(reasons, list) else [reasons]
+        reason_str = "; ".join(self.reasons) if self.reasons else "Blocked"
         super().__init__(f"{event} blocked: {reason_str}")

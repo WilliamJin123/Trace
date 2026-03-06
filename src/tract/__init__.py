@@ -12,6 +12,7 @@ from tract.tract import Tract
 # Content types
 from tract.models.content import (
     BUILTIN_TYPE_HINTS,
+    ConfigContent,
     ContentPayload,
     ContentTypeHints,
     DialogueContent,
@@ -21,7 +22,6 @@ from tract.models.content import (
     MetadataContent,
     OutputContent,
     ReasoningContent,
-    RuleContent,
     ToolIOContent,
     validate_content,
 )
@@ -80,6 +80,10 @@ from tract.models.session import SessionContent, SpawnInfo, CollapseResult
 from tract.operations.history import StatusInfo
 from tract.operations.diff import DiffResult, MessageDiff, DiffStat
 
+# Config index and middleware
+from tract.operations.config_index import ConfigIndex
+from tract.middleware import MiddlewareContext
+
 # LLM protocol
 from tract.llm.protocols import LLMClient, AgentLoop
 
@@ -89,15 +93,6 @@ from tract.toolkit.executor import ToolExecutor
 
 # Default loop
 from tract.loop import LoopConfig, LoopResult, run_loop
-
-# Rule engine
-from tract.rules.models import RuleEntry, EvalContext, ActionResult, EvalResult
-from tract.rules.index import RuleIndex
-from tract.rules.engine import RuleEngine
-from tract.rules.conditions import evaluate_condition, BUILTIN_CONDITIONS
-from tract.rules.actions import BUILTIN_ACTIONS
-from tract.rules.config import resolve_config, resolve_all_configs
-from tract.rules.registries import Registry
 
 # Tool tracking
 from tract.models.tools import hash_tool_schema
@@ -128,7 +123,7 @@ from tract.exceptions import (
     SessionError,
     TagNotRegisteredError,
     CurationError,
-    BlockedByRuleError,
+    BlockedError,
 )
 
 __all__ = [
@@ -143,7 +138,7 @@ __all__ = [
     "ArtifactContent",
     "OutputContent",
     "FreeformContent",
-    "RuleContent",
+    "ConfigContent",
     "MetadataContent",
     "validate_content",
     "BUILTIN_TYPE_HINTS",
@@ -192,6 +187,9 @@ __all__ = [
     "DiffResult",
     "MessageDiff",
     "DiffStat",
+    # Config index and middleware
+    "ConfigIndex",
+    "MiddlewareContext",
     # Exceptions
     "TraceError",
     "CommitNotFoundError",
@@ -217,20 +215,7 @@ __all__ = [
     "SessionError",
     "TagNotRegisteredError",
     "CurationError",
-    "BlockedByRuleError",
-    # Rule engine
-    "RuleEntry",
-    "EvalContext",
-    "ActionResult",
-    "EvalResult",
-    "RuleIndex",
-    "RuleEngine",
-    "evaluate_condition",
-    "BUILTIN_CONDITIONS",
-    "BUILTIN_ACTIONS",
-    "resolve_config",
-    "resolve_all_configs",
-    "Registry",
+    "BlockedError",
     # Tool tracking
     "hash_tool_schema",
     # Compression models

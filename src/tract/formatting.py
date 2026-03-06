@@ -948,22 +948,90 @@ def pprint_loop_result(result: Any, *, file: Any = None) -> None:
 
     status_style = _LOOP_STATUS_STYLES.get(result.status, "bold")
 
-    body_parts: list[str] = []
-    body_parts.append(f"[bold]Status:[/bold]     [{status_style}]{result.status}[/{status_style}]")
-    if result.reason:
-        body_parts.append(f"[bold]Reason:[/bold]     {result.reason}")
-    body_parts.append(f"[bold]Steps:[/bold]      {result.steps}")
-    body_parts.append(f"[bold]Tool calls:[/bold] {result.tool_calls}")
+    # --- Header panel: status + tokens ---
+    header_parts: list[str] = []
+    header_parts.append(
+        f"[{status_style}]{result.status}[/{status_style}]"
+        f"  [dim]|[/dim]  {result.steps} step{'s' if result.steps != 1 else ''}"
+        f"  [dim]|[/dim]  {result.tool_calls} tool call{'s' if result.tool_calls != 1 else ''}"
+    )
+
+    step_usages = getattr(result, "step_usages", ())
+    if step_usages:
+        total_prompt = sum(u.prompt_tokens for u in step_usages)
+        total_completion = sum(u.completion_tokens for u in step_usages)
+        total_all = sum(u.total_tokens for u in step_usages)
+        header_parts.append(
+            f"[cyan]{total_prompt:,}[/cyan] in + "
+            f"[cyan]{total_completion:,}[/cyan] out = "
+            f"[bold cyan]{total_all:,}[/bold cyan] tokens"
+        )
+        if len(step_usages) > 1:
+            per_step = " → ".join(
+                f"{u.prompt_tokens:,}+{u.completion_tokens:,}"
+                for u in step_usages
+            )
+            header_parts.append(f"[dim]steps: {per_step}[/dim]")
 
     border = "green" if result.status == "completed" else ("red" if result.status == "error" else "yellow")
 
-    panel = Panel(
-        "\n".join(body_parts),
+    console.print(Panel(
+        "\n".join(header_parts),
         title="[bold]Loop Result[/bold]",
         border_style=border,
-    )
-    console.print(panel)
+    ))
 
+    # --- Context panel: compact one-line-per-commit list ---
+    compiled = getattr(result, "compiled", None)
+    if compiled is not None and compiled.messages:
+        hashes = compiled.commit_hashes if compiled.commit_hashes else ()
+        priorities = compiled.priorities if compiled.priorities else ()
+        pinned_count = sum(1 for p in priorities if p == "pinned")
+
+        lines = Text(overflow="ellipsis", no_wrap=True)
+        for i, msg in enumerate(compiled.messages):
+            if i > 0:
+                lines.append("\n")
+
+            # Hash
+            commit_hash = hashes[i][:7] if i < len(hashes) else "       "
+            lines.append(f"{commit_hash} ", style="dim")
+
+            # Pin marker
+            priority = priorities[i] if i < len(priorities) else ""
+            if priority == "pinned":
+                lines.append("* ", style="bold yellow")
+            else:
+                lines.append("  ")
+
+            # Role
+            if msg.role == "assistant" and getattr(msg, "tool_calls", None):
+                lines.append("tool call  ", style="bold magenta")
+            else:
+                sk = _style_key(msg)
+                color = _ROLE_COLORS.get(sk, "white")
+                label = "reasoning" if sk == "reasoning" else ("tool res." if msg.role == "tool" else msg.role)
+                lines.append(f"{label:<10} ", style=f"bold {color}")
+
+            # Content (single line, truncated by overflow)
+            if msg.role == "assistant" and getattr(msg, "tool_calls", None):
+                call_parts = []
+                for tc in msg.tool_calls:
+                    args = ", ".join(f"{k}={v!r}" for k, v in tc.arguments.items())
+                    call_parts.append(f"{tc.name}({args})")
+                display = "; ".join(call_parts)
+            else:
+                display = msg.content.replace("\n", " ")
+            content_style = "dim" if msg.role == "system" else ""
+            lines.append(display, style=content_style)
+
+        # Title with summary
+        pin_str = f" | {pinned_count} pinned" if pinned_count else ""
+        ctx_title = f"[bold]Context[/bold] [dim]({compiled.commit_count} commits{pin_str})[/dim]"
+
+        console.print(Panel(lines, title=ctx_title, border_style="dim"))
+
+    # --- Response panel ---
     if result.final_response:
         console.print(Panel(
             Markdown(result.final_response),

@@ -1,36 +1,39 @@
-"""Config and Compile Strategy Rules
+"""Config and Compile Strategy
 
-Rules are commits with a name, trigger, condition (optional), and action.
-Active rules (trigger="active") act as a key-value config layer for the agent:
+t.configure() commits key-value settings to the DAG. Well-known keys are
+type-checked; unknown keys pass through for custom use.
 
-  - Each set_config rule contributes one key-value pair
-  - When multiple rules set the same key, closest to HEAD wins (DAG precedence)
-  - Override a config by committing a new rule with the same name
-  - Query with get_config() or resolve_all_configs()
+  - Each configure() call commits one or more key-value pairs
+  - When multiple calls set the same key, closest to HEAD wins (DAG precedence)
+  - Query with t.get_config() or t.get_all_configs()
 
 The most common use: selecting the compile strategy that controls how
 tract builds the LLM context window.
 
-Demonstrates: active trigger, set_config action, DAG precedence,
-              compile_strategy, compile_strategy_k, strategy comparison
+Well-known config keys:
+  model, temperature, max_tokens, max_commit_tokens,
+  auto_compress_threshold, compact_tools, compile_strategy,
+  compile_strategy_k, handoff_summary_k
+
+Demonstrates: t.configure(), t.get_config(), t.get_all_configs(),
+              DAG precedence, compile_strategy, strategy comparison
+
+No LLM required.
 """
 
-from tract import Tract, resolve_all_configs
+from tract import Tract
 
 
 def main():
     with Tract.open() as t:
 
-        # --- Config rules as key-value store ---
+        # --- Config as key-value store ---
 
-        print("=== Config Rules ===\n")
+        print("=== Config ===\n")
 
-        t.rule("model", trigger="active",
-               action={"type": "set_config", "key": "model", "value": "gpt-4o"})
-        t.rule("temperature", trigger="active",
-               action={"type": "set_config", "key": "temperature", "value": 0.7})
-        t.rule("max-tokens", trigger="active",
-               action={"type": "set_config", "key": "max_tokens", "value": 4096})
+        t.configure(model="gpt-4o")
+        t.configure(temperature=0.7)
+        t.configure(max_tokens=4096)
 
         print(f"  model:       {t.get_config('model')}")
         print(f"  temperature: {t.get_config('temperature')}")
@@ -43,9 +46,8 @@ def main():
         t.user("Hello, world!")
         t.assistant("Hi there!")
 
-        # Override model -- same name, new value closer to HEAD
-        t.rule("model", trigger="active",
-               action={"type": "set_config", "key": "model", "value": "claude-sonnet"})
+        # Override model -- new configure() call is closer to HEAD
+        t.configure(model="claude-sonnet")
 
         print(f"  model (overridden): {t.get_config('model')}")
         print(f"  temperature (unchanged): {t.get_config('temperature')}")
@@ -53,10 +55,7 @@ def main():
         print(f"  with default: {t.get_config('nonexistent', 'fallback')}")
 
         # Complex values work too
-        t.rule("stop-sequences", trigger="active",
-               action={"type": "set_config", "key": "stop",
-                        "value": ["END", "DONE", "---"]})
-
+        t.configure(stop=["END", "DONE", "---"])
         print(f"  stop (list): {t.get_config('stop')}")
 
         # --- Build conversation for strategy demos ---
@@ -74,8 +73,7 @@ def main():
 
         print("\n=== Strategy: full ===\n")
 
-        t.rule("strategy", trigger="active",
-               action={"type": "set_config", "key": "compile_strategy", "value": "full"})
+        t.configure(compile_strategy="full")
 
         strategy = t.get_config("compile_strategy")
         ctx_full = t.compile(strategy=strategy)
@@ -85,10 +83,7 @@ def main():
 
         print("\n=== Strategy: messages (last 5) ===\n")
 
-        t.rule("strategy", trigger="active",
-               action={"type": "set_config", "key": "compile_strategy", "value": "messages"})
-        t.rule("strategy-k", trigger="active",
-               action={"type": "set_config", "key": "compile_strategy_k", "value": 5})
+        t.configure(compile_strategy="messages", compile_strategy_k=5)
 
         strategy = t.get_config("compile_strategy")
         k = t.get_config("compile_strategy_k")
@@ -99,8 +94,7 @@ def main():
 
         print("\n=== Strategy: adaptive ===\n")
 
-        t.rule("strategy", trigger="active",
-               action={"type": "set_config", "key": "compile_strategy", "value": "adaptive"})
+        t.configure(compile_strategy="adaptive")
 
         strategy = t.get_config("compile_strategy")
         k = t.get_config("compile_strategy_k")
@@ -118,7 +112,7 @@ def main():
         # --- All active config ---
 
         print("\n=== All Active Configs ===\n")
-        for key, val in sorted(resolve_all_configs(t.rule_index).items()):
+        for key, val in sorted(t.get_all_configs().items()):
             print(f"  {key}: {val}")
 
 

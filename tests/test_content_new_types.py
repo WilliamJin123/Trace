@@ -1,10 +1,10 @@
-"""Tests for RuleContent, MetadataContent, and the compilable flag.
+"""Tests for ConfigContent, MetadataContent, and the compilable flag.
 
 Covers:
-- RuleContent creation, validation, immutability, and content_type literal
+- ConfigContent creation, validation, immutability, and content_type literal
 - MetadataContent creation, defaults, and validation
 - ContentTypeHints.compilable flag for built-in types
-- Rule and metadata commits excluded from compile output
+- Config and metadata commits excluded from compile output
 """
 
 import pytest
@@ -15,82 +15,67 @@ from tract.models.content import (
     BUILTIN_CONTENT_TYPES,
     BUILTIN_TYPE_HINTS,
     ContentTypeHints,
+    ConfigContent,
     MetadataContent,
-    RuleContent,
     validate_content,
 )
 
 
 # ---------------------------------------------------------------------------
-# RuleContent
+# ConfigContent
 # ---------------------------------------------------------------------------
 
 
-class TestRuleContent:
+class TestConfigContent:
     def test_creation_all_fields(self):
-        """RuleContent with all fields validates."""
-        r = RuleContent(
-            name="auto_compress",
-            trigger="commit",
-            condition={"type": "threshold", "metric": "total_tokens", "op": ">", "value": 8000},
-            action={"type": "operation", "op": "compress"},
+        """ConfigContent with settings dict validates."""
+        c = ConfigContent(
+            settings={"model": "gpt-4o", "temperature": 0.7, "max_tokens": 8000},
         )
-        assert r.name == "auto_compress"
-        assert r.trigger == "commit"
-        assert r.condition is not None
-        assert r.action["type"] == "operation"
+        assert c.settings["model"] == "gpt-4o"
+        assert c.settings["temperature"] == 0.7
+        assert c.settings["max_tokens"] == 8000
 
     def test_creation_minimal(self):
-        """RuleContent with only required fields (condition=None)."""
-        r = RuleContent(
-            name="temp",
-            trigger="active",
-            action={"type": "set_config", "key": "temperature", "value": 0.3},
-        )
-        assert r.condition is None
+        """ConfigContent with a single key-value setting."""
+        c = ConfigContent(settings={"temperature": 0.3})
+        assert c.settings == {"temperature": 0.3}
 
     def test_content_type_literal(self):
-        """content_type is always 'rule'."""
-        r = RuleContent(name="x", trigger="active", action={"type": "set_config"})
-        assert r.content_type == "rule"
+        """content_type is always 'config'."""
+        c = ConfigContent(settings={"key": "value"})
+        assert c.content_type == "config"
 
     def test_frozen(self):
-        """RuleContent is immutable (frozen model)."""
-        r = RuleContent(name="x", trigger="active", action={"type": "set_config"})
+        """ConfigContent is immutable (frozen model)."""
+        c = ConfigContent(settings={"key": "value"})
         with pytest.raises(Exception):
-            r.name = "y"
+            c.settings = {"other": "value"}
 
     def test_validate_content(self):
-        """RuleContent validates through validate_content()."""
+        """ConfigContent validates through validate_content()."""
         data = {
-            "content_type": "rule",
-            "name": "x",
-            "trigger": "active",
-            "action": {"type": "set_config"},
+            "content_type": "config",
+            "settings": {"model": "gpt-4o"},
         }
         result = validate_content(data)
-        assert isinstance(result, RuleContent)
+        assert isinstance(result, ConfigContent)
 
     def test_missing_required_field(self):
-        """RuleContent without 'name' raises ContentValidationError."""
+        """ConfigContent without 'settings' raises ContentValidationError."""
         with pytest.raises(ContentValidationError):
             validate_content({
-                "content_type": "rule",
-                "trigger": "active",
-                "action": {"type": "set_config"},
+                "content_type": "config",
             })
 
     def test_round_trip(self):
-        """RuleContent survives model_dump -> model_validate."""
-        r = RuleContent(
-            name="test_rule",
-            trigger="commit",
-            condition={"x": 1},
-            action={"type": "noop"},
+        """ConfigContent survives model_dump -> model_validate."""
+        c = ConfigContent(
+            settings={"model": "gpt-4o", "temperature": 0.5},
         )
-        dumped = r.model_dump()
-        restored = RuleContent.model_validate(dumped)
-        assert restored == r
+        dumped = c.model_dump()
+        restored = ConfigContent.model_validate(dumped)
+        assert restored == c
 
 
 # ---------------------------------------------------------------------------
@@ -149,9 +134,9 @@ class TestCompilableFlag:
         """ContentTypeHints.compilable defaults to True."""
         assert ContentTypeHints().compilable is True
 
-    def test_rule_not_compilable(self):
-        """Rule type hint has compilable=False."""
-        assert BUILTIN_TYPE_HINTS["rule"].compilable is False
+    def test_config_not_compilable(self):
+        """Config type hint has compilable=False."""
+        assert BUILTIN_TYPE_HINTS["config"].compilable is False
 
     def test_metadata_not_compilable(self):
         """Metadata type hint has compilable=False."""
@@ -165,9 +150,9 @@ class TestCompilableFlag:
         """Dialogue type hint has compilable=True (default)."""
         assert BUILTIN_TYPE_HINTS["dialogue"].compilable is True
 
-    def test_rule_in_builtin_set(self):
-        """'rule' is in the BUILTIN_CONTENT_TYPES set."""
-        assert "rule" in BUILTIN_CONTENT_TYPES
+    def test_config_in_builtin_set(self):
+        """'config' is in the BUILTIN_CONTENT_TYPES set."""
+        assert "config" in BUILTIN_CONTENT_TYPES
 
     def test_metadata_in_builtin_set(self):
         """'metadata' is in the BUILTIN_CONTENT_TYPES set."""
@@ -179,19 +164,14 @@ class TestCompilableFlag:
 # ---------------------------------------------------------------------------
 
 
-class TestRuleNotCompiled:
-    """Rule commits should be excluded from compile output."""
+class TestConfigNotCompiled:
+    """Config commits should be excluded from compile output."""
 
-    def test_rule_excluded_from_compile(self):
-        """A rule commit should not appear in compiled messages."""
+    def test_config_excluded_from_compile(self):
+        """A config commit should not appear in compiled messages."""
         t = Tract.open()
         t.user("Hello")
-        t.commit({
-            "content_type": "rule",
-            "name": "temp",
-            "trigger": "active",
-            "action": {"type": "set_config", "key": "temperature", "value": 0.3},
-        })
+        t.configure(temperature=0.3)
         t.assistant("World")
         compiled = t.compile()
         # Should have 2 messages (user + assistant), NOT 3
@@ -213,16 +193,11 @@ class TestRuleNotCompiled:
         compiled = t.compile()
         assert len(compiled.messages) == 2
 
-    def test_rule_not_counted_in_commit_count(self):
-        """Rule commits should not be counted in compiled commit_count."""
+    def test_config_not_counted_in_commit_count(self):
+        """Config commits should not be counted in compiled commit_count."""
         t = Tract.open()
         t.user("Hello")
-        t.commit({
-            "content_type": "rule",
-            "name": "r1",
-            "trigger": "active",
-            "action": {"type": "noop"},
-        })
+        t.configure(model="gpt-4o")
         t.assistant("World")
         compiled = t.compile()
         assert compiled.commit_count == 2

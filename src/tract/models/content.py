@@ -25,10 +25,15 @@ from tract.models.session import SessionContent
 
 
 class InstructionContent(BaseModel):
-    """System-level instructions for the LLM. Pinned by default."""
+    """System-level instructions for the LLM. Pinned by default.
+
+    When ``name`` is set, the compiler deduplicates: same name -> closest
+    to HEAD wins (directive override-by-name semantics).
+    """
 
     content_type: Literal["instruction"] = "instruction"
     text: str
+    name: str | None = None
 
 
 class DialogueContent(BaseModel):
@@ -82,20 +87,16 @@ class FreeformContent(BaseModel):
     payload: dict
 
 
-class RuleContent(BaseModel):
-    """Rule definition: trigger + condition + action, scoped by DAG placement.
+class ConfigContent(BaseModel):
+    """Key-value config settings stored in the DAG.
 
-    Rules are first-class commits. They configure behavior (configs, event
-    responses, transitions) without being compiled into LLM messages.
+    The system reads these; the LLM never sees them (compilable=False).
     """
 
     model_config = ConfigDict(frozen=True)
 
-    content_type: Literal["rule"] = "rule"
-    name: str
-    trigger: str
-    condition: dict[str, Any] | None = None
-    action: dict[str, Any]
+    content_type: Literal["config"] = "config"
+    settings: dict[str, Any]
 
 
 class MetadataContent(BaseModel):
@@ -127,7 +128,7 @@ ContentPayload = Annotated[
         OutputContent,
         FreeformContent,
         SessionContent,
-        RuleContent,
+        ConfigContent,
         MetadataContent,
     ],
     Field(discriminator="content_type"),
@@ -146,7 +147,7 @@ BUILTIN_CONTENT_TYPES: set[str] = {
     "output",
     "freeform",
     "session",
-    "rule",
+    "config",
     "metadata",
 }
 
@@ -262,9 +263,10 @@ BUILTIN_TYPE_HINTS: dict[str, ContentTypeHints] = {
         default_role="system",
         compression_priority=95,  # Protect session boundaries from compression
     ),
-    "rule": ContentTypeHints(
-        format_roles=frozenset({"system"}),
-        summary_instruction="Preserve rule name and trigger. Omit condition/action details.",
+    "config": ContentTypeHints(
+        default_priority="normal",
+        default_role="system",
+        compression_priority=85,
         compilable=False,
     ),
     "metadata": ContentTypeHints(
