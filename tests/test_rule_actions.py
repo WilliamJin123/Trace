@@ -200,15 +200,14 @@ class TestCompileFilterAction:
 
 
 class TestLLMAction:
-    def test_llm_action_placeholder(self, t: Tract):
-        """LLMAction returns deferred note (placeholder for R4)."""
+    def test_llm_action_no_client(self, t: Tract):
+        """LLMAction returns failure when no LLM client is available."""
         action = LLMAction()
         ctx = _make_ctx(t)
         result = action.execute({"instruction": "Summarize the conversation"}, ctx)
         assert result.action_type == "llm"
-        assert result.success is True
-        assert result.data["instruction"] == "Summarize the conversation"
-        assert "deferred" in result.data["note"].lower()
+        assert result.success is False
+        assert "No LLM client" in result.reason
 
 
 # ===========================================================================

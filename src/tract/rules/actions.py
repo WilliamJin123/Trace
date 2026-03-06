@@ -146,16 +146,31 @@ class CompileFilterAction:
 
 
 class LLMAction:
-    """LLM-evaluated action. Accumulate semantics. Placeholder for R4."""
+    """LLM-evaluated action. Accumulate semantics.
+
+    Sends instruction + recent context to the configured LLM and returns
+    the response. Falls back to failure when no LLM client is available.
+    """
 
     def execute(self, params: dict, ctx: EvalContext) -> ActionResult:
         from tract.rules.models import ActionResult
 
-        return ActionResult(
-            "llm",
-            True,
-            {"instruction": params.get("instruction", ""), "note": "LLM evaluation deferred"},
-        )
+        instruction = params.get("instruction", "")
+        llm = getattr(ctx.tract, "_llm_client", None)
+        if llm is None:
+            return ActionResult("llm", False, reason="No LLM client available")
+
+        try:
+            compiled = ctx.tract.compile(strategy="adaptive", strategy_k=3)
+            messages = compiled.to_dicts()
+            messages.append({"role": "user", "content": instruction})
+
+            response = llm.chat(messages=messages)
+            content = _extract_llm_text(response, llm)
+
+            return ActionResult("llm", True, {"response": content})
+        except Exception as exc:
+            return ActionResult("llm", False, reason=f"LLM action failed: {exc}")
 
 
 class CreateRuleAction:
@@ -210,3 +225,20 @@ ACTION_CATEGORIES: dict[str, str] = {
     "set_config": "work",
     "create_rule": "post",
 }
+
+
+def _extract_llm_text(response: object, client: object = None) -> str:
+    """Extract text content from an LLM response (provider-agnostic)."""
+    if client is not None and hasattr(client, "extract_content"):
+        try:
+            return client.extract_content(response)
+        except (ValueError, KeyError, TypeError):
+            pass
+    if isinstance(response, dict):
+        try:
+            return response["choices"][0]["message"]["content"] or ""
+        except (KeyError, IndexError, TypeError):
+            return str(response.get("content", ""))
+    if isinstance(response, str):
+        return response
+    return str(response)

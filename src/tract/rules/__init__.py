@@ -35,6 +35,7 @@ from tract.rules.config import resolve_all_configs, resolve_config
 from tract.rules.engine import RuleEngine
 from tract.rules.index import RuleIndex
 from tract.rules.models import ActionResult, EvalContext, EvalResult, RuleEntry
+from tract.rules.registries import Registry
 
 __all__ = [
     "RuleIndex",
@@ -66,4 +67,5 @@ __all__ = [
     "CompileFilterAction",
     "LLMAction",
     "CreateRuleAction",
+    "Registry",
 ]

@@ -85,16 +85,30 @@ class NotCondition:
 class LLMCondition:
     """LLM-evaluated condition. Expensive, evaluated last.
 
-    Placeholder: passes through (True) when no LLM client is available.
-    Real implementation deferred to R4.
+    Permissive default: returns True when no LLM client is available.
+    With an LLM, sends the instruction and parses a boolean response.
     """
 
     def evaluate(self, params: dict, ctx: EvalContext) -> bool:
+        instruction = params.get("instruction", "")
         llm = getattr(ctx.tract, "_llm_client", None)
         if llm is None:
-            return True
-        # Real implementation: send instruction + context to LLM, parse bool
-        return True
+            return True  # permissive when no LLM
+
+        messages = [
+            {"role": "system", "content": (
+                "You are evaluating a condition. Respond with exactly "
+                "'true' or 'false', nothing else."
+            )},
+            {"role": "user", "content": instruction},
+        ]
+
+        try:
+            response = llm.chat(messages=messages)
+            content = _extract_llm_text(response, llm).strip().lower()
+            return content == "true"
+        except Exception:
+            return True  # permissive on error
 
 
 # Registry of built-in condition evaluators
@@ -146,6 +160,12 @@ def _get_metric(name: str, ctx: EvalContext) -> float:
     # Check pre-computed metrics first (set by _fire_rules in tract.py)
     if ctx.metrics and name in ctx.metrics:
         return ctx.metrics[name]
+    # Check custom metrics from the registry
+    registry = getattr(ctx.tract, "_registry", None)
+    if registry is not None:
+        custom_metrics = registry.metrics
+        if name in custom_metrics:
+            return custom_metrics[name].compute(ctx)
     if name == "token_count" and ctx.commit:
         return ctx.commit.token_count or 0
     if name == "total_tokens":
@@ -193,3 +213,20 @@ def _get_commit_text(ctx: EvalContext) -> str:
         return ""
     # Extract text from common content fields
     return payload.get("text", "") or payload.get("content", "") or str(payload.get("payload", ""))
+
+
+def _extract_llm_text(response: Any, client: Any = None) -> str:
+    """Extract text content from an LLM response (provider-agnostic)."""
+    if client is not None and hasattr(client, "extract_content"):
+        try:
+            return client.extract_content(response)
+        except (ValueError, KeyError, TypeError):
+            pass
+    if isinstance(response, dict):
+        try:
+            return response["choices"][0]["message"]["content"] or ""
+        except (KeyError, IndexError, TypeError):
+            return str(response.get("content", ""))
+    if isinstance(response, str):
+        return response
+    return str(response)

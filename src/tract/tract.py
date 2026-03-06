@@ -186,6 +186,10 @@ class Tract:
         self._rule_eval_depth: int = 0  # recursion guard, survives engine rebuild
         self.__rule_engine: RuleEngine | None = None
 
+        # Extensibility registry (custom conditions, actions, metrics, triggers)
+        from tract.rules.registries import Registry
+        self._registry: Registry = Registry()
+
         # Persistence state
         self._db_path: str = ":memory:"
         self._persistence_repo: SqlitePersistenceRepository | None = None
@@ -567,13 +571,32 @@ class Tract:
 
         return resolve_config(self.rule_index, key, default=default)
 
+    def register_condition(self, name: str, evaluator: object) -> None:
+        """Register a custom condition type for the rule engine."""
+        self._registry.register_condition(name, evaluator)
+        # Invalidate engine so it picks up new custom conditions
+        self.__rule_engine = None
+
+    def register_action(self, name: str, handler: object) -> None:
+        """Register a custom action type for the rule engine."""
+        self._registry.register_action(name, handler)
+        self.__rule_engine = None
+
+    def register_metric(self, name: str, provider: object) -> None:
+        """Register a custom metric for threshold conditions."""
+        self._registry.register_metric(name, provider)
+
     @property
     def _rule_engine(self) -> RuleEngine:
         """Get the rule engine (lazy init, re-created when index is stale)."""
         if self.__rule_engine is None or self._rule_index is None or self._rule_index.is_stale:
             from tract.rules.engine import RuleEngine as _RuleEngine
 
-            self.__rule_engine = _RuleEngine(self.rule_index)
+            self.__rule_engine = _RuleEngine(
+                self.rule_index,
+                custom_conditions=self._registry.conditions or None,
+                custom_actions=self._registry.actions or None,
+            )
         return self.__rule_engine
 
     def _fire_rules(self, event: str, commit: CommitInfo | None = None) -> EvalResult:

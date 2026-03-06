@@ -93,8 +93,11 @@ from tract.loop import LoopConfig, LoopResult, run_loop
 # Rule engine
 from tract.rules.models import RuleEntry, EvalContext, ActionResult, EvalResult
 from tract.rules.index import RuleIndex
+from tract.rules.engine import RuleEngine
 from tract.rules.conditions import evaluate_condition, BUILTIN_CONDITIONS
+from tract.rules.actions import BUILTIN_ACTIONS
 from tract.rules.config import resolve_config, resolve_all_configs
+from tract.rules.registries import Registry
 
 # Tool tracking
 from tract.models.tools import hash_tool_schema
@@ -221,10 +224,13 @@ __all__ = [
     "ActionResult",
     "EvalResult",
     "RuleIndex",
+    "RuleEngine",
     "evaluate_condition",
     "BUILTIN_CONDITIONS",
+    "BUILTIN_ACTIONS",
     "resolve_config",
     "resolve_all_configs",
+    "Registry",
     # Tool tracking
     "hash_tool_schema",
     # Compression models
