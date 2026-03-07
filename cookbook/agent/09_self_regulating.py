@@ -33,6 +33,7 @@ from tract import Tract, BlockedError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import groq as llm
+from _logging import StepLogger
 
 MODEL_ID = llm.large
 
@@ -82,6 +83,8 @@ def main():
             "        raise BlockedError('pre_commit', 'rejected')"
         )
 
+        log = StepLogger()
+
         # --- Phase 1: Agent sets up its own rules ---
         print("=== Phase 1: Agent self-configures ===\n")
         result = t.run(
@@ -95,7 +98,7 @@ def main():
             "4. Use get_config to verify your stage is 'drafting'\n"
             "5. Use status to check your current state",
             max_steps=10,
-            on_step=lambda step, _: print(f"    [step {step}]"),
+            on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()
 
@@ -112,7 +115,7 @@ def main():
             "After creating the middleware, make 2-3 commits with documentation "
             "content (use commit with content_type='artifact', artifact_type='document').",
             max_steps=10,
-            on_step=lambda step, _: print(f"    [step {step}]"),
+            on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()
 
@@ -128,7 +131,7 @@ def main():
             "Note: because 'tone' is the same name as before, the old directive "
             "is automatically replaced -- only the new one appears in context.",
             max_steps=10,
-            on_step=lambda step, _: print(f"    [step {step}]"),
+            on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()
 

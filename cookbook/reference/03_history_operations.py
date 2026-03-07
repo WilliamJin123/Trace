@@ -21,14 +21,19 @@ def main():
     u2 = t.user("And Germany?")
     a2 = t.assistant("The capital of Germany is Berlin.")
 
+    print("=== Conversation ===\n")
+    for ci_item in [sys_ci, u1, a1, u2, a2]:
+        print(f"  {ci_item.commit_hash[:8]}  {ci_item.message}")
+
     # =================================================================
     # 1. LOG — walk commit history from HEAD backward
     # =================================================================
     history = t.log()                    # list of CommitInfo, newest first
+    print(f"\n=== 1. Log ({len(history)} commits) ===\n")
     history_limited = t.log(limit=3)     # last 3 commits only
 
     for entry in history:
-        print(entry)                     # "hash[:8] message"
+        print(f"  {entry.commit_hash[:8]}  {entry.content_type:14s}  {entry.message}")
 
     # Chronological order: reversed()
     for entry in reversed(history):
@@ -40,10 +45,12 @@ def main():
     # Quick filters
     pinned = t.pinned()    # commits that survive compression (instructions, etc.)
     skipped = t.skipped()  # commits hidden from compile (reasoning, etc.)
+    print(f"\n  Pinned: {len(pinned)}, Skipped: {len(skipped)}")
 
     # =================================================================
     # 2. SHOW — inspect a single commit with full content
     # =================================================================
+    print(f"\n=== 2. Show ===\n")
     t.show(a1)  # prints rich detail for that commit
 
     # Get raw content
@@ -53,6 +60,7 @@ def main():
     # =================================================================
     # 3. DIFF — compare compiled context at two points
     # =================================================================
+    print(f"\n=== 3. Diff ===\n")
     # diff(A, B) compares FULL compiled context at commit A vs commit B
     result = t.diff(u1.commit_hash, a2.commit_hash)
     result.pprint()                  # full diff view
@@ -71,6 +79,7 @@ def main():
     # =================================================================
     # 4. RESET — roll HEAD back to an earlier commit
     # =================================================================
+    print(f"\n=== 4. Reset ===\n")
     head_before = t.log()[0].commit_hash
     t.reset(u1.commit_hash)  # HEAD now points to u1
 
@@ -85,6 +94,7 @@ def main():
     # =================================================================
     # 5. EDIT — modify previous commits without losing history
     # =================================================================
+    print(f"\n=== 5. Edit ===\n")
 
     # Style 1: t.assistant(edit=hash) — replace content of a prior commit
     fix = t.assistant(

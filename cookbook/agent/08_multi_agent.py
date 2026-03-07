@@ -29,6 +29,7 @@ from tract.toolkit import ToolConfig, ToolExecutor, ToolProfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import groq as llm
+from _logging import StepLogger
 
 MODEL_ID = llm.large
 
@@ -116,11 +117,6 @@ CHILD_PROFILE = ToolProfile(
 )
 
 
-def _log_step(step_num, response):
-    """on_step callback -- print step number."""
-    print(f"    [step {step_num}]")
-
-
 def main():
     if not llm.api_key:
         print("SKIPPED (no API key)")
@@ -168,6 +164,8 @@ def main():
         "I'll delegate this research to a specialist agent on a separate branch."
     )
 
+    log = StepLogger()
+
     print("  Parent context (before delegation):")
     parent_tract.compile().pprint(style="compact")
 
@@ -208,7 +206,7 @@ def main():
         "Commit each finding as a separate artifact. When done, compress "
         "all your findings into a one-paragraph summary using the compress "
         "tool with content='<your summary>'.",
-        max_steps=12, on_step=_log_step,
+        max_steps=12, on_step=log.on_step, on_tool_result=log.on_tool_result,
     )
     result.pprint()
 
@@ -236,7 +234,7 @@ def main():
         "which now includes the child's research findings. Commit a final "
         "recommendation as an artifact (content_type='artifact') summarizing "
         "which caching strategy to use and why.",
-        max_steps=8, on_step=_log_step,
+        max_steps=8, on_step=log.on_step, on_tool_result=log.on_tool_result,
     )
     result.pprint()
 

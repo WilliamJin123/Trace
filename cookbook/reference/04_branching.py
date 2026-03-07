@@ -25,9 +25,17 @@ def main():
 
     t.user("Work on feature branch.")
 
+    ctx = t.compile()
+    print(f"  Feature branch: {len(ctx.messages)} messages")
+    for m in ctx.messages:
+        print(f"    [{m.role}] {m.content[:60]}")
+
     # Switch back
     t.switch("main")
     print(f"Current: {t.current_branch}")  # "main"
+
+    ctx = t.compile()
+    print(f"  Main branch: {len(ctx.messages)} messages")
 
     # Create without switching
     t.branch("draft", switch=False)
@@ -56,6 +64,10 @@ def main():
     t.switch("main")
     result = t.merge("feature")
     print(f"Merge type: {result.merge_type}")  # "fast_forward"
+
+    ctx = t.compile()
+    print(f"  After merge: {len(ctx.messages)} messages on {t.current_branch}")
+
     result.pprint()
     t.close()
 
@@ -75,6 +87,12 @@ def main():
 
     result = t.merge("feature")
     print(f"Merge type: {result.merge_type}")  # "clean"
+
+    ctx = t.compile()
+    print(f"  After merge: {len(ctx.messages)} messages")
+    for m in ctx.messages:
+        print(f"    [{m.role}] {m.content[:60]}")
+
     t.close()
 
     # =================================================================
@@ -112,6 +130,11 @@ def main():
         # Finalize the merge
         result = t.commit_merge(result)
         print(f"Conflict resolved, committed: {result.committed}")
+
+        ctx = t.compile()
+        print(f"  Merged context: {len(ctx.messages)} messages")
+        for m in ctx.messages:
+            print(f"    [{m.role}] {m.content[:60]}")
 
     # With LLM resolver (auto-resolves conflicts, requires LLM config):
     # result = t.merge("formal", resolver="llm")

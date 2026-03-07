@@ -21,39 +21,42 @@ def main():
     # 1. CONTENT TYPES — manual commit with t.commit(ContentModel(...))
     # =================================================================
     t = Tract.open()
+    print("=== 1. Content Types ===\n")
 
-    # InstructionContent — system prompt, pinned by default (survives compression)
-    t.commit(InstructionContent(text="You are a helpful assistant."))
+    ci = t.commit(InstructionContent(text="You are a helpful assistant."))
+    print(f"  InstructionContent:  {ci.commit_hash[:8]}  {ci.message}")
 
-    # DialogueContent — user/assistant/system/tool messages
-    t.commit(DialogueContent(role="user", text="Hello"))
-    t.commit(DialogueContent(role="assistant", text="Hi there!"))
+    ci = t.commit(DialogueContent(role="user", text="Hello"))
+    print(f"  DialogueContent:     {ci.commit_hash[:8]}  {ci.message}")
 
-    # ToolIOContent — tool calls and results
-    t.commit(ToolIOContent(
+    ci = t.commit(DialogueContent(role="assistant", text="Hi there!"))
+    print(f"  DialogueContent:     {ci.commit_hash[:8]}  {ci.message}")
+
+    ci = t.commit(ToolIOContent(
         tool_name="search", direction="call",
         payload={"query": "weather"}, status="success",
     ))
+    print(f"  ToolIOContent:       {ci.commit_hash[:8]}  {ci.message}")
 
-    # ReasoningContent — chain-of-thought (skipped from compile by default)
-    t.commit(ReasoningContent(text="Let me think step by step..."))
+    ci = t.commit(ReasoningContent(text="Let me think step by step..."))
+    print(f"  ReasoningContent:    {ci.commit_hash[:8]}  {ci.message}")
 
-    # ArtifactContent — code, documents, configs
-    t.commit(ArtifactContent(
+    ci = t.commit(ArtifactContent(
         artifact_type="code", content="print('hello')", language="python",
     ))
+    print(f"  ArtifactContent:     {ci.commit_hash[:8]}  {ci.message}")
 
-    # OutputContent — final output (text/markdown/json)
-    t.commit(OutputContent(text="Result: 42", format="text"))
+    ci = t.commit(OutputContent(text="Result: 42", format="text"))
+    print(f"  OutputContent:       {ci.commit_hash[:8]}  {ci.message}")
 
-    # FreeformContent — arbitrary dict payload
-    t.commit(FreeformContent(payload={"custom_key": "custom_value"}))
+    ci = t.commit(FreeformContent(payload={"custom_key": "custom_value"}))
+    print(f"  FreeformContent:     {ci.commit_hash[:8]}  {ci.message}")
 
-    # ConfigContent — key-value settings (NOT compiled to LLM messages)
-    t.commit(ConfigContent(settings={"temperature": 0.7, "model": "gpt-4o"}))
+    ci = t.commit(ConfigContent(settings={"temperature": 0.7, "model": "gpt-4o"}))
+    print(f"  ConfigContent:       {ci.commit_hash[:8]}  {ci.message}")
 
-    # MetadataContent — annotations/tags (NOT compiled to LLM messages)
-    t.commit(MetadataContent(kind="tag", data={"version": "1.0"}))
+    ci = t.commit(MetadataContent(kind="tag", data={"version": "1.0"}))
+    print(f"  MetadataContent:     {ci.commit_hash[:8]}  {ci.message}")
 
     t.close()
 
@@ -61,10 +64,16 @@ def main():
     # 2. SHORTHAND — no imports needed, auto-creates DialogueContent
     # =================================================================
     t = Tract.open()
+    print("\n=== 2. Shorthand ===\n")
 
-    t.system("You are a helpful assistant.")   # -> InstructionContent
-    t.user("What is Python?")                  # -> DialogueContent(role="user")
-    t.assistant("A programming language.")     # -> DialogueContent(role="assistant")
+    ci = t.system("You are a helpful assistant.")
+    print(f"  t.system():    {ci.commit_hash[:8]}  {ci.content_type}  {ci.message}")
+
+    ci = t.user("What is Python?")
+    print(f"  t.user():      {ci.commit_hash[:8]}  {ci.content_type}  {ci.message}")
+
+    ci = t.assistant("A programming language.")
+    print(f"  t.assistant(): {ci.commit_hash[:8]}  {ci.content_type}  {ci.message}")
 
     # =================================================================
     # 3. FORMAT METHODS — compile() output for any LLM provider
@@ -73,18 +82,22 @@ def main():
 
     # Generic list of {"role": ..., "content": ...}
     dicts = ctx.to_dicts()
+    print("\n=== 3. Format Methods ===\n")
+    print(f"  to_dicts():    {len(dicts)} messages")
+    for d in dicts:
+        print(f"    [{d['role']}] {d['content'][:60]}")
 
     # OpenAI format — ready for openai.chat.completions.create(messages=...)
     openai_msgs = ctx.to_openai()
+    print(f"\n  to_openai():   {len(openai_msgs)} messages")
 
     # Anthropic format — system extracted, ready for anthropic.messages.create(**...)
     anthropic_fmt = ctx.to_anthropic()
     # anthropic_fmt == {"system": "...", "messages": [...]}
+    print(f"  to_anthropic(): system={anthropic_fmt['system'][:40]}..., {len(anthropic_fmt['messages'])} messages")
 
-    # Pretty-print (Rich tables)
-    ctx.pprint()                    # default table view
-    ctx.pprint(style="chat")       # chat-style view
-    ctx.pprint(style="compact")    # one-line-per-message
+    # Pretty-print (Rich tables) — three styles available
+    print(f"\n  pprint styles: 'table' (default), 'chat', 'compact'")
 
     # Compact summary via str()
     print(ctx)  # e.g. "3 messages | 45 tokens"
@@ -98,6 +111,7 @@ def main():
     t.system("You are an assistant.")
 
     count_before = len(t.compile().messages)
+    print("\n=== 4. Batch ===\n")
     try:
         with t.batch():
             t.user("Question 1")
@@ -108,12 +122,14 @@ def main():
 
     count_after = len(t.compile().messages)
     assert count_before == count_after  # nothing landed
+    print(f"  Batch rollback: {count_before} -> {count_after} messages (unchanged)")
 
     with t.batch():  # retry succeeds
         t.user("Question 1")
         t.user("Question 2")
 
     assert len(t.compile().messages) == 3  # system + 2 questions
+    print(f"  Batch success:  {len(t.compile().messages)} messages (system + 2 questions)")
     t.close()
 
     # =================================================================
@@ -122,6 +138,7 @@ def main():
     t = Tract.open()
     t.system("You are helpful.")
     t.user("Hello")
+    print("\n=== 5. Status ===\n")
 
     status = t.status()
     print(status)                       # compact one-liner

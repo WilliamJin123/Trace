@@ -24,6 +24,7 @@ from tract import Tract, BlockedError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import groq as llm
+from _logging import StepLogger
 
 MODEL_ID = llm.small
 
@@ -113,6 +114,8 @@ def main():
 
         print("\n=== Running Agent (design -> implementation -> validation) ===\n")
 
+        log = StepLogger()
+
         result = t.run(
             "Design and implement a simple stack data structure in Python with "
             "push, pop, peek, and is_empty methods. Then write 3 test cases.\n\n"
@@ -121,7 +124,8 @@ def main():
             "When implementation is complete, transition to 'validation' to write tests.",
             max_steps=15,
             tool_names=["commit", "transition", "get_config", "status"],
-            on_step=lambda step, _resp: print(f"  step {step}..."),
+            on_step=log.on_step,
+            on_tool_result=log.on_tool_result,
         )
 
         result.pprint()

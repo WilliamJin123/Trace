@@ -24,6 +24,7 @@ from tract.toolkit import ToolConfig, ToolExecutor, ToolProfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import groq as llm
+from _logging import StepLogger
 
 MODEL_ID = llm.large
 
@@ -87,11 +88,6 @@ CONTEXT_PROFILE = ToolProfile(
 )
 
 
-def _log_step(step_num, response):
-    """on_step callback -- print step number."""
-    print(f"    [step {step_num}]")
-
-
 def main():
     if not llm.api_key:
         print("SKIPPED (no API key)")
@@ -141,6 +137,7 @@ def main():
 
         # Ask the agent to maintain the context
         print("\n  --- Task: Assess and maintain context ---")
+        log = StepLogger()
         result = t.run(
             "The context is getting large. Please:\n"
             "1. Check status to see budget usage\n"
@@ -148,7 +145,7 @@ def main():
             "3. Compress older turns to free up space\n"
             "4. Run GC to clean up orphaned commits\n"
             "5. Check status again to confirm improvement",
-            max_steps=12, on_step=_log_step,
+            max_steps=12, on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()
 

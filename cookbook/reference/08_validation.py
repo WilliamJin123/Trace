@@ -37,6 +37,18 @@ def main():
     assert validate_person('{"name":"Jo"}')[0] is False
     print("1. Validators are pure Python, testable offline")
 
+    # Show what validators return
+    good = '{"name":"Jo","age":30,"hobbies":["chess"]}'
+    bad_json = "not json"
+    missing_keys = '{"name":"Jo"}'
+
+    print(f"  validate_person({good[:30]}...)")
+    print(f"    -> {validate_person(good)}")
+    print(f"  validate_person('{bad_json}')")
+    print(f"    -> {validate_person(bad_json)}")
+    print(f"  validate_person('{missing_keys}')")
+    print(f"    -> {validate_person(missing_keys)}")
+
     # =================================================================
     # 2. chat(validator=) -- validate LLM responses (requires LLM)
     # =================================================================
@@ -75,6 +87,10 @@ def main():
     #     fallback = e.last_result  # use last output as fallback
 
     print("3. RetryExhaustedError: attempts, last_diagnosis, last_result")
+    print(f"  RetryExhaustedError(attempts=3, last_diagnosis='too short', last_result='some text')")
+    print(f"    .attempts       = {err.attempts}")
+    print(f"    .last_diagnosis = {err.last_diagnosis!r}")
+    print(f"    .last_result    = {err.last_result!r}")
 
     # =================================================================
     # 4. compress + retain_match -- deterministic compression safety
@@ -100,6 +116,11 @@ def main():
     # t.compress(target_tokens=200)  # retain_match enforced automatically
 
     print("4. compress + retain_match: deterministic compression safety")
+
+    print(f"\n  validate_db('B-tree and LSM with write-ahead log support for durable writes across nodes')")
+    print(f"    -> {validate_db('B-tree and LSM with write-ahead log support for durable writes across nodes')}")
+    print(f"  validate_db('short')")
+    print(f"    -> {validate_db('short')}")
 
     # =================================================================
     # 5. retain_match= -- regex retention layer (requires LLM)

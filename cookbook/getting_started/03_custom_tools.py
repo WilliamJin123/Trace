@@ -19,6 +19,7 @@ from pathlib import Path
 from tract import Tract
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from _logging import StepLogger
 from _providers import groq as llm
 
 MODEL_ID = llm.small
@@ -125,16 +126,21 @@ def main():
 
         # --- 3. Run with combined tools + handlers ---
 
+        log = StepLogger()
+
         result = t.run(
             "What is the circumference of a circle with radius 10? "
             "Look up pi, then calculate 2 * pi * 10.",
             max_steps=8,
             tools=all_tools,
             tool_handlers=CUSTOM_HANDLERS,
-            on_step=lambda step, _resp: print(f"  step {step}..."),
+            on_step=log.on_step,
+            on_tool_result=log.on_tool_result,
         )
 
         result.pprint(style="chat")
+
+        print(f"\nFinal answer:\n  {result.final_response}")
 
 
 if __name__ == "__main__":

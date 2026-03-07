@@ -22,6 +22,7 @@ from tract import Tract, BlockedError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import groq as llm
+from _logging import StepLogger
 
 MODEL_ID = llm.small
 
@@ -119,6 +120,8 @@ def main():
 
         print("\n=== Running Agent (ingest -> organize -> synthesize) ===\n")
 
+        log = StepLogger()
+
         result = t.run(
             "Research database indexing strategies. Start by ingesting key facts:\n"
             "- B-trees: balanced, O(log n) lookups, good for range queries\n"
@@ -132,7 +135,8 @@ def main():
             max_steps=20,
             tool_names=["commit", "tag", "register_tag", "transition",
                         "create_metadata", "get_config", "status"],
-            on_step=lambda step, _resp: print(f"  step {step}..."),
+            on_step=log.on_step,
+            on_tool_result=log.on_tool_result,
         )
 
         result.pprint()

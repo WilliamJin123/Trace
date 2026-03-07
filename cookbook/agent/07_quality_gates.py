@@ -27,6 +27,7 @@ from tract.toolkit import ToolConfig, ToolProfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import groq as llm
+from _logging import StepLogger
 
 MODEL_ID = llm.large
 
@@ -94,11 +95,6 @@ GATE_PROFILE = ToolProfile(
 )
 
 
-def _log_step(step_num, response):
-    """on_step callback -- print step number."""
-    print(f"    [step {step_num}]")
-
-
 def main():
     if not llm.api_key:
         print("SKIPPED (no API key)")
@@ -132,6 +128,8 @@ def main():
             "- Use transition to advance when ready.\n"
             "- Do NOT skip stages or bypass gates."
         )
+
+        log = StepLogger()
 
         # --- Phase 1: Set up gated workflow ---
         print("=== Phase 1: Set up gated stages ===\n")
@@ -175,7 +173,7 @@ def main():
             "2. Commit a research artifact about database schema design\n"
             "3. Commit a research artifact about error handling patterns\n\n"
             "After completing the research, try the transition again.",
-            max_steps=15, on_step=_log_step,
+            max_steps=15, on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()
 

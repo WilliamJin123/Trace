@@ -15,6 +15,7 @@ from pathlib import Path
 from tract import Tract
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from _logging import StepLogger
 from _providers import groq as llm
 
 MODEL_ID = llm.small
@@ -74,11 +75,14 @@ def main():
 
         print("\n=== Streaming with Tools ===\n")
 
+        log = StepLogger()
+
         result2 = t.run(
             "Check your status and then summarize your current context.",
             max_steps=5,
             tool_names=["status", "log"],
             on_token=lambda text: print(text, end="", flush=True),
+            on_tool_result=log.on_tool_result,
         )
         print(f"\n\nStatus: {result2.status}, tool calls: {result2.tool_calls}")
 

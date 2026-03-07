@@ -29,6 +29,7 @@ from tract.toolkit import ToolConfig, ToolExecutor, ToolProfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import groq as llm
+from _logging import StepLogger
 
 MODEL_ID = llm.large
 
@@ -92,11 +93,6 @@ STAGE_PROFILE = ToolProfile(
 )
 
 
-def _log_step(step_num, response):
-    """on_step callback -- print step number."""
-    print(f"    [step {step_num}]")
-
-
 def main():
     if not llm.api_key:
         print("SKIPPED (no API key)")
@@ -133,6 +129,7 @@ def main():
 
         # --- Phase 1: Set up the workflow ---
         print("=== Phase 1: Set up stage branches with config ===\n")
+        log = StepLogger()
         result = t.run(
             "Set up a three-stage workflow for building a REST API:\n\n"
             "1. Create branch 'design' and switch to it. Configure it:\n"
@@ -146,7 +143,7 @@ def main():
             "Then switch back to main.\n\n"
             "After setup, use get_config to verify the stage config on main "
             "and check status.",
-            max_steps=20, on_step=_log_step,
+            max_steps=20, on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()
 
@@ -161,7 +158,7 @@ def main():
             "REST API (use content_type='artifact', text='...'). Include "
             "at least the URL structure and HTTP methods. After your design "
             "is committed, check status.",
-            max_steps=10, on_step=_log_step,
+            max_steps=10, on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()
 
@@ -176,7 +173,7 @@ def main():
             "stage with get_config. Then commit an artifact with a brief "
             "implementation plan: list 3-4 key modules/files needed and "
             "their responsibilities. Check status when done.",
-            max_steps=10, on_step=_log_step,
+            max_steps=10, on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()
 
@@ -189,7 +186,7 @@ def main():
             "checklist: 3-4 items to verify the API design is correct "
             "(e.g., RESTful conventions, error handling, auth). Check "
             "status when done.",
-            max_steps=10, on_step=_log_step,
+            max_steps=10, on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()
 

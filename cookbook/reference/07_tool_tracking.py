@@ -23,6 +23,13 @@ def main():
     ci = t.tool_result("call_001", "list_directory", "main.py\nutils.py")
     t.assistant("Found 2 files.")
     print(f"tool commit: {ci.commit_hash[:8]}, {t.compile().token_count} tokens")
+
+    ctx = t.compile()
+    print(f"  Compiled messages:")
+    for m in ctx.messages:
+        preview = m.content[:80].replace("\n", " ")
+        print(f"    [{m.role:9s}] {preview}")
+
     t.close()
 
     # =================================================================
@@ -51,6 +58,12 @@ def main():
     # Drop failed turns (SKIP-annotates error turn)
     drop = t.drop_failed_tool_turns()
     drop.pprint()
+
+    print(f"\n  After dropping failed turns:")
+    ctx = t.compile()
+    for m in ctx.messages:
+        preview = m.content[:80].replace("\n", " ")
+        print(f"    [{m.role:9s}] {preview}")
 
     # Query tools: find_tool_turns, find_tool_results
     turns = t.find_tool_turns()
@@ -96,6 +109,7 @@ def main():
     ctx = t.compile()  # reasoning excluded by default
     ctx_with = t.compile(include_reasoning=True)  # include it
     print(f"\nwithout reasoning: {ctx.commit_count}, with: {ctx_with.commit_count}")
+    print(f"  Reasoning text: '{r.message}'")
 
     t.annotate(r.commit_hash, Priority.PINNED)  # force inclusion
     # format= and metadata= also accepted:

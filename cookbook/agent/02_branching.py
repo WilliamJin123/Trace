@@ -23,6 +23,7 @@ from tract.toolkit import ToolConfig, ToolExecutor, ToolProfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import groq as llm
+from _logging import StepLogger
 
 MODEL_ID = llm.large
 
@@ -76,11 +77,6 @@ BRANCH_PROFILE = ToolProfile(
 )
 
 
-def _log_step(step_num, response):
-    """on_step callback -- print step number."""
-    print(f"    [step {step_num}]")
-
-
 def main():
     if not llm.api_key:
         print("SKIPPED (no API key)")
@@ -115,12 +111,13 @@ def main():
 
         # Let the agent manage branches
         print("  --- Task: Explore options on branches ---")
+        log = StepLogger()
         result = t.run(
             "Create a branch called 'postgres-research' and switch to it. "
             "Then switch back to main and create 'sqlite-research'. "
             "Use list_branches to verify both exist, then switch back to main "
             "and merge 'postgres-research' into main with a descriptive message.",
-            max_steps=12, on_step=_log_step,
+            max_steps=12, on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()
 

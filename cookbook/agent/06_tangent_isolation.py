@@ -26,6 +26,7 @@ from tract.toolkit import ToolConfig, ToolExecutor, ToolProfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import cerebras as llm
+from _logging import StepLogger
 
 MODEL_ID = llm.large
 
@@ -87,11 +88,6 @@ TANGENT_PROFILE = ToolProfile(
 )
 
 
-def _log_step(step_num, response):
-    """on_step callback -- print step number."""
-    print(f"    [step {step_num}]")
-
-
 def main():
     if not llm.api_key:
         print("SKIPPED (no API key)")
@@ -134,6 +130,8 @@ def main():
             "For design questions, answer normally without branching."
         )
 
+        log = StepLogger()
+
         # --- Phase 1: Design question (should NOT branch) ---
         print("  Initial context:")
         t.compile().pprint(style="compact")
@@ -144,7 +142,7 @@ def main():
             "for creating, listing, updating, and deleting tasks. Each task has "
             "a title, description, status (todo/in_progress/done), and assignee. "
             "What's your recommended URL structure?",
-            max_steps=15, on_step=_log_step,
+            max_steps=15, on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()
         print(f"  Branch: {t.current_branch}")
@@ -157,7 +155,7 @@ def main():
         result = t.run(
             "Wait, quick question -- what actually is REST? I keep hearing "
             "the term but I don't fully understand the principles behind it.",
-            max_steps=15, on_step=_log_step,
+            max_steps=15, on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()
         print(f"  Branch: {t.current_branch}")
@@ -172,7 +170,7 @@ def main():
         result = t.run(
             "OK, back to the API design. What status codes should each "
             "endpoint return? And should we version the API?",
-            max_steps=15, on_step=_log_step,
+            max_steps=15, on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()
 

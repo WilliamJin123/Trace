@@ -90,6 +90,7 @@ def run_loop(
     tool_handlers: dict[str, Callable[..., Any]] | None = None,
     on_step: Callable[[int, Any], None] | None = None,
     on_token: Callable[[str], None] | None = None,
+    on_tool_result: Callable[[str, str, str], None] | None = None,
 ) -> LoopResult:
     """Run the default agent loop.
 
@@ -117,6 +118,9 @@ def run_loop(
             uses streaming and calls ``on_token(text_chunk)`` for each
             text delta.  The full response is accumulated and processed
             normally after the stream completes.
+        on_tool_result: Optional callback fired after each tool execution.
+            Signature: ``(tool_name, output, status) -> None``.  Called
+            immediately after the tool result is committed.
 
     Returns:
         LoopResult with status and metadata.
@@ -261,17 +265,25 @@ def run_loop(
                 try:
                     output = tool_handlers[tc_name](**tc_args)
                     _commit_tool_result(tract, tc_name, str(output), "success", result_meta)
+                    if on_tool_result:
+                        on_tool_result(tc_name, str(output), "success")
                 except Exception as exc:
                     _commit_tool_result(
                         tract, tc_name,
                         f"{type(exc).__name__}: {exc}", "error", result_meta,
                     )
+                    if on_tool_result:
+                        on_tool_result(tc_name, f"{type(exc).__name__}: {exc}", "error")
             else:
                 result = executor.execute(tc_name, tc_args)
                 if result.success:
                     _commit_tool_result(tract, tc_name, result.output, "success", result_meta)
+                    if on_tool_result:
+                        on_tool_result(tc_name, result.output, "success")
                 else:
                     _commit_tool_result(tract, tc_name, result.error, "error", result_meta)
+                    if on_tool_result:
+                        on_tool_result(tc_name, result.error, "error")
 
     return LoopResult(
         "max_steps",

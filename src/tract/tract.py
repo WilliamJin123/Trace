@@ -2221,6 +2221,7 @@ class Tract:
         llm_client: LLMClient | None = None,
         on_step: Callable | None = None,
         on_token: Callable | None = None,
+        on_tool_result: Callable | None = None,
         stream: bool = False,
     ) -> LoopResult:  # noqa: F821
         """Run the default agent loop on this tract.
@@ -2249,6 +2250,9 @@ class Tract:
             on_token: Streaming callback ``(text_chunk) -> None``.  When
                 provided and the LLM client supports streaming, each text
                 delta is passed to this callback as it arrives.
+            on_tool_result: Tool result callback ``(tool_name, output, status) -> None``.
+                Called after each tool execution with the tool name, output text,
+                and ``"success"`` or ``"error"`` status.
             stream: Enable streaming even without on_token callback.
 
         Returns:
@@ -2282,6 +2286,7 @@ class Tract:
             tool_handlers=tool_handlers,
             on_step=on_step,
             on_token=on_token,
+            on_tool_result=on_tool_result,
         )
 
     def revise(

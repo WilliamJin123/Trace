@@ -14,6 +14,7 @@ from pathlib import Path
 from tract import Tract
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from _logging import StepLogger
 from _providers import groq as llm
 
 MODEL_ID = llm.small
@@ -39,14 +40,19 @@ def main():
 
         # One call: compiles context, calls LLM with tools, repeats until done
         # tools=[] since this is pure Q&A -- no context-management tools needed
+        log = StepLogger()
+
         result = t.run(
             "What are the three pillars of object-oriented programming? "
             "Explain each in one sentence.",
             max_steps=5,
             tools=[],
-            on_step=lambda step, _resp: print(f"  step {step}..."),
+            on_step=log.on_step,
+            on_tool_result=log.on_tool_result,
         )
         result.pprint()
+
+        print(f"\nFinal answer:\n  {result.final_response}")
 
 
 if __name__ == "__main__":
