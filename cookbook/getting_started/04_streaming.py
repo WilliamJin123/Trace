@@ -4,7 +4,11 @@ Tract supports streaming with any LLM client that has a stream() method.
 Pass on_token= to t.run() and text arrives chunk-by-chunk instead of
 waiting for the full response.
 
-Demonstrates: on_token callback, stream=True, LoopResult after streaming
+Two approaches:
+  1. Raw callback -- print(text, end="", flush=True) for plain text output
+  2. StreamPrinter -- Rich-formatted markdown panel that re-renders live
+
+Demonstrates: on_token callback, StreamPrinter, stream=True, LoopResult
 
 Requires: LLM API key (uses Groq provider)
 """
@@ -13,6 +17,7 @@ import sys
 from pathlib import Path
 
 from tract import Tract
+from tract.formatting import StreamPrinter
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _logging import StepLogger
@@ -35,13 +40,32 @@ def main():
         t.system("You are a helpful assistant. Answer concisely.")
 
         # ---------------------------------------------------------
-        # Streaming with on_token callback
+        # 1. Rich streaming with StreamPrinter
         # ---------------------------------------------------------
-        # Each text chunk from the LLM hits the callback as it arrives.
-        # The full response is still committed to the tract and returned
-        # in the LoopResult as usual.
+        # StreamPrinter renders streamed tokens as a live Rich Markdown
+        # panel.  It batches re-renders (every N chunks / min interval)
+        # to avoid flicker.  Use as a context manager for auto-finish.
 
-        print("=== Streaming Response ===\n")
+        print("=== Rich Streaming (StreamPrinter) ===\n")
+
+        with StreamPrinter(title="Hash Tables") as printer:
+            result = t.run(
+                "Explain what a hash table is in 3 sentences.",
+                max_steps=3,
+                tools=[],
+                on_token=printer,
+            )
+
+        print(f"Streamed {printer.chunk_count} chunks")
+        print(f"Status: {result.status}")
+        result.pprint()
+
+        # ---------------------------------------------------------
+        # 2. Raw streaming with plain callback
+        # ---------------------------------------------------------
+        # For maximum control, pass any callable as on_token.
+
+        print("\n=== Raw Streaming ===\n")
 
         token_count = 0
 
@@ -51,23 +75,18 @@ def main():
             token_count += 1
             print(text, end="", flush=True)
 
-        result = t.run(
-            "Explain what a hash table is in 3 sentences.",
+        result2 = t.run(
+            "What is a linked list? One sentence.",
             max_steps=3,
             tools=[],
             on_token=on_token,
         )
 
-        # Newline after streamed output
-        print(f"\n\n--- Streamed {token_count} chunks ---\n")
-
-        # The LoopResult is the same regardless of streaming
-        print(f"Status: {result.status}")
-        print(f"Steps: {result.steps}")
-        print(f"Final response length: {len(result.final_response or '')}")
+        print(f"\n\n--- Streamed {token_count} chunks ---")
+        print(f"Status: {result2.status}")
 
         # ---------------------------------------------------------
-        # Streaming with tools
+        # 3. Streaming with tools
         # ---------------------------------------------------------
         # Streaming also works when the LLM calls tools. Text chunks
         # stream to the callback; tool calls are accumulated and
@@ -77,14 +96,15 @@ def main():
 
         log = StepLogger()
 
-        result2 = t.run(
-            "Check your status and then summarize your current context.",
-            max_steps=5,
-            tool_names=["status", "log"],
-            on_token=lambda text: print(text, end="", flush=True),
-            on_tool_result=log.on_tool_result,
-        )
-        print(f"\n\nStatus: {result2.status}, tool calls: {result2.tool_calls}")
+        with StreamPrinter(title="Tool + Stream") as printer:
+            result3 = t.run(
+                "Check your status and then summarize your current context.",
+                max_steps=5,
+                tool_names=["status", "log"],
+                on_token=printer,
+                on_tool_result=log.on_tool_result,
+            )
+        print(f"Status: {result3.status}, tool calls: {result3.tool_calls}")
 
 
 if __name__ == "__main__":

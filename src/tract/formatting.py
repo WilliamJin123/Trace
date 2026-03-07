@@ -8,8 +8,9 @@ at module level. Functions access object attributes dynamically.
 """
 from __future__ import annotations
 
+import time
 from io import StringIO
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 from tract.protocols import CompiledContext
 
@@ -1307,4 +1308,158 @@ def pprint_collapse_result(result: Any, *, file: Any = None) -> None:
         border_style="cyan",
     ))
 
+
+# ---------------------------------------------------------------------------
+# Streaming pretty-printer
+# ---------------------------------------------------------------------------
+
+
+class StreamPrinter:
+    """Rich-formatted streaming printer for use as an ``on_token`` callback.
+
+    Accumulates text chunks and periodically re-renders the growing content
+    as Rich Markdown inside a ``Live`` display.  This avoids the flickering
+    that would occur if we re-rendered on every single token.
+
+    Usage::
+
+        from tract.formatting import StreamPrinter
+
+        printer = StreamPrinter()
+        result = t.run("Explain recursion", on_token=printer)
+        printer.finish()      # finalise the Live display
+        result.pprint()       # show the rest (status, context, etc.)
+
+    Or as a context manager (auto-finishes)::
+
+        with StreamPrinter() as printer:
+            result = t.run("Explain recursion", on_token=printer)
+        result.pprint()
+
+    Args:
+        every_n: Re-render after accumulating this many chunks (default 3).
+        min_interval: Minimum seconds between re-renders (default 0.06).
+            Whichever threshold is hit first triggers a render.
+        title: Panel title shown above the streaming content.
+        border_style: Rich border style for the panel.
+    """
+
+    def __init__(
+        self,
+        *,
+        every_n: int = 3,
+        min_interval: float = 0.06,
+        title: str = "Assistant",
+        border_style: str = "green",
+    ) -> None:
+        self._every_n = max(every_n, 1)
+        self._min_interval = min_interval
+        self._title = title
+        self._border_style = border_style
+
+        self._buffer: list[str] = []
+        self._chunks_since_render = 0
+        self._last_render_time = 0.0
+        self._live: Any | None = None  # rich.live.Live
+        self._console: Console | None = None
+        self._finished = False
+
+    # -- on_token callback --------------------------------------------------
+
+    def __call__(self, text: str) -> None:
+        """Receive a token chunk from the LLM stream."""
+        self._buffer.append(text)
+        self._chunks_since_render += 1
+
+        if self._live is None:
+            self._start_live()
+
+        now = time.monotonic()
+        elapsed = now - self._last_render_time
+        if (
+            self._chunks_since_render >= self._every_n
+            or elapsed >= self._min_interval
+        ):
+            self._render()
+
+    # -- context manager ----------------------------------------------------
+
+    def __enter__(self) -> StreamPrinter:
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self.finish()
+
+    # -- public API ---------------------------------------------------------
+
+    @property
+    def text(self) -> str:
+        """The full accumulated text so far."""
+        return "".join(self._buffer)
+
+    @property
+    def chunk_count(self) -> int:
+        """Number of chunks received."""
+        return len(self._buffer)
+
+    def finish(self) -> None:
+        """Finalise the Live display with one last render, then stop."""
+        if self._finished:
+            return
+        self._finished = True
+        if self._live is not None:
+            self._render()
+            self._live.stop()
+            self._live = None
+
+    # -- internals ----------------------------------------------------------
+
+    def _start_live(self) -> None:
+        from rich.live import Live
+
+        _ensure_utf8_stdout()
+        self._console = Console(theme=_MARKDOWN_THEME)
+        self._live = Live(
+            self._make_panel(),
+            console=self._console,
+            refresh_per_second=15,
+            transient=True,
+        )
+        self._live.start()
+        self._last_render_time = time.monotonic()
+
+    def _render(self) -> None:
+        if self._live is not None:
+            self._live.update(self._make_panel())
+            self._chunks_since_render = 0
+            self._last_render_time = time.monotonic()
+
+    def _make_panel(self) -> Panel:
+        content = "".join(self._buffer) or " "
+        return Panel(
+            Markdown(content),
+            title=f"[bold]{self._title}[/bold]",
+            border_style=self._border_style,
+        )
+
+
+def streaming_printer(
+    *,
+    every_n: int = 3,
+    min_interval: float = 0.06,
+    title: str = "Assistant",
+    border_style: str = "green",
+) -> StreamPrinter:
+    """Create a :class:`StreamPrinter` — convenience factory.
+
+    Returns a callable suitable for ``on_token=``::
+
+        result = t.run("Hello", on_token=streaming_printer())
+    """
+    return StreamPrinter(
+        every_n=every_n,
+        min_interval=min_interval,
+        title=title,
+        border_style=border_style,
+    )
 

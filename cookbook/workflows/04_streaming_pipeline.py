@@ -1,14 +1,15 @@
 """Streaming Pipeline -- Live output with stage transitions
 
-A multi-stage workflow where each stage streams its output live.
-Combines streaming with config-based stage management and middleware gates.
+A multi-stage workflow where each stage streams its output live using
+StreamPrinter for Rich-formatted markdown panels.  Combines streaming
+with config-based stage management and middleware gates.
 
 Stages:
   research    -- gather information (streamed)
   synthesize  -- combine findings (streamed)
 
-Demonstrates: on_token in multi-stage workflow, live progress display,
-              streaming + tool use, rich terminal formatting
+Demonstrates: StreamPrinter per-stage, live Rich markdown panels,
+              streaming + middleware gates, stage transitions
 
 Requires: LLM API key (uses Groq provider)
 """
@@ -17,27 +18,12 @@ import sys
 from pathlib import Path
 
 from tract import Tract, BlockedError
+from tract.formatting import StreamPrinter
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import groq as llm
 
 MODEL_ID = llm.small
-
-
-class StreamPrinter:
-    """Collects streamed tokens and displays with a prefix."""
-
-    def __init__(self, prefix: str = ""):
-        self.prefix = prefix
-        self.chunks = 0
-        self._started = False
-
-    def __call__(self, text: str) -> None:
-        if not self._started:
-            print(f"\n{self.prefix}", end="", flush=True)
-            self._started = True
-        print(text, end="", flush=True)
-        self.chunks += 1
 
 
 def main():
@@ -75,39 +61,38 @@ def main():
         )
 
         # ---------------------------------------------------------
-        # Stage 1: Research (streamed)
+        # Stage 1: Research (streamed with Rich panel)
         # ---------------------------------------------------------
-        print("=== Stage 1: Research (streaming) ===")
-        research_printer = StreamPrinter(prefix="  [research] ")
+        print("=== Stage 1: Research ===")
 
-        result1 = t.run(
-            "Research the concept of 'eventual consistency' in distributed systems. "
-            "List 3-4 key points about how it works and why it matters.",
-            max_steps=5,
-            tools=[],
-            on_token=research_printer,
-        )
-        print(f"\n  ({research_printer.chunks} chunks streamed)")
+        with StreamPrinter(title="Research", border_style="cyan") as printer:
+            result1 = t.run(
+                "Research the concept of 'eventual consistency' in distributed systems. "
+                "List 3-4 key points about how it works and why it matters.",
+                max_steps=5,
+                tools=[],
+                on_token=printer,
+            )
+        print(f"  ({printer.chunk_count} chunks streamed)")
 
         # ---------------------------------------------------------
         # Stage 2: Transition and synthesize (streamed)
         # ---------------------------------------------------------
-        print("\n=== Stage 2: Synthesize (streaming) ===")
+        print("\n=== Stage 2: Synthesize ===")
 
         # Manually transition since the agent didn't have the tool
         t.transition("synthesize", handoff="Summarize the research findings")
         t.configure(temperature=0.3)
 
-        synth_printer = StreamPrinter(prefix="  [synthesize] ")
-
-        result2 = t.run(
-            "Now write a concise 2-paragraph summary of eventual consistency "
-            "based on the research above.",
-            max_steps=3,
-            tools=[],
-            on_token=synth_printer,
-        )
-        print(f"\n  ({synth_printer.chunks} chunks streamed)")
+        with StreamPrinter(title="Synthesis", border_style="green") as printer:
+            result2 = t.run(
+                "Now write a concise 2-paragraph summary of eventual consistency "
+                "based on the research above.",
+                max_steps=3,
+                tools=[],
+                on_token=printer,
+            )
+        print(f"  ({printer.chunk_count} chunks streamed)")
 
         # ---------------------------------------------------------
         # Final state
