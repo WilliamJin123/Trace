@@ -5,8 +5,7 @@ The agent is given a research task and told to move to implementation
 when ready. It must discover the gate requirements by hitting them,
 then adapt.
 
-Tools available: configure, transition, commit, get_config, status,
-                 log, compile, annotate, branch
+Tools available: transition, commit, get_config, status, log
 
 Demonstrates: Can the model adapt when middleware blocks its actions,
               without being told about the gate rules in advance?
@@ -32,15 +31,11 @@ MODEL_ID = llm.xlarge
 PROFILE = ToolProfile(
     name="engineer",
     tool_configs={
-        "configure": ToolConfig(enabled=True),
         "transition": ToolConfig(enabled=True),
         "commit": ToolConfig(enabled=True),
         "get_config": ToolConfig(enabled=True),
         "status": ToolConfig(enabled=True),
         "log": ToolConfig(enabled=True),
-        "compile": ToolConfig(enabled=True),
-        "annotate": ToolConfig(enabled=True),
-        "branch": ToolConfig(enabled=True),
     },
 )
 
@@ -63,10 +58,8 @@ def main():
         base_url=llm.base_url,
         model=MODEL_ID,
         auto_message=llm.small,
+        tool_profile=PROFILE,
     ) as t:
-        tools = t.as_tools(profile=PROFILE)
-        t.set_tools(tools)
-
         # System: role only, no gate protocol
         t.system(
             "You are a software engineer working on an API project. "

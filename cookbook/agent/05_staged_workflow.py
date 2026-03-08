@@ -4,8 +4,7 @@ The developer pre-creates stage branches (design, implementation, validation)
 with config metadata. The agent is given a single comprehensive task and
 must discover the stage infrastructure, then navigate through it autonomously.
 
-Tools available: configure, get_config, transition, commit, compile,
-                 status, log, branch, switch, list_branches
+Tools available: get_config, transition, commit, switch, list_branches
 
 Demonstrates: Can the model discover pre-built stages and navigate them
               to complete a multi-phase task in a single run?
@@ -31,14 +30,9 @@ MODEL_ID = llm.xlarge
 PROFILE = ToolProfile(
     name="architect",
     tool_configs={
-        "configure": ToolConfig(enabled=True),
         "get_config": ToolConfig(enabled=True),
         "transition": ToolConfig(enabled=True),
         "commit": ToolConfig(enabled=True),
-        "compile": ToolConfig(enabled=True),
-        "status": ToolConfig(enabled=True),
-        "log": ToolConfig(enabled=True),
-        "branch": ToolConfig(enabled=True),
         "switch": ToolConfig(enabled=True),
         "list_branches": ToolConfig(enabled=True),
     },
@@ -63,10 +57,8 @@ def main():
         base_url=llm.base_url,
         model=MODEL_ID,
         auto_message=llm.small,
+        tool_profile=PROFILE,
     ) as t:
-        tools = t.as_tools(profile=PROFILE)
-        t.set_tools(tools)
-
         # Developer pre-creates the stage infrastructure
         t.system(
             "You are a software architect. Complete the task by working "

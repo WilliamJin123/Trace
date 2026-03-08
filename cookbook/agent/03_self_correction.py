@@ -4,8 +4,7 @@ The agent gives a deliberately brief answer, then is asked to improve it.
 It has edit tools available but is never told how to use them. Will it
 discover get_commit + edit to revise its own output in place?
 
-Tools available: commit (with edit), get_commit, diff, log, compile,
-                 annotate, status
+Tools available: commit (with edit), get_commit, diff, log
 
 Demonstrates: Does the model figure out the inspect-then-edit-in-place
               pattern on its own?
@@ -35,9 +34,6 @@ PROFILE = ToolProfile(
         "get_commit": ToolConfig(enabled=True),
         "diff": ToolConfig(enabled=True),
         "log": ToolConfig(enabled=True),
-        "compile": ToolConfig(enabled=True),
-        "annotate": ToolConfig(enabled=True),
-        "status": ToolConfig(enabled=True),
     },
 )
 
@@ -60,10 +56,8 @@ def main():
         base_url=llm.base_url,
         model=MODEL_ID,
         auto_message=llm.small,
+        tool_profile=PROFILE,
     ) as t:
-        tools = t.as_tools(profile=PROFILE)
-        t.set_tools(tools)
-
         t.system(
             "You are a technical writer. Produce clear, thorough explanations."
         )

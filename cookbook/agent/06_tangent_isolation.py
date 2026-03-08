@@ -5,7 +5,7 @@ asks a completely unrelated question. The tangent content would waste
 valuable context space if left in the main thread. The agent has branching
 tools but no "tangent protocol."
 
-Tools available: branch, switch, merge, compress, commit, status, log
+Tools available: branch, switch, merge, compress, commit, status
 
 Demonstrates: Does the model isolate an obviously off-topic interruption
               on a branch to protect the main conversation context?
@@ -37,7 +37,6 @@ PROFILE = ToolProfile(
         "merge": ToolConfig(enabled=True),
         "compress": ToolConfig(enabled=True),
         "status": ToolConfig(enabled=True),
-        "log": ToolConfig(enabled=True),
     },
 )
 
@@ -62,10 +61,8 @@ def main():
         base_url=llm.base_url,
         model=MODEL_ID,
         auto_message=llm.small,
+        tool_profile=PROFILE,
     ) as t:
-        tools = t.as_tools(profile=PROFILE)
-        t.set_tools(tools)
-
         # System: role only
         t.system(
             "You are a senior API architect helping design a REST API "
@@ -114,17 +111,22 @@ def main():
         )
         result.pprint()
 
-        # Report
+        # Report — show each branch's compiled context
         print("\n\n=== Final State ===\n")
-        branches = [b.name for b in t.list_branches()]
-        print(f"  Branches: {branches}")
+        branches = t.list_branches()
+        print(f"  Branches: {[b.name for b in branches]}")
         print(f"  Current: {t.current_branch}")
 
         status = t.status()
         pct = status.token_count / status.token_budget_max * 100
         print(f"  Context: {status.token_count} tokens ({pct:.0f}% of budget)")
 
-        t.compile().pprint(style="compact")
+        original = t.current_branch
+        for branch in branches:
+            t.switch(branch.name)
+            print(f"\n  [{branch.name}]:")
+            t.compile().pprint(style="compact")
+        t.switch(original)
 
         if len(branches) > 1:
             print(f"\n  Agent created {len(branches) - 1} branch(es) for tangent isolation.")

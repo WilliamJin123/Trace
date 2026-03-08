@@ -354,19 +354,6 @@ def _handle_reasoning(
 # ---------------------------------------------------------------------------
 
 
-# Write tools: their results are ephemeral confirmations ("branch created",
-# "committed abc123").  The action already took effect structurally, so the
-# confirmation is marked SKIP — visible in the current turn but pruned on
-# recompile.  Read tools (status, log, compile, etc.) keep NORMAL priority
-# because the LLM reasons over their data in later turns.
-_WRITE_TOOLS: frozenset[str] = frozenset({
-    "branch", "switch", "merge", "reset", "checkout", "commit",
-    "compress", "gc", "annotate", "configure", "configure_model",
-    "transition", "directive", "create_middleware", "remove_middleware",
-    "create_metadata", "tag", "untag", "register_tag",
-})
-
-
 def _commit_tool_result(
     tract: Tract,
     tool_name: str,
@@ -374,17 +361,12 @@ def _commit_tool_result(
     status: Literal["success", "error"],
     metadata: dict,
 ) -> None:
-    """Commit a tool result/error to the tract.
-
-    Write-tool results are annotated SKIP so they appear in the current
-    turn but are pruned from compiled context on subsequent steps.
-    """
-    from tract.models.annotations import Priority
+    """Commit a tool result/error to the tract."""
     from tract.models.content import ToolIOContent
 
     payload_key = "result" if status == "success" else "error"
     msg_prefix = "tool result" if status == "success" else "tool error"
-    info = tract.commit(
+    tract.commit(
         ToolIOContent(
             tool_name=tool_name,
             direction="result",
@@ -394,10 +376,6 @@ def _commit_tool_result(
         message=f"{msg_prefix}: {tool_name}",
         metadata=metadata,
     )
-
-    # Ephemeral confirmation for write tools (errors always stay visible)
-    if tool_name in _WRITE_TOOLS and status == "success":
-        tract.annotate(info.commit_hash, Priority.SKIP)
 
 
 def _extract_usage(response: Any, client: LLMClient | None = None) -> dict | None:

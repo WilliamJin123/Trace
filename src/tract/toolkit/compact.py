@@ -82,14 +82,16 @@ ACTION_TO_DOMAIN: dict[str, str] = {
 # ---------------------------------------------------------------------------
 _DOMAIN_DESCRIPTIONS: dict[str, str] = {
     "context": (
-        "Manage context: commit content, compile messages, check status/log, "
-        "diff commits, get commit details, compress history, or run gc. "
-        "Actions: commit, compile, status, log, diff, get_commit, compress, gc."
+        "Read and write context. Actions: commit (save content), compile "
+        "(render messages), status (check state), log (view history), diff "
+        "(compare commits), get_commit (inspect one), compress (reduce "
+        "tokens), gc (clean up)."
     ),
     "branch": (
-        "Manage branches: create, switch, merge, reset, checkout, list, "
-        "or transition between branches. "
-        "Actions: branch, switch, merge, reset, checkout, list_branches, transition."
+        "Manage parallel lines of work. Branch BEFORE exploring alternatives. "
+        "Actions: branch (create), switch (change), merge (combine), reset "
+        "(undo), checkout (inspect), list_branches (show all), transition "
+        "(move with handoff)."
     ),
     "annotate": (
         "Annotate commits or set directives. "
@@ -97,6 +99,8 @@ _DOMAIN_DESCRIPTIONS: dict[str, str] = {
     ),
     "tag": (
         "Manage tags on commits: add, remove, query, register, and list tags. "
+        "Tags are auto-registered on commit, so register_tag is only needed "
+        "for pre-declaring tags. "
         "Actions: tag, untag, query_by_tags, register_tag, get_tags, list_tags."
     ),
     "config": (

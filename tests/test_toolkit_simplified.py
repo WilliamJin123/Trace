@@ -384,7 +384,7 @@ class TestProfiles:
 class TestAsTools:
     def test_as_tools_includes_new(self, tract_instance):
         """as_tools() includes new tools in output."""
-        tools = tract_instance.as_tools(format="openai")
+        tools = tract_instance.as_tools(profile="self", format="openai")
         names = {t["function"]["name"] for t in tools}
         assert "configure" in names
         assert "get_config" in names
@@ -405,7 +405,7 @@ class TestAsTools:
 
     def test_as_callable_tools(self, tract_instance):
         """as_callable_tools includes new tools."""
-        callables = tract_instance.as_callable_tools()
+        callables = tract_instance.as_callable_tools(profile="self")
         names = {c.__name__ for c in callables}
         assert "configure" in names
         assert "get_config" in names

@@ -5,8 +5,7 @@ technical proposals. If one analysis influences the other, the proposals
 won't be genuine. The agent has branching tools but is never told to
 use them.
 
-Tools available: branch, switch, list_branches, merge, status, compile,
-                 log, commit
+Tools available: branch, switch, list_branches, merge, commit
 
 Demonstrates: Does the model use branches to isolate conflicting analyses
               so they don't cross-pollinate?
@@ -36,9 +35,6 @@ PROFILE = ToolProfile(
         "switch": ToolConfig(enabled=True),
         "list_branches": ToolConfig(enabled=True),
         "merge": ToolConfig(enabled=True),
-        "status": ToolConfig(enabled=True),
-        "compile": ToolConfig(enabled=True),
-        "log": ToolConfig(enabled=True),
         "commit": ToolConfig(enabled=True),
     },
 )
@@ -62,10 +58,8 @@ def main():
         base_url=llm.base_url,
         model=MODEL_ID,
         auto_message=llm.small,
+        tool_profile=PROFILE,
     ) as t:
-        tools = t.as_tools(profile=PROFILE)
-        t.set_tools(tools)
-
         t.system(
             "You are a senior solutions architect evaluating backend "
             "architecture options for a new product."
@@ -93,14 +87,18 @@ def main():
         )
         result.pprint()
 
-        # Report
+        # Report — show each branch's compiled context
         print("\n  --- Final state ---")
-        branches = [b.name for b in t.list_branches()]
-        print(f"  Branches: {branches}")
+        branches = t.list_branches()
+        print(f"  Branches: {[b.name for b in branches]}")
         print(f"  Current: {t.current_branch}")
 
-        print("\n  Final context:")
-        t.compile().pprint(style="compact")
+        original = t.current_branch
+        for branch in branches:
+            t.switch(branch.name)
+            print(f"\n  [{branch.name}]:")
+            t.compile().pprint(style="compact")
+        t.switch(original)
 
         if len(branches) > 1:
             print(f"\n  Agent created {len(branches) - 1} branch(es) for isolation.")

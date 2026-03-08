@@ -97,10 +97,8 @@ def main():
         base_url=llm.base_url,
         model=MODEL_ID,
         auto_message=llm.small,
+        tool_profile=PROFILE,
     ) as t:
-        tools = t.as_tools(profile=PROFILE)
-        t.set_tools(tools)
-
         t.system("You are a knowledgeable research assistant.")
 
         # Build the large multi-topic conversation

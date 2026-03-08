@@ -6,7 +6,7 @@ brutally honest security audit of the same product. The shift from
 "advocate" to "adversary" creates natural pressure for self-regulation.
 
 Tools available: configure, directive, create_middleware, remove_middleware,
-                 get_config, commit, status, log, transition
+                 get_config, commit, transition
 
 Demonstrates: Does the model proactively set directives, configure behavior,
               or create middleware to enforce phase-specific constraints?
@@ -49,21 +49,16 @@ def main():
         auto_message=llm.small,
     ) as t:
 
-        tools = t.as_tools(
-            tool_names=[
-                "configure", "directive", "create_middleware",
-                "remove_middleware", "get_config", "commit",
-                "status", "log", "transition",
-            ],
-            format="openai",
-        )
-        t.set_tools(tools)
-
         t.system(
             "You are a technical writer who adapts style to the task."
         )
 
         log = StepLogger()
+        _tool_names = [
+            "configure", "directive", "create_middleware",
+            "remove_middleware", "get_config", "commit",
+            "transition",
+        ]
 
         # Phase 1: Marketing copy (enthusiastic, positive)
         print("=== Phase 1: Marketing copy ===\n")
@@ -71,6 +66,7 @@ def main():
             "Write short marketing copy for 'Nexus' API framework. "
             "Selling points: 1M req/sec, built-in auth, auto OpenAPI docs. "
             "Make it compelling for the landing page.",
+            tool_names=_tool_names,
             max_steps=6, max_tokens=512,
             on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
@@ -84,6 +80,7 @@ def main():
             "Now write a security audit of Nexus as a penetration tester. "
             "Be ruthlessly critical — find gaps in the auth claims, "
             "question the performance numbers, flag what was left out.",
+            tool_names=_tool_names,
             max_steps=8, max_tokens=512,
             on_step=log.on_step, on_tool_result=log.on_tool_result,
         )

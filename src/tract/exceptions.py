@@ -178,13 +178,24 @@ class RetryExhaustedError(TraceError):
 class TagNotRegisteredError(TraceError):
     """Raised when an unregistered tag is used in strict mode."""
 
-    def __init__(self, tag_name: str) -> None:
-        self.tag_name = tag_name
-        super().__init__(
-            f"Tag '{tag_name}' is not registered. "
-            f"Use t.register_tag('{tag_name}', description) first, "
-            f"or use t.list_tags() to see available tags."
-        )
+    def __init__(self, tag_name: str | list[str]) -> None:
+        if isinstance(tag_name, list):
+            self.tag_name = tag_name[0] if len(tag_name) == 1 else tag_name[0]
+            self.tag_names = tag_name
+            quoted = ", ".join(f"'{t}'" for t in tag_name)
+            super().__init__(
+                f"Tags not registered: {quoted}. "
+                f"Register them with t.register_tag(name, description) first, "
+                f"or use t.list_tags() to see available tags."
+            )
+        else:
+            self.tag_name = tag_name
+            self.tag_names = [tag_name]
+            super().__init__(
+                f"Tag '{tag_name}' is not registered. "
+                f"Use t.register_tag('{tag_name}', description) first, "
+                f"or use t.list_tags() to see available tags."
+            )
 
 
 class CurationError(TraceError):

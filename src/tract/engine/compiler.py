@@ -35,6 +35,61 @@ def _normalize_dt(dt: datetime) -> datetime:
     return dt.replace(tzinfo=None) if dt.tzinfo is not None else dt
 
 
+_TOOL_IO_CALL_MAX_LEN = 200  # truncate compact call repr
+
+
+def _render_tool_io(
+    tool_name: str,
+    direction: str,
+    payload: dict,
+    status: str | None,
+) -> str:
+    """Render tool_io content compactly to reduce token waste.
+
+    Results:
+      success with single "result" key  -> ``tool_name -> value``
+      error   with single "error" key   -> ``tool_name x value``
+      other payloads                     -> ``tool_name (status)\n{compact json}``
+
+    Calls:
+      ``tool_name(arg=val, ...)``  (single line, truncated)
+    """
+    if direction == "result":
+        # Single-key shortcut: just emit the value string directly
+        keys = list(payload.keys())
+        if len(keys) == 1 and keys[0] in ("result", "error", "text"):
+            value = str(payload[keys[0]])
+            if status == "error":
+                return f"{tool_name} \u2717 {value}"
+            # success / None
+            return f"{tool_name} \u2192 {value}"
+
+        # Multi-key payload -- compact JSON, no pretty-print
+        header = tool_name
+        if status == "error":
+            header += " \u2717"
+        elif status:
+            header += f" \u2192"
+        return f"{header}\n{json.dumps(payload, separators=(',', ':'))}"
+
+    # direction == "call"
+    args_parts: list[str] = []
+    for k, v in payload.items():
+        if isinstance(v, str):
+            # Short strings inline, long ones truncated
+            if len(v) > 60:
+                v_repr = repr(v[:57] + "...")
+            else:
+                v_repr = repr(v)
+        else:
+            v_repr = json.dumps(v, separators=(",", ":"))
+        args_parts.append(f"{k}={v_repr}")
+    compact = f"{tool_name}({', '.join(args_parts)})"
+    if len(compact) > _TOOL_IO_CALL_MAX_LEN:
+        compact = compact[: _TOOL_IO_CALL_MAX_LEN - 3] + "..."
+    return compact
+
+
 class DefaultContextCompiler:
     """Default implementation of the ContextCompiler protocol.
 
@@ -63,6 +118,7 @@ class DefaultContextCompiler:
         self._token_counter = token_counter
         self._type_to_role_override = type_to_role_map or {}
         self._parent_repo = parent_repo
+        self.tool_result_format: str = "minimal"
 
     def compile(
         self,
@@ -551,10 +607,19 @@ class DefaultContextCompiler:
             direction = content_data.get("direction", "call")
             payload = content_data.get("payload", {})
             status = content_data.get("status")
-            header = f"Tool {direction}: {tool_name}"
-            if status:
-                header += f" ({status})"
-            return f"{header}\n{json.dumps(payload, indent=2)}"
+            fmt = getattr(self, "tool_result_format", "minimal")
+            if fmt == "verbose":
+                header = f"Tool {direction}: {tool_name}"
+                if status:
+                    header += f" ({status})"
+                return f"{header}\n{json.dumps(payload, indent=2)}"
+            if fmt == "json":
+                header = f"Tool {direction}: {tool_name}"
+                if status:
+                    header += f" ({status})"
+                return f"{header}\n{json.dumps(payload, separators=(',', ':'))}"
+            # "minimal" (default)
+            return _render_tool_io(tool_name, direction, payload, status)
 
         if content_type == "freeform":
             return json.dumps(content_data.get("payload", {}), indent=2)

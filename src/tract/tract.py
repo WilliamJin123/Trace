@@ -62,6 +62,7 @@ if TYPE_CHECKING:
     from tract.llm.protocols import LLMClient, ResolverCallable
     from tract.loop import LoopResult
     from tract.middleware import MiddlewareEvent
+    from tract.toolkit.models import ToolProfile
     from tract.models.branch import BranchInfo
     from tract.models.compression import CompressResult, GCResult, ReorderWarning, ToolCompactResult, ToolDropResult
     from tract.models.merge import ImportResult, MergeResult, RebaseResult
@@ -209,6 +210,10 @@ class Tract:
         self._commit_reasoning: bool = True
         self._auto_message_enabled: bool = False
 
+        # Tool defaults (set via open() or set_tool_profile/set_tool_result_format)
+        self._tool_profile: str | ToolProfile | None = None
+        self._tool_result_format: Literal["minimal", "json", "verbose"] = "minimal"
+
         # Config index (replaces rule engine)
         self._config_index: ConfigIndex | None = None
 
@@ -244,6 +249,8 @@ class Tract:
         commit_reasoning: bool = True,
         auto_message: bool | str | LLMConfig = False,
         provider: Literal["openai", "anthropic"] | None = None,
+        tool_profile: str | ToolProfile | None = None,
+        tool_result_format: Literal["minimal", "json", "verbose"] | None = None,
     ) -> Tract:
         """Open (or create) a Trace repository.
 
@@ -301,6 +308,16 @@ class Tract:
                 auto-detects from *base_url* or *model* name: base URLs
                 containing ``"anthropic"`` or models starting with ``"claude"``
                 select the Anthropic client.
+            tool_profile: Default tool profile for :meth:`run`, :meth:`as_tools`,
+                and :meth:`as_callable_tools`.  A profile name (``"compact"``,
+                ``"self"``, ``"supervisor"``, ``"full"``) or a
+                :class:`~tract.toolkit.models.ToolProfile` instance.  When
+                ``None`` (default), methods use ``"compact"``.  Set once here
+                to avoid passing ``profile=`` on every call.
+            tool_result_format: How tool results render in compiled context.
+                ``"minimal"`` (default): compact single-line output.
+                ``"json"``: compact JSON (no indentation).
+                ``"verbose"``: full JSON with ``indent=2`` (legacy behavior).
 
         Returns:
             A ready-to-use ``Tract`` instance.
@@ -490,6 +507,15 @@ class Tract:
                     tract._operation_configs, message=auto_message,
                 )
             # auto_message=True: no operation config needed, uses default
+
+        # Tool defaults
+        if tool_profile is not None:
+            tract._tool_profile = tool_profile
+        if tool_result_format is not None:
+            tract._tool_result_format = tool_result_format
+        # Sync format to compiler
+        if hasattr(tract._compiler, "tool_result_format"):
+            tract._compiler.tool_result_format = tract._tool_result_format
 
         return tract
 
@@ -2207,6 +2233,7 @@ class Tract:
         return _dc.replace(response, prompt=text)
 
     _TOOLS_SENTINEL = object()
+    _PROFILE_SENTINEL = object()
 
     def run(
         self,
@@ -2216,7 +2243,7 @@ class Tract:
         max_tokens: int | None = None,
         system_prompt: str | None = None,
         tools: list[dict] | None | object = _TOOLS_SENTINEL,
-        profile: str | object = "self",
+        profile: str | ToolProfile | object = _PROFILE_SENTINEL,
         tool_names: list[str] | None = None,
         tool_handlers: dict[str, Callable] | None = None,
         llm_client: LLMClient | None = None,
@@ -2239,9 +2266,11 @@ class Tract:
             tools: Tool definitions (OpenAI format). Pass an explicit empty
                 list ``[]`` to send no tools. When omitted, tools are built
                 from ``profile`` / ``tool_names``.
-            profile: Tool profile name (``"self"``, ``"supervisor"``,
-                ``"full"``) or a :class:`ToolProfile` instance. Only used
-                when ``tools`` is not provided. Default ``"self"``.
+            profile: Tool profile name (``"compact"``, ``"self"``,
+                ``"supervisor"``, ``"full"``) or a :class:`ToolProfile`
+                instance. Only used when ``tools`` is not provided.
+                Falls back to ``tool_profile`` from :meth:`open`, then
+                ``"compact"``.
             tool_names: Subset of tool names to include. Only used when
                 ``tools`` is not provided. Filters the profile's tools to
                 just the named ones.
@@ -2266,7 +2295,10 @@ class Tract:
 
         # Resolve tools
         if tools is self._TOOLS_SENTINEL:
-            resolved_tools = self.as_tools(profile=profile, format="openai")
+            effective_profile = (
+                self._tool_profile or "compact"
+            ) if profile is self._PROFILE_SENTINEL else profile
+            resolved_tools = self.as_tools(profile=effective_profile, format="openai")
             if tool_names is not None:
                 allowed = set(tool_names)
                 resolved_tools = [
@@ -3080,13 +3112,17 @@ class Tract:
         """Validate tags against registry in strict mode.
 
         Raises:
-            TagNotRegisteredError: If any tag is not registered.
+            TagNotRegisteredError: If any tag is not registered (reports all
+                unregistered tags at once).
         """
         if not self._strict_tags or self._tag_registry_repo is None:
             return
-        for tag in tags:
-            if not self._tag_registry_repo.is_registered(self._tract_id, tag):
-                raise TagNotRegisteredError(tag)
+        unregistered = [
+            tag for tag in tags
+            if not self._tag_registry_repo.is_registered(self._tract_id, tag)
+        ]
+        if unregistered:
+            raise TagNotRegisteredError(unregistered)
 
     def _classify_tags(
         self,
@@ -5252,7 +5288,7 @@ class Tract:
     def as_tools(
         self,
         *,
-        profile: ProfileName | ToolProfile | str = "self",
+        profile: ProfileName | ToolProfile | str | object = _PROFILE_SENTINEL,
         tool_names: list[ToolName | str] | None = None,
         overrides: dict[ToolName | str, str] | None = None,
         format: Literal["openai", "anthropic"] = "openai",
@@ -5263,8 +5299,10 @@ class Tract:
         overrides, and format conversion in one call.
 
         Args:
-            profile: A profile name (``"self"``, ``"supervisor"``, ``"full"``)
-                or a :class:`~tract.toolkit.models.ToolProfile` instance.
+            profile: A profile name (``"compact"``, ``"self"``, ``"supervisor"``,
+                ``"full"``) or a :class:`~tract.toolkit.models.ToolProfile`
+                instance.  Falls back to ``tool_profile`` from :meth:`open`,
+                then ``"compact"``.
             tool_names: Optional list of tool names to include. When provided,
                 only tools whose names are in this list are returned (applied
                 after profile filtering).
@@ -5275,8 +5313,11 @@ class Tract:
         Returns:
             List of tool definition dicts in the requested format.
         """
+        effective_profile = (
+            self._tool_profile or "compact"
+        ) if profile is self._PROFILE_SENTINEL else profile
         filtered = self._resolve_tools(
-            profile=profile, tool_names=tool_names, overrides=overrides,
+            profile=effective_profile, tool_names=tool_names, overrides=overrides,
         )
         if format == "openai":
             return [tool.to_openai() for tool in filtered]
@@ -5290,7 +5331,7 @@ class Tract:
     def as_callable_tools(
         self,
         *,
-        profile: ProfileName | ToolProfile | str = "self",
+        profile: ProfileName | ToolProfile | str | object = _PROFILE_SENTINEL,
         tool_names: list[ToolName | str] | None = None,
         overrides: dict[ToolName | str, str] | None = None,
     ) -> list:
@@ -5301,8 +5342,10 @@ class Tract:
         that introspects callables: Agno, LangChain, CrewAI, LangGraph, etc.
 
         Args:
-            profile: A profile name (``"self"``, ``"supervisor"``, ``"full"``)
-                or a :class:`~tract.toolkit.models.ToolProfile` instance.
+            profile: A profile name (``"compact"``, ``"self"``, ``"supervisor"``,
+                ``"full"``) or a :class:`~tract.toolkit.models.ToolProfile`
+                instance.  Falls back to ``tool_profile`` from :meth:`open`,
+                then ``"compact"``.
             tool_names: Optional list of tool names to include.
             overrides: Optional dict mapping tool names to replacement
                 descriptions.  Applied on top of the profile's descriptions.
@@ -5312,8 +5355,11 @@ class Tract:
         """
         from tract.toolkit.callables import tools_to_callables
 
+        effective_profile = (
+            self._tool_profile or "compact"
+        ) if profile is self._PROFILE_SENTINEL else profile
         filtered = self._resolve_tools(
-            profile=profile, tool_names=tool_names, overrides=overrides,
+            profile=effective_profile, tool_names=tool_names, overrides=overrides,
         )
         return tools_to_callables(filtered)
 

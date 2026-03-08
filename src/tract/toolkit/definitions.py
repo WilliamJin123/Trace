@@ -38,11 +38,11 @@ def get_all_tools(tract: Tract) -> list[ToolDefinition]:
         ToolDefinition(
             name="commit",
             description=(
-                "Record new context into the tract. Use this to add messages, "
-                "instructions, tool results, or any content to the conversation "
-                "history. The content dict must include a 'content_type' field "
-                "(e.g. 'dialogue', 'instruction', 'tool_io', 'reasoning', "
-                "'artifact', 'output', 'freeform')."
+                "Save content to your context history. Use after generating a "
+                "response, receiving input, or completing a reasoning step. "
+                "Content dict needs a 'content_type' ('dialogue', 'instruction', "
+                "'tool_io', 'reasoning', 'artifact', 'output', 'freeform'). "
+                "Tags are auto-registered if needed."
             ),
             parameters={
                 "type": "object",
@@ -107,11 +107,10 @@ def get_all_tools(tract: Tract) -> list[ToolDefinition]:
         ToolDefinition(
             name="annotate",
             description=(
-                "Set a priority annotation on a commit. Use 'pinned' to protect "
-                "important context from compression, 'skip' to exclude irrelevant "
-                "content from compilation, or 'normal' to reset. Note: "
-                "instruction/system commits are already pinned by default — "
-                "check log output for current priorities before annotating."
+                "Set priority on a commit. Use 'pinned' to protect content "
+                "you'll need later (prevents compression), 'skip' to hide "
+                "resolved/irrelevant content from compilation. Check log "
+                "first — instruction/system commits are already pinned."
             ),
             parameters={
                 "type": "object",
@@ -140,9 +139,8 @@ def get_all_tools(tract: Tract) -> list[ToolDefinition]:
         ToolDefinition(
             name="status",
             description=(
-                "Get the current tract status including branch name, HEAD commit, "
-                "token count, and budget usage percentage. Use this to understand "
-                "the current state before deciding on next actions."
+                "Check current state: branch, HEAD, token count, budget usage. "
+                "Use before deciding whether to compress, branch, or commit."
             ),
             parameters={
                 "type": "object",
@@ -204,9 +202,9 @@ def get_all_tools(tract: Tract) -> list[ToolDefinition]:
         ToolDefinition(
             name="compress",
             description=(
-                "Compress a range of commits into a summary to reduce token usage. "
-                "Pinned commits are preserved verbatim. Requires an LLM client to be "
-                "configured via tract.configure_llm() unless manual content is provided."
+                "Summarize older context to free up token budget. Use when "
+                "status shows budget above 70% or when context feels bloated "
+                "with resolved details."
             ),
             parameters={
                 "type": "object",
@@ -252,9 +250,10 @@ def get_all_tools(tract: Tract) -> list[ToolDefinition]:
         ToolDefinition(
             name="branch",
             description=(
-                "Create a new branch from the current position or a specified "
-                "commit. Use branches to explore alternative conversation paths "
-                "or organize context by topic."
+                "Create a new branch to work on something independently. Use "
+                "BEFORE starting a second option, alternative approach, or "
+                "tangent — anything that should not influence other work. "
+                "Branch first, then commit to the branch."
             ),
             parameters={
                 "type": "object",
@@ -282,9 +281,9 @@ def get_all_tools(tract: Tract) -> list[ToolDefinition]:
         ToolDefinition(
             name="switch",
             description=(
-                "Switch to a different branch. Changes the active context to "
-                "the target branch's history. Only accepts branch names (not "
-                "commit hashes)."
+                "Switch to a different branch. Use when you need to resume "
+                "work on another line of thought, or return to main after "
+                "finishing a branch."
             ),
             parameters={
                 "type": "object",
@@ -302,9 +301,9 @@ def get_all_tools(tract: Tract) -> list[ToolDefinition]:
         ToolDefinition(
             name="merge",
             description=(
-                "Merge a branch into the current branch. Combines context from "
-                "two branches. Requires an LLM client to be configured via "
-                "tract.configure_llm() for semantic conflict resolution."
+                "Combine a branch into your current branch. Use after finishing "
+                "independent work on a branch and wanting to bring results "
+                "back together."
             ),
             parameters={
                 "type": "object",
@@ -797,6 +796,17 @@ def _handle_commit(
     tags: list[str] | None = None,
 ) -> str:
     from tract.models.commit import CommitOperation
+
+    # Auto-register unknown tags so commit never fails on unregistered tags
+    if tags:
+        for tag_name in tags:
+            if (
+                tract._tag_registry_repo is not None
+                and not tract._tag_registry_repo.is_registered(
+                    tract._tract_id, tag_name
+                )
+            ):
+                tract.register_tag(tag_name)
 
     op = CommitOperation(operation)
     info = tract.commit(

@@ -6,8 +6,8 @@ how to organize its findings and stay within limits. The parent merges
 and synthesizes.
 
 Tools available:
-  Parent: branch, switch, merge, list_branches, compile, status, log, commit
-  Child:  commit, compress, status, log, compile
+  Parent: branch, switch, merge, list_branches, commit
+  Child:  commit, compress, status
 
 Demonstrates: Does the child agent autonomously commit structured findings
               and compress to stay within budget for clean handoff?
@@ -41,9 +41,6 @@ PARENT_PROFILE = ToolProfile(
         "switch": ToolConfig(enabled=True),
         "merge": ToolConfig(enabled=True),
         "list_branches": ToolConfig(enabled=True),
-        "compile": ToolConfig(enabled=True),
-        "status": ToolConfig(enabled=True),
-        "log": ToolConfig(enabled=True),
         "commit": ToolConfig(enabled=True),
     },
 )
@@ -54,8 +51,6 @@ CHILD_PROFILE = ToolProfile(
         "commit": ToolConfig(enabled=True),
         "compress": ToolConfig(enabled=True),
         "status": ToolConfig(enabled=True),
-        "log": ToolConfig(enabled=True),
-        "compile": ToolConfig(enabled=True),
     },
 )
 
@@ -137,13 +132,11 @@ def main():
         message=LLMConfig(model=llm.small, temperature=0.0),
     )
 
-    child_tools = child.as_tools(profile=CHILD_PROFILE)
-    child.set_tools(child_tools)
-
     # Research task — more content than budget comfortably holds
     result = child.run(
         "Research 3 caching patterns: write-through, cache-aside, "
         "and write-back. For each: how it works, pros/cons, best use case.",
+        profile=CHILD_PROFILE,
         max_steps=10, max_tokens=512,
         on_step=log.on_step, on_tool_result=log.on_tool_result,
     )
@@ -171,12 +164,10 @@ def main():
     merge_result = parent_tract.merge("research-caching")
     merge_result.pprint()
 
-    parent_tools = parent_tract.as_tools(profile=PARENT_PROFILE)
-    parent_tract.set_tools(parent_tools)
-
     result = parent_tract.run(
         "Research complete. Which caching strategy and why? "
         "Give a concrete recommendation.",
+        profile=PARENT_PROFILE,
         max_steps=6, max_tokens=512,
         on_step=log.on_step, on_tool_result=log.on_tool_result,
     )
