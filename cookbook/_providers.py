@@ -27,11 +27,13 @@ class Provider:
     base_url: str
     large: str
     small: str
+    xlarge: str = ""
 
 
 cerebras = Provider(
     api_key=os.environ.get("CEREBRAS_API_KEY", ""),
     base_url=os.environ.get("CEREBRAS_BASE_URL", ""),
+    xlarge="gpt-oss-120b",
     large="gpt-oss-120b",
     small="llama3.1-8b",
 )
@@ -39,6 +41,7 @@ cerebras = Provider(
 groq = Provider(
     api_key=os.environ.get("GROQ_API_KEY", ""),
     base_url=os.environ.get("GROQ_BASE_URL", ""),
+    xlarge="moonshotai/kimi-k2-instruct-0905",
     large="meta-llama/llama-4-scout-17b-16e-instruct",
     small="qwen/qwen3-32b",
 )

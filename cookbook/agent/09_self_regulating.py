@@ -1,25 +1,15 @@
-"""Self-Regulating Agent
+"""Self-Regulating Agent (Implicit)
 
-An LLM agent that controls its own behavior using the three primitives:
+The agent is given two tasks with dramatically conflicting behavioral
+requirements: first write enthusiastic marketing copy, then write a
+brutally honest security audit of the same product. The shift from
+"advocate" to "adversary" creates natural pressure for self-regulation.
 
-  1. configure   -- sets its own parameters (temperature, strategy)
-  2. directive   -- writes standing instructions for itself (deduplicated)
-  3. create_middleware -- generates Python validation code at runtime
+Tools available: configure, directive, create_middleware, remove_middleware,
+                 get_config, commit, status, log, transition
 
-The developer sets up the tract and gives the agent the tools. The agent
-decides what rules it needs, writes them as config/directives/middleware,
-and enforces them on itself.
-
-Key pattern: the agent creates a regex middleware to validate its own
-commit messages, then updates its own directives as the task evolves.
-
-Tools exercised: configure, directive, create_middleware, remove_middleware,
-                 commit, get_config, status, transition
-
-Demonstrates: Agent self-configuration, agent-generated middleware,
-              directive override-by-name, full self-regulation loop
-
-Requires: LLM API key (uses Groq provider)
+Demonstrates: Does the model proactively set directives, configure behavior,
+              or create middleware to enforce phase-specific constraints?
 """
 
 import io
@@ -35,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import groq as llm
 from _logging import StepLogger
 
-MODEL_ID = llm.large
+MODEL_ID = llm.xlarge
 
 
 def main():
@@ -44,20 +34,21 @@ def main():
         return
 
     print("=" * 70)
-    print("Self-Regulating Agent")
+    print("Self-Regulating Agent (Implicit)")
     print("=" * 70)
     print()
-    print("  The agent configures its own behavior, writes its own directives,")
-    print("  and creates its own middleware guards -- all via tools.")
+    print("  Phase 1: Write marketing copy (enthusiastic advocate)")
+    print("  Phase 2: Write security audit (ruthless critic)")
+    print("  Will the agent self-regulate for the behavioral shift?")
     print()
 
     with Tract.open(
         api_key=llm.api_key,
         base_url=llm.base_url,
         model=MODEL_ID,
+        auto_message=llm.small,
     ) as t:
 
-        # Give the agent self-regulation tools + basic context tools
         tools = t.as_tools(
             tool_names=[
                 "configure", "directive", "create_middleware",
@@ -69,85 +60,59 @@ def main():
         t.set_tools(tools)
 
         t.system(
-            "You are an autonomous agent that regulates its own behavior.\n\n"
-            "You have three self-regulation tools:\n"
-            "1. configure -- set key-value settings (temperature, strategy, custom keys)\n"
-            "2. directive -- set named standing instructions for yourself (deduplicated by name)\n"
-            "3. create_middleware -- write Python code that validates your own operations\n\n"
-            "Use these tools proactively:\n"
-            "- When you start a new phase of work, configure appropriate settings\n"
-            "- When you need behavioral rules, create directives\n"
-            "- When you need enforcement, create middleware\n\n"
-            "Middleware code must define handler(ctx). Available: BlockedError, re, json.\n"
-            "Example: def handler(ctx):\\n    if 'bad' in (ctx.commit.message or ''):\\n"
-            "        raise BlockedError('pre_commit', 'rejected')"
+            "You are a technical writer who adapts style to the task."
         )
 
         log = StepLogger()
 
-        # --- Phase 1: Agent sets up its own rules ---
-        print("=== Phase 1: Agent self-configures ===\n")
+        # Phase 1: Marketing copy (enthusiastic, positive)
+        print("=== Phase 1: Marketing copy ===\n")
         result = t.run(
-            "You're starting a documentation writing task. Set yourself up:\n\n"
-            "1. Use configure to set: stage='drafting', temperature=0.8\n"
-            "2. Use directive to create a 'format' directive: "
-            "'All documentation must use markdown with headers, bullet points, "
-            "and code examples.'\n"
-            "3. Use directive to create a 'tone' directive: "
-            "'Write in a clear, technical tone. Avoid jargon unless defining it.'\n"
-            "4. Use get_config to verify your stage is 'drafting'\n"
-            "5. Use status to check your current state",
-            max_steps=10,
+            "Write short marketing copy for 'Nexus' API framework. "
+            "Selling points: 1M req/sec, built-in auth, auto OpenAPI docs. "
+            "Make it compelling for the landing page.",
+            max_steps=6, max_tokens=512,
             on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()
 
-        # --- Phase 2: Agent creates its own middleware ---
-        print("\n\n=== Phase 2: Agent creates middleware guard ===\n")
+        # Phase 2: Security audit (critical, adversarial)
+        # The behavioral shift is dramatic — the agent just wrote glowing
+        # marketing copy and now must tear the same product apart.
+        print("\n\n=== Phase 2: Security audit ===\n")
         result = t.run(
-            "Now create a middleware guard for your own commits. Use create_middleware "
-            "to write a post_commit handler that tracks how many commits you've made. "
-            "The handler should print a message when commit count exceeds 5.\n\n"
-            "The code should be:\n"
-            "def handler(ctx):\n"
-            "    if ctx.commit:\n"
-            "        print(f'[guard] commit {ctx.commit.commit_hash[:8]}')\n\n"
-            "After creating the middleware, make 2-3 commits with documentation "
-            "content (use commit with content_type='artifact', artifact_type='document').",
-            max_steps=10,
+            "Now write a security audit of Nexus as a penetration tester. "
+            "Be ruthlessly critical — find gaps in the auth claims, "
+            "question the performance numbers, flag what was left out.",
+            max_steps=8, max_tokens=512,
             on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()
 
-        # --- Phase 3: Agent overrides its own directive ---
-        print("\n\n=== Phase 3: Agent updates its own directives ===\n")
-        result = t.run(
-            "The task has shifted from drafting to review. Update yourself:\n\n"
-            "1. Use configure to set: stage='review', temperature=0.3\n"
-            "2. Use directive to OVERRIDE 'tone' (same name, new text): "
-            "'Be critical and precise. Flag any ambiguity or missing details.'\n"
-            "3. Use get_config to verify stage='review'\n"
-            "4. Use status to see your final state\n\n"
-            "Note: because 'tone' is the same name as before, the old directive "
-            "is automatically replaced -- only the new one appears in context.",
-            max_steps=10,
-            on_step=log.on_step, on_tool_result=log.on_tool_result,
-        )
-        result.pprint()
-
-        # --- Final state ---
-        print("\n\n=== Final State ===\n")
+        # Report
+        print("\n\n=== Self-Regulation Report ===\n")
         print(f"  Branch: {t.current_branch}")
-        print(f"  Configs: {t.get_all_configs()}")
         print(f"  Commits: {len(t.log())}")
 
+        configs = t.get_all_configs()
+        if configs:
+            print(f"  Configs set: {configs}")
+        else:
+            print("  No configs set by agent.")
+
         ctx = t.compile()
-        print(f"\n  Compiled context: {len(ctx.messages)} messages, {ctx.token_count} tokens")
-        print("\n  Messages with 'directive' or 'config':")
-        for m in ctx.messages:
-            if any(kw in m.content.lower() for kw in ["directive", "format", "tone", "critical"]):
-                preview = m.content[:80].replace("\n", " ")
-                print(f"    [{m.role}] {preview}...")
+        directives = [m for m in ctx.messages if "directive" in m.content.lower()
+                      or m.role == "system" and m.content != ctx.messages[0].content]
+        if len(directives) > 0:
+            print(f"  Directives created: {len(directives)}")
+        else:
+            print("  No directives created by agent.")
+
+        middleware_count = sum(len(v) for v in t._middleware.values())
+        if middleware_count > 0:
+            print(f"  Middleware handlers: {middleware_count}")
+        else:
+            print("  No middleware created by agent.")
 
 
 if __name__ == "__main__":
@@ -158,4 +123,3 @@ if __name__ == "__main__":
 # Config & directives (no LLM):  getting_started/02_config_and_directives.py
 # Middleware patterns (no LLM):   config_and_middleware/02_event_automation.py
 # Quality gates (LLM):            agent/07_quality_gates.py
-# Coding workflow (LLM):          workflows/01_coding_assistant.py

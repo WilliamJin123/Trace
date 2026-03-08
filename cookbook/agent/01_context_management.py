@@ -1,162 +1,132 @@
-"""Agent-Driven Context Management
+"""Agent-Driven Context Management (Implicit)
 
-An LLM agent monitors and maintains its own context health autonomously.
-It checks status, pins important information, compresses older turns,
-adjusts model settings, and runs garbage collection -- all through
-genuine tool calls decided by the agent, not hardcoded logic.
+A colleague has been loading raw research notes into the workspace.
+The agent picks up an in-progress workspace that is already near its
+token budget. The task requires producing substantial new content —
+the agent must figure out how to make room.
 
-Tools exercised: status, compile, compress, annotate, gc, configure_model, log
+Tools available: status, compile, compress, annotate, gc, log, commit
 
-Demonstrates: LLM-driven context maintenance, budget-aware compression,
-              priority annotations, model switching, garbage collection
+Demonstrates: Does the model check status, notice budget pressure,
+              and proactively compress/skip old content?
 """
 
 import io
-import json
 import sys
 from pathlib import Path
 
 # Windows console encoding fix
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
-from tract import Tract, TractConfig, TokenBudgetConfig, Priority
-from tract.toolkit import ToolConfig, ToolExecutor, ToolProfile
+from tract import Tract, TractConfig, TokenBudgetConfig
+from tract.toolkit import ToolConfig, ToolProfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _providers import groq as llm
+from _providers import cerebras as llm
 from _logging import StepLogger
 
 MODEL_ID = llm.large
 
 
-# Tool profile: context management tools
-CONTEXT_PROFILE = ToolProfile(
-    name="context-manager",
+PROFILE = ToolProfile(
+    name="research-analyst",
     tool_configs={
-        "status": ToolConfig(
-            enabled=True,
-            description=(
-                "Check context health: branch, HEAD, token count, budget "
-                "percentage. Call this first to understand the current state "
-                "before taking any maintenance action."
-            ),
-        ),
-        "compile": ToolConfig(
-            enabled=True,
-            description=(
-                "Compile current context into messages. Shows message count "
-                "and total tokens. Use to verify state after operations."
-            ),
-        ),
-        "compress": ToolConfig(
-            enabled=True,
-            description=(
-                "Compress a range of commits into a summary to reduce token "
-                "usage. Pinned commits are preserved verbatim. Optionally "
-                "set target_tokens and provide instructions for the summary."
-            ),
-        ),
-        "annotate": ToolConfig(
-            enabled=True,
-            description=(
-                "Set priority on a commit. Use 'pinned' to protect important "
-                "context from compression. Use 'skip' to hide irrelevant "
-                "content. Use 'normal' to reset. Requires a commit hash "
-                "(find hashes via log)."
-            ),
-        ),
-        "gc": ToolConfig(
-            enabled=True,
-            description=(
-                "Run garbage collection to remove orphaned commits. Frees "
-                "storage space. Set min_age_days to control retention."
-            ),
-        ),
-        "configure_model": ToolConfig(
-            enabled=True,
-            description=(
-                "Change model or temperature. Use a smaller model for "
-                "compression tasks, a larger model for complex reasoning. "
-                "Set operation='compress' to configure only compression."
-            ),
-        ),
-        "log": ToolConfig(
-            enabled=True,
-            description="View recent commits to find hashes for annotate/compress.",
-        ),
+        "status": ToolConfig(enabled=True),
+        "compile": ToolConfig(enabled=True),
+        "compress": ToolConfig(enabled=True),
+        "annotate": ToolConfig(enabled=True),
+        "gc": ToolConfig(enabled=True),
+        "log": ToolConfig(enabled=True),
+        "commit": ToolConfig(enabled=True),
     },
 )
 
 
 def main():
     if not llm.api_key:
-        print("SKIPPED (no API key)")
+        print("SKIPPED (no API key -- set CEREBRAS_API_KEY)")
         return
 
     print("=" * 60)
-    print("Agent-Driven Context Management")
+    print("Agent-Driven Context Management (Implicit)")
     print("=" * 60)
     print()
-    print("  The agent will: check status, pin important content,")
-    print("  compress old turns, and run GC -- all autonomously.")
+    print("  Pre-loaded workspace near budget. Agent must produce a")
+    print("  substantial deliverable — will it manage context to fit?")
     print()
 
-    config = TractConfig(token_budget=TokenBudgetConfig(max_tokens=2000))
+    config = TractConfig(token_budget=TokenBudgetConfig(max_tokens=1500))
     with Tract.open(
         config=config,
         api_key=llm.api_key,
         base_url=llm.base_url,
         model=MODEL_ID,
+        auto_message=llm.small,
     ) as t:
-        # Register tools from the profile
-        tools = t.as_tools(profile=CONTEXT_PROFILE)
+        tools = t.as_tools(profile=PROFILE)
         t.set_tools(tools)
 
         t.system(
-            "You are a context management assistant. You have tools to "
-            "inspect, compress, annotate, and clean up conversation history. "
-            "When asked to maintain the context, use these tools to keep it "
-            "healthy and within budget."
+            "You are a research analyst specializing in quantum computing."
         )
 
-        # Fill up the context with research notes
-        for i in range(8):
-            t.user(f"Research note {i}: Quantum computing uses qubits which "
-                   f"can be in superposition states. Error rate: {0.1 / (i+1):.3f}")
-            t.assistant(f"Recorded note {i}. Key finding: error rate {0.1/(i+1):.3f}.")
+        # Simulate a colleague's prior work: raw notes filling ~80% of budget
+        notes = [
+            "IBM Eagle: 127 qubits, error 0.1. Roadmap 100k qubits by 2033.",
+            "Google Sycamore: 53 qubits, supremacy claim. Willow: 105 qubits.",
+            "IonQ Forte: 32 qubits, error 0.03. Best gate fidelity 99.9%.",
+            "Microsoft topological: experimental, error 0.025. Majorana approach.",
+            "PsiQuantum photonic: room temp, error 0.02. Silicon fab advantage.",
+            "QuEra neutral atoms: 280 qubits, error 0.017. 48 logical qubits.",
+        ]
+        for i, note in enumerate(notes):
+            t.user(f"Note {i}: {note}")
+            t.assistant(f"Noted #{i}.")
 
-        # Pin the most important note manually (so agent can find it)
-        important = t.log(limit=2)[0]
-        t.annotate(important.commit_hash, Priority.PINNED, reason="Key error rate data")
+        status = t.status()
+        pct = status.token_count / status.token_budget_max * 100
+        print(f"  Context: {status.token_count} tokens ({pct:.0f}% of {status.token_budget_max})")
 
-        print(f"  Context filled: {t.status().token_count} tokens")
-        print(f"  Budget: {t.status().token_budget_max} max")
-
-        print("\n  BEFORE maintenance:")
+        print("\n  BEFORE:")
         t.compile().pprint(style="compact")
 
-        # Ask the agent to maintain the context
-        print("\n  --- Task: Assess and maintain context ---")
+        # Task: the agent inherits a workspace and must produce new content.
+        # The framing naturally leads to checking status/log first.
+        print("\n  --- Task ---")
         log = StepLogger()
         result = t.run(
-            "The context is getting large. Please:\n"
-            "1. Check status to see budget usage\n"
-            "2. Use log to find commits, then pin any important ones\n"
-            "3. Compress older turns to free up space\n"
-            "4. Run GC to clean up orphaned commits\n"
-            "5. Check status again to confirm improvement",
-            max_steps=12, on_step=log.on_step, on_tool_result=log.on_tool_result,
+            "A colleague loaded these research notes and you're taking over. "
+            "Assess what's here, then produce a short recommendation: "
+            "which 2 platforms are the best investment bets and why?",
+            max_steps=10, max_tokens=512,
+            on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()
 
-        # Show final state
-        print("\n  AFTER maintenance:")
+        print("\n  AFTER:")
         t.compile().pprint(style="compact")
 
         status = t.status()
-        print(f"\n  Final: {status.token_count} tokens, "
-              f"{status.commit_count} commits")
+        print(f"\n  Final: {status.token_count} tokens, {status.commit_count} commits")
+
+        # Report which context management tools were used
+        mgmt_tools = {"compress", "annotate", "gc"}
+        used = set()
+        for entry in t.log(limit=50):
+            if entry.message:
+                for tool in mgmt_tools:
+                    if tool in entry.message:
+                        used.add(tool)
+        if used:
+            print(f"  Context management tools used: {', '.join(sorted(used))}")
+        else:
+            print("  No context management tools were used autonomously.")
 
 
 if __name__ == "__main__":
     main()
+
+
+# --- See also ---
+# Budget enforcement modes:  getting_started/03_budget_and_compression.py
+# Manual compression:        config_and_middleware/03_compression_strategies.py

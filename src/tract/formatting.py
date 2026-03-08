@@ -1025,6 +1025,10 @@ def pprint_loop_result(
             )
             header_parts.append(f"[dim]steps: {per_step}[/dim]")
 
+    # Error/block reason
+    if result.status in ("error", "blocked") and result.reason:
+        header_parts.append(f"[red]{result.reason}[/red]")
+
     # Config (model shown prominently)
     config = getattr(result, "config", None)
     config_inline = _format_config_inline(config)

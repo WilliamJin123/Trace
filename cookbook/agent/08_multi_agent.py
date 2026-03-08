@@ -1,118 +1,61 @@
-"""Multi-Agent Delegation via the Agent Loop
+"""Multi-Agent Delegation (Implicit)
 
-A parent agent delegates work to a child by branching, the child agent
-runs independently on the branch, and the parent merges results back.
-Unlike manual multi-agent examples, this shows delegation through the
-agent loop (t.run) -- agents make their own decisions about what to
-research and when they're done.
+A parent agent delegates research to a child agent on a branch. The child
+has a tight budget and a substantial research task — it must figure out
+how to organize its findings and stay within limits. The parent merges
+and synthesizes.
 
-Pattern: parent branches -> child runs on branch -> parent merges
+Tools available:
+  Parent: branch, switch, merge, list_branches, compile, status, log, commit
+  Child:  commit, compress, status, log, compile
 
-Tools exercised: branch, switch, merge, commit, compress, compile,
-                 status, log, list_branches
-
-Demonstrates: Agent-driven delegation, branch-based isolation,
-              compress-then-merge for clean handoff, parent/child
-              coordination through branch mechanics
+Demonstrates: Does the child agent autonomously commit structured findings
+              and compress to stay within budget for clean handoff?
 """
 
 import io
-import json
 import sys
 from pathlib import Path
 
 # Windows console encoding fix
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
-from tract import Tract, Session
-from tract.toolkit import ToolConfig, ToolExecutor, ToolProfile
+from tract import Tract, Session, TractConfig, TokenBudgetConfig
+from tract.toolkit import ToolConfig, ToolProfile
+
+# Budget applied to parent — child inherits it via deploy(), creating
+# natural pressure for the child to organize and compress its research.
+SHARED_CONFIG = TractConfig(token_budget=TokenBudgetConfig(max_tokens=2000))
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import groq as llm
 from _logging import StepLogger
 
-MODEL_ID = llm.large
+MODEL_ID = llm.xlarge
 
 
-# Tool profile for the parent: coordination tools
 PARENT_PROFILE = ToolProfile(
     name="coordinator",
     tool_configs={
-        "branch": ToolConfig(
-            enabled=True,
-            description=(
-                "Create a branch for delegating work to a sub-agent. Name "
-                "it descriptively (e.g. 'research-caching'). The child "
-                "agent will work on this branch independently."
-            ),
-        ),
-        "switch": ToolConfig(
-            enabled=True,
-            description="Switch to a branch to inspect work or return to main.",
-        ),
-        "merge": ToolConfig(
-            enabled=True,
-            description=(
-                "Merge a child branch back into the current branch. Use "
-                "after the child has completed and compressed their work."
-            ),
-        ),
-        "list_branches": ToolConfig(
-            enabled=True,
-            description="List all branches to see available child work.",
-        ),
-        "compile": ToolConfig(
-            enabled=True,
-            description="View compiled context on the current branch.",
-        ),
-        "status": ToolConfig(
-            enabled=True,
-            description="Check current position and token count.",
-        ),
-        "log": ToolConfig(
-            enabled=True,
-            description="View commit history on current branch.",
-        ),
-        "commit": ToolConfig(
-            enabled=True,
-            description="Record coordination decisions and summaries.",
-        ),
+        "branch": ToolConfig(enabled=True),
+        "switch": ToolConfig(enabled=True),
+        "merge": ToolConfig(enabled=True),
+        "list_branches": ToolConfig(enabled=True),
+        "compile": ToolConfig(enabled=True),
+        "status": ToolConfig(enabled=True),
+        "log": ToolConfig(enabled=True),
+        "commit": ToolConfig(enabled=True),
     },
 )
 
-
-# Tool profile for the child: research tools
 CHILD_PROFILE = ToolProfile(
     name="researcher",
     tool_configs={
-        "commit": ToolConfig(
-            enabled=True,
-            description=(
-                "Record research findings. Use content_type='dialogue' with "
-                "role='assistant' for analysis, or content_type='artifact' "
-                "for structured deliverables."
-            ),
-        ),
-        "compress": ToolConfig(
-            enabled=True,
-            description=(
-                "Compress your research into a summary. Use content= to "
-                "provide a concise summary of your findings. Do this before "
-                "the parent merges your branch."
-            ),
-        ),
-        "status": ToolConfig(
-            enabled=True,
-            description="Check your branch status and token count.",
-        ),
-        "log": ToolConfig(
-            enabled=True,
-            description="View your commit history.",
-        ),
-        "compile": ToolConfig(
-            enabled=True,
-            description="View your compiled context.",
-        ),
+        "commit": ToolConfig(enabled=True),
+        "compress": ToolConfig(enabled=True),
+        "status": ToolConfig(enabled=True),
+        "log": ToolConfig(enabled=True),
+        "compile": ToolConfig(enabled=True),
     },
 )
 
@@ -123,22 +66,22 @@ def main():
         return
 
     print("=" * 70)
-    print("Multi-Agent Delegation: parent branches, child researches, merge back")
+    print("Multi-Agent Delegation (Implicit)")
     print("=" * 70)
     print()
-    print("  1. Parent creates a branch for the child")
-    print("  2. Child agent runs independently on the branch")
-    print("  3. Child compresses findings into a summary")
-    print("  4. Parent merges the branch back")
+    print("  Parent delegates to child on a branch.")
+    print("  Child has tight budget — must organize and compress for handoff.")
     print()
 
-    # Use Session for multi-agent coordination
     session = Session.open()
-    parent_tract = session.create_tract(display_name="coordinator")
+    parent_tract = session.create_tract(
+        display_name="coordinator", config=SHARED_CONFIG,
+    )
 
-    # Configure LLM on the parent tract
+    # Configure LLM
+    from dataclasses import replace
     from tract.llm.client import OpenAIClient
-    from tract.models.config import LLMConfig
+    from tract.models.config import LLMConfig, OperationConfigs
 
     parent_client = OpenAIClient(
         api_key=llm.api_key,
@@ -149,41 +92,37 @@ def main():
     parent_tract._owns_llm_client = True
     parent_tract._default_config = LLMConfig(model=MODEL_ID)
 
-    # Set up parent context
+    # Enable LLM-generated commit messages (using the small model)
+    parent_tract._auto_message_enabled = True
+    parent_tract._operation_configs = replace(
+        parent_tract._operation_configs,
+        message=LLMConfig(model=llm.small, temperature=0.0),
+    )
+
     parent_tract.system(
-        "You are a project coordinator. You delegate research tasks to "
-        "sub-agents by creating branches. Each sub-agent works independently "
-        "on its branch, then you merge the results."
+        "You are a coordinator evaluating caching for microservices."
     )
     parent_tract.user(
-        "We need to evaluate caching strategies for our microservice "
-        "architecture. Research write-through, write-back, and cache-aside "
-        "patterns, then give me a recommendation."
+        "Evaluate caching strategies for our microservices. "
+        "Research options and recommend one."
     )
-    parent_tract.assistant(
-        "I'll delegate this research to a specialist agent on a separate branch."
-    )
+    parent_tract.assistant("I'll delegate the research and synthesize.")
 
     log = StepLogger()
 
-    print("  Parent context (before delegation):")
+    print("  Parent context:")
     parent_tract.compile().pprint(style="compact")
 
-    # --- Step 1: Parent creates a research branch ---
-    print("\n=== Step 1: Parent creates research branch ===\n")
+    # Create research branch and deploy child
+    print("\n=== Child agent researches ===\n")
     parent_tract.branch("research-caching", switch=False)
-    print(f"  Created branch: research-caching")
-    print(f"  Parent stays on: {parent_tract.current_branch}")
 
-    # --- Step 2: Deploy child on the branch ---
-    print("\n=== Step 2: Child agent works on branch ===\n")
     child = session.deploy(
         parent_tract,
         purpose="research caching patterns",
         branch_name="research-caching",
     )
 
-    # Configure LLM on child
     child_client = OpenAIClient(
         api_key=llm.api_key,
         base_url=llm.base_url,
@@ -192,60 +131,64 @@ def main():
     child.configure_llm(child_client)
     child._owns_llm_client = True
     child._default_config = LLMConfig(model=MODEL_ID)
+    child._auto_message_enabled = True
+    child._operation_configs = replace(
+        child._operation_configs,
+        message=LLMConfig(model=llm.small, temperature=0.0),
+    )
 
-    # Set child tools
     child_tools = child.as_tools(profile=CHILD_PROFILE)
     child.set_tools(child_tools)
 
-    # Child runs autonomously
+    # Research task — more content than budget comfortably holds
     result = child.run(
-        "Research caching patterns for microservices. Cover:\n"
-        "1. Write-through caching (pros, cons, use cases)\n"
-        "2. Write-back caching (pros, cons, use cases)\n"
-        "3. Cache-aside pattern (pros, cons, use cases)\n\n"
-        "Commit each finding as a separate artifact. When done, compress "
-        "all your findings into a one-paragraph summary using the compress "
-        "tool with content='<your summary>'.",
-        max_steps=12, on_step=log.on_step, on_tool_result=log.on_tool_result,
+        "Research 3 caching patterns: write-through, cache-aside, "
+        "and write-back. For each: how it works, pros/cons, best use case.",
+        max_steps=10, max_tokens=512,
+        on_step=log.on_step, on_tool_result=log.on_tool_result,
     )
     result.pprint()
 
-    print(f"\n  Child commits: {len(child.log())}")
-    print("\n  Child context (after research + compression):")
+    child_status = child.status()
+    child_pct = child_status.token_count / child_status.token_budget_max * 100
+    print(f"\n  Child: {child_status.token_count} tokens "
+          f"({child_pct:.0f}% of {child_status.token_budget_max}), "
+          f"{child_status.commit_count} commits")
+    print("\n  Child context:")
     child.compile().pprint(style="compact")
 
-    # --- Step 3: Parent merges results ---
-    print("\n=== Step 3: Parent merges child work ===\n")
+    # Check if child used compress
+    child_compressed = any(
+        "compress" in (e.message or "") for e in child.log(limit=50)
+    )
+    if child_compressed:
+        print("  Child compressed its context for handoff.")
+    else:
+        print("  Child did not compress.")
+
+    # Parent merges and synthesizes
+    print("\n=== Parent merges and synthesizes ===\n")
     merge_result = parent_tract.merge("research-caching")
     merge_result.pprint()
 
-    print("\n  Parent context after merge:")
-    parent_tract.compile().pprint(style="compact")
-
-    # --- Step 4: Parent synthesizes ---
-    print("\n=== Step 4: Parent synthesizes recommendation ===\n")
-
-    # Set parent tools for final synthesis
     parent_tools = parent_tract.as_tools(profile=PARENT_PROFILE)
     parent_tract.set_tools(parent_tools)
 
     result = parent_tract.run(
-        "The research branch has been merged. Review the compiled context "
-        "which now includes the child's research findings. Commit a final "
-        "recommendation as an artifact (content_type='artifact') summarizing "
-        "which caching strategy to use and why.",
-        max_steps=8, on_step=log.on_step, on_tool_result=log.on_tool_result,
+        "Research complete. Which caching strategy and why? "
+        "Give a concrete recommendation.",
+        max_steps=6, max_tokens=512,
+        on_step=log.on_step, on_tool_result=log.on_tool_result,
     )
     result.pprint()
 
-    # --- Final state ---
+    # Final state
     print("\n\n=== Final State ===\n")
     branches = [b.name for b in parent_tract.list_branches()]
     print(f"  Branches: {branches}")
-    print(f"  Parent branch: {parent_tract.current_branch}")
-    print(f"  Total parent commits: {len(parent_tract.log())}")
+    print(f"  Parent commits: {len(parent_tract.log())}")
 
-    print("\n  Final parent context:")
+    print("\n  Final context:")
     parent_tract.compile().pprint(style="compact")
 
     session.close()

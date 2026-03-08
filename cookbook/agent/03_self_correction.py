@@ -1,23 +1,17 @@
-"""Agent Self-Correction
+"""Agent Self-Correction (Implicit)
 
-An LLM agent inspects its own previous output, identifies issues, and
-corrects them using edit operations. The agent genuinely decides what to
-inspect and how to fix it through tool calls -- not hardcoded logic.
+The agent gives a deliberately brief answer, then is asked to improve it.
+It has edit tools available but is never told how to use them. Will it
+discover get_commit + edit to revise its own output in place?
 
-The agent gives an answer, then reviews and improves its own work using
-get_commit to read previous output, commit with operation='edit' to
-revise, and log to trace the edit chain.
-
-Tools exercised: commit (with edit), get_commit, diff, log, compile,
+Tools available: commit (with edit), get_commit, diff, log, compile,
                  annotate, status
 
-Demonstrates: LLM-driven self-correction, edit-in-place through tools,
-              agent reasoning about quality of its own output,
-              edit chain inspection
+Demonstrates: Does the model figure out the inspect-then-edit-in-place
+              pattern on its own?
 """
 
 import io
-import json
 import sys
 from pathlib import Path
 
@@ -25,71 +19,25 @@ from pathlib import Path
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 from tract import Tract
-from tract.toolkit import ToolConfig, ToolExecutor, ToolProfile
+from tract.toolkit import ToolConfig, ToolProfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import groq as llm
 from _logging import StepLogger
 
-MODEL_ID = llm.large
+MODEL_ID = llm.xlarge
 
 
-# Tool profile: self-reflection and correction tools
-REFLECTION_PROFILE = ToolProfile(
-    name="self-reflector",
+PROFILE = ToolProfile(
+    name="writer",
     tool_configs={
-        "commit": ToolConfig(
-            enabled=True,
-            description=(
-                "Record content or edit a previous commit. To edit, set "
-                "operation='edit' and provide edit_target with the hash of "
-                "the commit to replace. The new content overwrites the old. "
-                "Include a message describing why you're editing."
-            ),
-        ),
-        "get_commit": ToolConfig(
-            enabled=True,
-            description=(
-                "Get full details about a commit: content, type, tokens, "
-                "metadata. Use this to read your own previous responses "
-                "before deciding whether to edit them."
-            ),
-        ),
-        "diff": ToolConfig(
-            enabled=True,
-            description=(
-                "Compare two commits to see what changed. Call after an edit "
-                "to verify the improvement. Shows added, removed, modified "
-                "messages and token delta."
-            ),
-        ),
-        "log": ToolConfig(
-            enabled=True,
-            description=(
-                "View recent commit history. Use op_filter='edit' to see "
-                "only edit operations -- this shows your correction chain."
-            ),
-        ),
-        "compile": ToolConfig(
-            enabled=True,
-            description=(
-                "Compile current context. After edits, compile shows the "
-                "latest version of each message -- verify your corrections "
-                "appear correctly."
-            ),
-        ),
-        "annotate": ToolConfig(
-            enabled=True,
-            description=(
-                "Mark a commit as 'pinned' (important, keep forever) or "
-                "'skip' (hide from compilation). Use to clean up failed "
-                "attempts or protect good corrections."
-            ),
-        ),
-        "status": ToolConfig(
-            enabled=True,
-            description="Check current state: branch, HEAD, token count.",
-        ),
+        "commit": ToolConfig(enabled=True),
+        "get_commit": ToolConfig(enabled=True),
+        "diff": ToolConfig(enabled=True),
+        "log": ToolConfig(enabled=True),
+        "compile": ToolConfig(enabled=True),
+        "annotate": ToolConfig(enabled=True),
+        "status": ToolConfig(enabled=True),
     },
 )
 
@@ -100,60 +48,57 @@ def main():
         return
 
     print("=" * 60)
-    print("Agent Self-Correction")
+    print("Agent Self-Correction (Implicit)")
     print("=" * 60)
     print()
-    print("  The agent will: inspect a previous response with get_commit,")
-    print("  decide it needs improvement, edit it, then verify with compile.")
+    print("  The agent gives a brief answer, then is asked to improve it.")
+    print("  Will it use edit operations to revise in place?")
     print()
 
     with Tract.open(
         api_key=llm.api_key,
         base_url=llm.base_url,
         model=MODEL_ID,
+        auto_message=llm.small,
     ) as t:
-        # Register tools from the profile
-        tools = t.as_tools(profile=REFLECTION_PROFILE)
+        tools = t.as_tools(profile=PROFILE)
         t.set_tools(tools)
 
         t.system(
-            "You are a meticulous assistant with self-correction tools. "
-            "When asked to review your work, use get_commit to read your "
-            "previous responses, then edit them if they can be improved. "
-            "Use commit with operation='edit' and edit_target to replace "
-            "a previous response."
+            "You are a technical writer. Produce clear, thorough explanations."
         )
 
-        # Give an initial answer (deliberately brief)
+        # Get a deliberately brief initial answer
         r1 = t.chat("Explain how a compiler works in one sentence.")
         original_hash = r1.commit_info.commit_hash
         print(f"  Initial answer [{original_hash[:8]}]: {r1.text[:120]}")
 
-        # Ask the agent to review and improve
-        print("\n  --- Task: Review and improve ---")
+        # Ask to improve — no mention of tools, edit operations, or hashes
+        print("\n  --- Task ---")
         log = StepLogger()
         result = t.run(
-            f"Review your previous answer about compilers (commit "
-            f"{original_hash[:8]}). Use get_commit to read it, then "
-            f"edit it to be more complete and accurate -- mention lexing, "
-            f"parsing, and code generation. Use commit with operation='edit' "
-            f"and edit_target='{original_hash}'. After editing, compile to "
-            f"verify the improved version appears.",
-            max_steps=12, on_step=log.on_step, on_tool_result=log.on_tool_result,
+            "Too brief. Expand to cover lexing, parsing, optimization, "
+            "and codegen. Replace the original, don't just append.",
+            max_steps=8, max_tokens=512,
+            on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()
 
-        print("\n  Context after agent edits:")
+        print("\n  Context after improvement:")
         t.compile().pprint(style="compact")
 
-        # Show the edit chain
-        print("\n  --- Edit chain ---")
-        history = t.edit_history(original_hash)
-        for i, version in enumerate(history):
-            label = "ORIGINAL" if i == 0 else f"EDIT {i}"
-            content = t.get_content(version)
-            text = str(content)[:100]
-            print(f"  v{i} ({label}) [{version.commit_hash[:8]}]: {text}...")
+        # Check if the agent used edit operations
+        edits = [e for e in t.log(limit=30) if e.operation.value == "edit"]
+        if edits:
+            print(f"\n  Agent used {len(edits)} edit operation(s) to revise in place.")
+            history = t.edit_history(original_hash)
+            for i, version in enumerate(history):
+                label = "ORIGINAL" if i == 0 else f"EDIT {i}"
+                content = t.get_content(version)
+                text = str(content)[:100]
+                print(f"  v{i} ({label}) [{version.commit_hash[:8]}]: {text}...")
+        else:
+            print("\n  Agent did not use edit operations (appended instead).")
 
 
 if __name__ == "__main__":

@@ -78,6 +78,7 @@ class LoopConfig:
     strategy_k: int = 5
     stop_on_no_tool_call: bool = True
     stream: bool = False
+    max_tokens: int | None = None
 
 
 def run_loop(
@@ -184,13 +185,16 @@ def run_loop(
             (on_token is not None or cfg.stream)
             and hasattr(client, "stream")
         )
+        llm_kwargs: dict[str, Any] = {}
+        if cfg.max_tokens is not None:
+            llm_kwargs["max_tokens"] = cfg.max_tokens
         try:
             if use_streaming:
                 response = _stream_to_response(
-                    client, messages, tools, on_token,
+                    client, messages, tools, on_token, **llm_kwargs,
                 )
             else:
-                response = client.chat(messages=messages, tools=tools)
+                response = client.chat(messages=messages, tools=tools, **llm_kwargs)
         except Exception as e:
             return LoopResult(
                 "error", f"LLM call failed: {e}", steps, total_tool_calls,
@@ -350,6 +354,19 @@ def _handle_reasoning(
 # ---------------------------------------------------------------------------
 
 
+# Write tools: their results are ephemeral confirmations ("branch created",
+# "committed abc123").  The action already took effect structurally, so the
+# confirmation is marked SKIP — visible in the current turn but pruned on
+# recompile.  Read tools (status, log, compile, etc.) keep NORMAL priority
+# because the LLM reasons over their data in later turns.
+_WRITE_TOOLS: frozenset[str] = frozenset({
+    "branch", "switch", "merge", "reset", "checkout", "commit",
+    "compress", "gc", "annotate", "configure", "configure_model",
+    "transition", "directive", "create_middleware", "remove_middleware",
+    "create_metadata", "tag", "untag", "register_tag",
+})
+
+
 def _commit_tool_result(
     tract: Tract,
     tool_name: str,
@@ -357,12 +374,17 @@ def _commit_tool_result(
     status: Literal["success", "error"],
     metadata: dict,
 ) -> None:
-    """Commit a tool result/error to the tract."""
+    """Commit a tool result/error to the tract.
+
+    Write-tool results are annotated SKIP so they appear in the current
+    turn but are pruned from compiled context on subsequent steps.
+    """
+    from tract.models.annotations import Priority
     from tract.models.content import ToolIOContent
 
     payload_key = "result" if status == "success" else "error"
     msg_prefix = "tool result" if status == "success" else "tool error"
-    tract.commit(
+    info = tract.commit(
         ToolIOContent(
             tool_name=tool_name,
             direction="result",
@@ -372,6 +394,10 @@ def _commit_tool_result(
         message=f"{msg_prefix}: {tool_name}",
         metadata=metadata,
     )
+
+    # Ephemeral confirmation for write tools (errors always stay visible)
+    if tool_name in _WRITE_TOOLS and status == "success":
+        tract.annotate(info.commit_hash, Priority.SKIP)
 
 
 def _extract_usage(response: Any, client: LLMClient | None = None) -> dict | None:
@@ -506,6 +532,7 @@ def _stream_to_response(
     messages: list[dict],
     tools: list[dict] | None,
     on_token: Callable[[str], None] | None,
+    **extra_kwargs: Any,
 ) -> dict:
     """Run a streaming LLM call, yield text to on_token, return full response.
 
@@ -514,7 +541,7 @@ def _stream_to_response(
     """
     from tract.llm.anthropic_client import MessageDone, TextDelta, ThinkingDelta
 
-    kwargs: dict = {}
+    kwargs: dict = {**extra_kwargs}
     if tools:
         kwargs["tools"] = tools
 

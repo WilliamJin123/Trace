@@ -2213,6 +2213,7 @@ class Tract:
         task: str | None = None,
         *,
         max_steps: int = 50,
+        max_tokens: int | None = None,
         system_prompt: str | None = None,
         tools: list[dict] | None | object = _TOOLS_SENTINEL,
         profile: str | object = "self",
@@ -2231,6 +2232,9 @@ class Tract:
         Args:
             task: Task description (committed as user message).
             max_steps: Maximum loop iterations.
+            max_tokens: Maximum tokens per LLM response.  Passed to
+                ``client.chat(max_tokens=...)``.  None means no limit
+                (provider default).
             system_prompt: System prompt prepended to context.
             tools: Tool definitions (OpenAI format). Pass an explicit empty
                 list ``[]`` to send no tools. When omitted, tools are built
@@ -2276,6 +2280,7 @@ class Tract:
             max_steps=max_steps,
             system_prompt=system_prompt,
             stream=stream,
+            max_tokens=max_tokens,
         )
         return run_loop(
             self,

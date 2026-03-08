@@ -1,28 +1,25 @@
-"""Tangent Isolation -- Agent isolates off-topic questions on branches
+"""Tangent Isolation (Implicit)
 
-An LLM agent working on a design task autonomously branches when the user
-asks conceptual clarification questions that don't advance the project.
-The agent handles the full lifecycle: branch, answer, compress, switch
-back to main, and merge the one-line summary.
+During an API design conversation with limited context budget, the user
+asks a completely unrelated question. The tangent content would waste
+valuable context space if left in the main thread. The agent has branching
+tools but no "tangent protocol."
 
-Key technique: custom tool descriptions via ToolProfile steer the LLM on
-*when* to branch, without any hardcoded trigger logic.
+Tools available: branch, switch, merge, compress, commit, status, log
 
-Tools exercised: branch, switch, merge, compress, commit, status, log
-Demonstrates: description overrides for behavioral steering, agent-managed
-              branch lifecycle, compress-then-merge pattern
+Demonstrates: Does the model isolate an obviously off-topic interruption
+              on a branch to protect the main conversation context?
 """
 
 import io
-import json
 import sys
 from pathlib import Path
 
 # Windows console encoding fix
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
-from tract import Tract
-from tract.toolkit import ToolConfig, ToolExecutor, ToolProfile
+from tract import Tract, TractConfig, TokenBudgetConfig
+from tract.toolkit import ToolConfig, ToolProfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import cerebras as llm
@@ -31,59 +28,16 @@ from _logging import StepLogger
 MODEL_ID = llm.large
 
 
-# Tool profile: full tangent lifecycle tools with steering descriptions
-TANGENT_PROFILE = ToolProfile(
-    name="tangent-manager",
+PROFILE = ToolProfile(
+    name="architect",
     tool_configs={
-        "commit": ToolConfig(
-            enabled=True,
-            description=(
-                "Record content into the conversation. Use this to commit your "
-                "answer as a dialogue message (content_type='dialogue', "
-                "role='assistant') instead of returning text directly. This "
-                "lets you continue making tool calls after answering."
-            ),
-        ),
-        "branch": ToolConfig(
-            enabled=True,
-            description=(
-                "Create a new branch. You MUST use this when the user asks a "
-                "conceptual or clarification question that does not directly "
-                "advance the current design or implementation discussion. "
-                "Name the branch 'tangent/<topic>'. Set switch=true to work on it."
-            ),
-        ),
-        "switch": ToolConfig(
-            enabled=True,
-            description=(
-                "Switch to a different branch. Use this to return to 'main' "
-                "after compressing a tangent branch."
-            ),
-        ),
-        "merge": ToolConfig(
-            enabled=True,
-            description=(
-                "Merge a branch into the current branch. After compressing a "
-                "tangent branch, switch to main and merge the tangent so the "
-                "one-line summary is preserved in the main context."
-            ),
-        ),
-        "compress": ToolConfig(
-            enabled=True,
-            description=(
-                "Compress commits into a summary. Use content= to provide a "
-                "short one-sentence manual summary capturing only the key "
-                "takeaway from the tangent conversation."
-            ),
-        ),
-        "status": ToolConfig(
-            enabled=True,
-            description="Check current branch, HEAD, and token count.",
-        ),
-        "log": ToolConfig(
-            enabled=True,
-            description="View recent commits to find hashes for compress range.",
-        ),
+        "commit": ToolConfig(enabled=True),
+        "branch": ToolConfig(enabled=True),
+        "switch": ToolConfig(enabled=True),
+        "merge": ToolConfig(enabled=True),
+        "compress": ToolConfig(enabled=True),
+        "status": ToolConfig(enabled=True),
+        "log": ToolConfig(enabled=True),
     },
 )
 
@@ -94,95 +48,94 @@ def main():
         return
 
     print("=" * 70)
-    print("Tangent Isolation: Agent isolates off-topic questions on branches")
+    print("Tangent Isolation (Implicit)")
     print("=" * 70)
     print()
-    print("  The agent handles the full tangent lifecycle via tool calls:")
-    print("    1. branch('tangent/<topic>', switch=true)")
-    print("    2. commit the answer as a dialogue message")
-    print("    3. compress the tangent to a one-line summary")
-    print("    4. switch back to main")
-    print("    5. merge the tangent branch")
+    print("  API design conversation with budget pressure.")
+    print("  Off-topic interruption — will the agent isolate it?")
     print()
 
+    config = TractConfig(token_budget=TokenBudgetConfig(max_tokens=2500))
     with Tract.open(
+        config=config,
         api_key=llm.api_key,
         base_url=llm.base_url,
         model=MODEL_ID,
+        auto_message=llm.small,
     ) as t:
-        # Register tools from the profile
-        tools = t.as_tools(profile=TANGENT_PROFILE)
+        tools = t.as_tools(profile=PROFILE)
         t.set_tools(tools)
 
+        # System: role only
         t.system(
-            "You are a senior API architect helping design a REST API for a "
-            "task management app.\n\n"
-            "TANGENT PROTOCOL: When the user asks a conceptual question that "
-            "does not advance the design (e.g. 'what is REST?'), you must "
-            "handle it entirely through tool calls:\n"
-            "1. branch('tangent/<topic>', switch=true)\n"
-            "2. commit your answer as a dialogue message "
-            "(content_type='dialogue', role='assistant', text='...')\n"
-            "3. compress(content='<one-line summary>')\n"
-            "4. switch('main')\n"
-            "5. merge('<branch-name>')\n"
-            "6. Then respond with a short confirmation.\n\n"
-            "For design questions, answer normally without branching."
+            "You are a senior API architect helping design a REST API "
+            "for a task management app."
         )
 
         log = StepLogger()
 
-        # --- Phase 1: Design question (should NOT branch) ---
-        print("  Initial context:")
-        t.compile().pprint(style="compact")
-
-        print("=== Phase 1: Design question (on main, no branching) ===\n")
+        # Phase 1: Substantial design conversation (fills ~60% of budget)
+        print("=== Phase 1: API design ===\n")
         result = t.run(
-            "Let's design the API for a task management app. I need endpoints "
-            "for creating, listing, updating, and deleting tasks. Each task has "
-            "a title, description, status (todo/in_progress/done), and assignee. "
-            "What's your recommended URL structure?",
-            max_steps=15, on_step=log.on_step, on_tool_result=log.on_tool_result,
+            "Design CRUD endpoints for tasks (title, status, assignee). "
+            "What URL structure and HTTP methods?",
+            max_steps=5, max_tokens=512,
+            on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()
+
+        status = t.status()
+        pct = status.token_count / status.token_budget_max * 100
+        print(f"\n  Context: {status.token_count} tokens ({pct:.0f}% of budget)")
         print(f"  Branch: {t.current_branch}")
 
-        print("\n  Context after Phase 1:")
-        t.compile().pprint(style="compact")
-
-        # --- Phase 2: Conceptual tangent (full LLM-driven lifecycle) ---
-        print("\n\n=== Phase 2: Conceptual tangent (full agent lifecycle) ===\n")
+        # Phase 2: Completely unrelated tangent
+        print("\n\n=== Phase 2: Off-topic interruption ===\n")
         result = t.run(
-            "Wait, quick question -- what actually is REST? I keep hearing "
-            "the term but I don't fully understand the principles behind it.",
-            max_steps=15, on_step=log.on_step, on_tool_result=log.on_tool_result,
+            "Wait, different topic — plan a team offsite for 15 people "
+            "next Friday, $2000 budget. Quick suggestions?",
+            max_steps=8, max_tokens=512,
+            on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()
-        print(f"  Branch: {t.current_branch}")
-        print(f"  Branches: {[b.name for b in t.list_branches()]}")
+        print(f"\n  Branch: {t.current_branch}")
+        print(f"  All branches: {[b.name for b in t.list_branches()]}")
 
-        # --- Phase 3: Resume design ---
+        # Phase 3: Resume API design
         if t.current_branch != "main":
-            print(f"  (agent didn't return to main -- switching manually)")
+            print(f"  (agent left us on {t.current_branch} — switching to main)")
             t.switch("main")
 
-        print(f"\n\n=== Phase 3: Resume design (on {t.current_branch}) ===\n")
+        print(f"\n\n=== Phase 3: Resume API design ===\n")
         result = t.run(
-            "OK, back to the API design. What status codes should each "
-            "endpoint return? And should we version the API?",
-            max_steps=15, on_step=log.on_step, on_tool_result=log.on_tool_result,
+            "Back to the API — what status codes for each endpoint?",
+            max_steps=5, max_tokens=512,
+            on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()
 
-        # --- Final state ---
-        print("\n\n=== Final context on main ===\n")
+        # Report
+        print("\n\n=== Final State ===\n")
+        branches = [b.name for b in t.list_branches()]
+        print(f"  Branches: {branches}")
+        print(f"  Current: {t.current_branch}")
+
+        status = t.status()
+        pct = status.token_count / status.token_budget_max * 100
+        print(f"  Context: {status.token_count} tokens ({pct:.0f}% of budget)")
+
         t.compile().pprint(style="compact")
 
-        branches = [b.name for b in t.list_branches()]
-        msgs = t.compile().to_dicts()
-        print(f"\n  Branch: {t.current_branch}  |  Messages: {len(msgs)}  |  "
-              f"All branches: {branches}")
+        if len(branches) > 1:
+            print(f"\n  Agent created {len(branches) - 1} branch(es) for tangent isolation.")
+        else:
+            print("\n  Agent did not branch for the tangent.")
 
 
 if __name__ == "__main__":
     main()
+
+
+# --- See also ---
+# Branching basics (no LLM):  getting_started/04_branches.py
+# Multi-agent delegation:     agent/08_multi_agent.py

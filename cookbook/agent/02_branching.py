@@ -1,17 +1,18 @@
-"""Agent-Driven Branching and Merging
+"""Agent-Driven Branching and Merging (Implicit)
 
-An LLM agent explores alternative conversation paths by creating branches,
-switching between them, and merging results -- all through genuine tool calls.
-The agent decides which branches to create, what to explore, and when to merge.
+The agent is asked to draft two independent, potentially contradictory
+technical proposals. If one analysis influences the other, the proposals
+won't be genuine. The agent has branching tools but is never told to
+use them.
 
-Tools exercised: branch, switch, list_branches, merge, status, compile, log
+Tools available: branch, switch, list_branches, merge, status, compile,
+                 log, commit
 
-Demonstrates: LLM-driven branch creation, switching, and merging;
-              agent reasoning about which branch to keep
+Demonstrates: Does the model use branches to isolate conflicting analyses
+              so they don't cross-pollinate?
 """
 
 import io
-import json
 import sys
 from pathlib import Path
 
@@ -19,60 +20,26 @@ from pathlib import Path
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 from tract import Tract
-from tract.toolkit import ToolConfig, ToolExecutor, ToolProfile
+from tract.toolkit import ToolConfig, ToolProfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import groq as llm
 from _logging import StepLogger
 
-MODEL_ID = llm.large
+MODEL_ID = llm.xlarge
 
 
-# Tool profile: branching and merging tools
-BRANCH_PROFILE = ToolProfile(
-    name="branch-manager",
+PROFILE = ToolProfile(
+    name="researcher",
     tool_configs={
-        "branch": ToolConfig(
-            enabled=True,
-            description=(
-                "Create a new branch from the current position. Use this to "
-                "explore alternative conversation paths without affecting the "
-                "main branch. Set switch=true to immediately work on it."
-            ),
-        ),
-        "switch": ToolConfig(
-            enabled=True,
-            description=(
-                "Switch to a different branch. Changes the active context to "
-                "that branch's history. Use list_branches first to see options."
-            ),
-        ),
-        "list_branches": ToolConfig(
-            enabled=True,
-            description=(
-                "List all branches with their HEAD commits. Shows which "
-                "branch is currently active with a * marker."
-            ),
-        ),
-        "merge": ToolConfig(
-            enabled=True,
-            description=(
-                "Merge a source branch into the current branch. Combines "
-                "context from both branches. Provide a descriptive message."
-            ),
-        ),
-        "status": ToolConfig(
-            enabled=True,
-            description="Check current branch, HEAD, and token count.",
-        ),
-        "compile": ToolConfig(
-            enabled=True,
-            description="View current compiled context to verify branch state.",
-        ),
-        "log": ToolConfig(
-            enabled=True,
-            description="View recent commits on the current branch.",
-        ),
+        "branch": ToolConfig(enabled=True),
+        "switch": ToolConfig(enabled=True),
+        "list_branches": ToolConfig(enabled=True),
+        "merge": ToolConfig(enabled=True),
+        "status": ToolConfig(enabled=True),
+        "compile": ToolConfig(enabled=True),
+        "log": ToolConfig(enabled=True),
+        "commit": ToolConfig(enabled=True),
     },
 )
 
@@ -83,56 +50,68 @@ def main():
         return
 
     print("=" * 60)
-    print("Agent-Driven Branching and Merging")
+    print("Agent-Driven Branching and Merging (Implicit)")
     print("=" * 60)
     print()
-    print("  The agent will: create branches for different approaches,")
-    print("  add content to each, then merge the chosen one back to main.")
+    print("  Two conflicting proposals that must be developed independently.")
+    print("  Will the agent use branches for isolation?")
     print()
 
     with Tract.open(
         api_key=llm.api_key,
         base_url=llm.base_url,
         model=MODEL_ID,
+        auto_message=llm.small,
     ) as t:
-        # Register tools from the profile
-        tools = t.as_tools(profile=BRANCH_PROFILE)
+        tools = t.as_tools(profile=PROFILE)
         t.set_tools(tools)
 
         t.system(
-            "You are a research assistant with branch management tools. "
-            "You can create branches to explore different approaches, "
-            "then merge the best one back to main."
+            "You are a senior solutions architect evaluating backend "
+            "architecture options for a new product."
         )
 
-        # Seed the main branch
-        t.user("I need to compare two database options for my project.")
-        t.assistant("I'll create separate branches to research each option.")
+        # Seed with project requirements
+        t.user(
+            "Building a SaaS analytics platform. 10k concurrent users, "
+            "50TB warehouse, sub-second queries. 12 engineers. "
+            "Need to pick: microservices vs monolith."
+        )
+        t.assistant("I'll evaluate both options.")
 
-        # Let the agent manage branches
-        print("  --- Task: Explore options on branches ---")
+        # Task: two independent, conflicting proposals
+        print("  --- Task ---")
         log = StepLogger()
         result = t.run(
-            "Create a branch called 'postgres-research' and switch to it. "
-            "Then switch back to main and create 'sqlite-research'. "
-            "Use list_branches to verify both exist, then switch back to main "
-            "and merge 'postgres-research' into main with a descriptive message.",
-            max_steps=12, on_step=log.on_step, on_tool_result=log.on_tool_result,
+            "Write two short proposals:\n"
+            "A) Why microservices is the right call\n"
+            "B) Why monolith is the right call\n\n"
+            "Each must stand on its own — if one influences the other "
+            "they won't be genuine independent evaluations.",
+            max_steps=12, max_tokens=512,
+            on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()
 
-        # Verify final state
+        # Report
         print("\n  --- Final state ---")
-        executor = ToolExecutor(t)
-        executor.set_profile(BRANCH_PROFILE)
-        br = executor.execute("list_branches", {})
-        print(f"  Branches: {br.output}")
-        st = executor.execute("status", {})
-        print(f"  Status: {st.output}")
+        branches = [b.name for b in t.list_branches()]
+        print(f"  Branches: {branches}")
+        print(f"  Current: {t.current_branch}")
 
-        print("\n  Final context after merge:")
+        print("\n  Final context:")
         t.compile().pprint(style="compact")
+
+        if len(branches) > 1:
+            print(f"\n  Agent created {len(branches) - 1} branch(es) for isolation.")
+        else:
+            print("\n  Agent did not use branches.")
 
 
 if __name__ == "__main__":
     main()
+
+
+# --- See also ---
+# Branching basics (no LLM):  getting_started/04_branches.py
+# Merge patterns (no LLM):     branching/02_merge_patterns.py

@@ -1,94 +1,46 @@
-"""Agent-Driven Staged Workflow
+"""Agent-Driven Staged Workflow (Implicit)
 
-An LLM agent navigates a multi-stage task (design -> implementation ->
-validation) using config, directives, and middleware. Each stage lives
-on its own branch with stage-specific config (temperature, strategy)
-and middleware gates enforce that the agent completes enough work
-before advancing.
+The developer pre-creates stage branches (design, implementation, validation)
+with config metadata. The agent is given a single comprehensive task and
+must discover the stage infrastructure, then navigate through it autonomously.
 
-The agent decides when to transition between stages based on its own
-assessment of readiness, not hardcoded triggers.
+Tools available: configure, get_config, transition, commit, compile,
+                 status, log, branch, switch, list_branches
 
-Tools exercised: configure, get_config, transition, commit, compile,
-                 status, log, branch
-
-Demonstrates: Config-based stage settings, directive-based instructions,
-              middleware transition gates, agent-managed stage progression
+Demonstrates: Can the model discover pre-built stages and navigate them
+              to complete a multi-phase task in a single run?
 """
 
 import io
-import json
 import sys
 from pathlib import Path
 
 # Windows console encoding fix
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
-from tract import Tract, BlockedError
-from tract.toolkit import ToolConfig, ToolExecutor, ToolProfile
+from tract import Tract
+from tract.toolkit import ToolConfig, ToolProfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import groq as llm
 from _logging import StepLogger
 
-MODEL_ID = llm.large
+MODEL_ID = llm.xlarge
 
 
-# Tool profile: staged workflow tools
-STAGE_PROFILE = ToolProfile(
-    name="stage-navigator",
+PROFILE = ToolProfile(
+    name="architect",
     tool_configs={
-        "configure": ToolConfig(
-            enabled=True,
-            description=(
-                "Set config key-value pairs on the DAG. Use to store "
-                "stage-specific settings like temperature, compile_strategy, "
-                "or custom keys like 'stage'."
-            ),
-        ),
-        "get_config": ToolConfig(
-            enabled=True,
-            description=(
-                "Resolve a config value from the DAG. Returns the value "
-                "set by the closest config commit to HEAD. Use to check "
-                "current stage settings."
-            ),
-        ),
-        "transition": ToolConfig(
-            enabled=True,
-            description=(
-                "Transition to a target branch/stage. Middleware gates may "
-                "block with BlockedError if requirements aren't met. "
-                "Returns None if blocked."
-            ),
-        ),
-        "commit": ToolConfig(
-            enabled=True,
-            description=(
-                "Record content into the tract. Use content_type='dialogue' "
-                "with role='assistant' for your responses, or content_type="
-                "'artifact' for structured deliverables."
-            ),
-        ),
-        "compile": ToolConfig(
-            enabled=True,
-            description="View current compiled context to verify stage state.",
-        ),
-        "status": ToolConfig(
-            enabled=True,
-            description="Check current branch/stage, HEAD, and token count.",
-        ),
-        "log": ToolConfig(
-            enabled=True,
-            description="View recent commits on the current branch.",
-        ),
-        "branch": ToolConfig(
-            enabled=True,
-            description=(
-                "Create a new branch for a stage. Each stage of the workflow "
-                "lives on its own branch with stage-specific config."
-            ),
-        ),
+        "configure": ToolConfig(enabled=True),
+        "get_config": ToolConfig(enabled=True),
+        "transition": ToolConfig(enabled=True),
+        "commit": ToolConfig(enabled=True),
+        "compile": ToolConfig(enabled=True),
+        "status": ToolConfig(enabled=True),
+        "log": ToolConfig(enabled=True),
+        "branch": ToolConfig(enabled=True),
+        "switch": ToolConfig(enabled=True),
+        "list_branches": ToolConfig(enabled=True),
     },
 )
 
@@ -99,109 +51,77 @@ def main():
         return
 
     print("=" * 70)
-    print("Agent-Driven Staged Workflow: design -> implementation -> validation")
+    print("Agent-Driven Staged Workflow (Implicit)")
     print("=" * 70)
     print()
-    print("  The agent navigates a multi-stage task using config and transitions.")
-    print("  Each stage has its own branch with stage-specific configuration.")
-    print("  The agent decides when it's ready to transition to the next stage.")
+    print("  Pre-built stages: design, implementation, validation")
+    print("  Agent must discover and navigate them in a single run.")
     print()
 
     with Tract.open(
         api_key=llm.api_key,
         base_url=llm.base_url,
         model=MODEL_ID,
+        auto_message=llm.small,
     ) as t:
-        # Register tools from the profile
-        tools = t.as_tools(profile=STAGE_PROFILE)
+        tools = t.as_tools(profile=PROFILE)
         t.set_tools(tools)
 
+        # Developer pre-creates the stage infrastructure
         t.system(
-            "You are a software architect working on a staged project.\n\n"
-            "WORKFLOW PROTOCOL:\n"
-            "1. You start on 'main'. Set up stage branches with config.\n"
-            "2. Each stage has its own branch: 'design', 'implementation', 'validation'.\n"
-            "3. Use configure() on each branch for stage-specific settings.\n"
-            "4. Use transition() to move between stages when ready.\n"
-            "5. Work through all three stages to complete the task.\n\n"
-            "For setup, create the branches and configure them, then transition."
+            "You are a software architect. Complete the task by working "
+            "through each stage of the workflow."
         )
 
-        # --- Phase 1: Set up the workflow ---
-        print("=== Phase 1: Set up stage branches with config ===\n")
-        log = StepLogger()
-        result = t.run(
-            "Set up a three-stage workflow for building a REST API:\n\n"
-            "1. Create branch 'design' and switch to it. Configure it:\n"
-            "   - settings: {stage: 'design', temperature: 0.9}\n"
-            "Then switch back to main.\n\n"
-            "2. Create branch 'implementation' and switch to it. Configure it:\n"
-            "   - settings: {stage: 'implementation', temperature: 0.3}\n"
-            "Then switch back to main.\n\n"
-            "3. Create branch 'validation' and switch to it. Configure it:\n"
-            "   - settings: {stage: 'validation', temperature: 0.5}\n"
-            "Then switch back to main.\n\n"
-            "After setup, use get_config to verify the stage config on main "
-            "and check status.",
-            max_steps=20, on_step=log.on_step, on_tool_result=log.on_tool_result,
-        )
-        result.pprint()
+        for stage, temp in [("design", 0.9), ("implementation", 0.3), ("validation", 0.5)]:
+            t.branch(stage, switch=True)
+            t.configure(stage=stage, temperature=temp)
+            t.switch("main")
 
-        # --- Phase 2: Work through the stages ---
-        print("\n\n=== Phase 2: Design stage ===\n")
-        # Switch to design branch for the design work
+        # Start the agent on the design branch
         t.switch("design")
+
+        print(f"  Branches: {[b.name for b in t.list_branches()]}")
+        print(f"  Starting on: {t.current_branch}")
+
+        log = StepLogger()
+
+        # Single task — agent must navigate all stages autonomously
+        print("\n  --- Task ---")
         result = t.run(
-            "You are now on the 'design' stage branch. Use get_config to "
-            "verify the stage is 'design'. Then do your design work: commit "
-            "an artifact with the API endpoint design for a task management "
-            "REST API (use content_type='artifact', text='...'). Include "
-            "at least the URL structure and HTTP methods. After your design "
-            "is committed, check status.",
-            max_steps=10, on_step=log.on_step, on_tool_result=log.on_tool_result,
+            "Design a task management REST API (title, status, assignee). "
+            "Three phases: design (URLs + models), implementation (modules), "
+            "validation (pre-ship checklist). Deliver output for each.",
+            max_steps=18, max_tokens=512,
+            on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()
 
-        print("\n  Design stage context:")
-        t.compile().pprint(style="compact")
-
-        # --- Phase 3: Implementation stage ---
-        print("\n\n=== Phase 3: Implementation stage ===\n")
-        t.switch("implementation")
-        result = t.run(
-            "You are now on the 'implementation' stage branch. Verify the "
-            "stage with get_config. Then commit an artifact with a brief "
-            "implementation plan: list 3-4 key modules/files needed and "
-            "their responsibilities. Check status when done.",
-            max_steps=10, on_step=log.on_step, on_tool_result=log.on_tool_result,
-        )
-        result.pprint()
-
-        # --- Phase 4: Validation stage ---
-        print("\n\n=== Phase 4: Validation stage ===\n")
-        t.switch("validation")
-        result = t.run(
-            "You are now on the 'validation' stage branch. Verify the "
-            "stage with get_config. Commit an artifact with a validation "
-            "checklist: 3-4 items to verify the API design is correct "
-            "(e.g., RESTful conventions, error handling, auth). Check "
-            "status when done.",
-            max_steps=10, on_step=log.on_step, on_tool_result=log.on_tool_result,
-        )
-        result.pprint()
-
-        # --- Final state ---
+        # Report — check what the agent actually did
         print("\n\n=== Final State ===\n")
-        branches = [b.name for b in t.list_branches()]
-        print(f"  Branches: {branches}")
-        print(f"  Current: {t.current_branch}")
-
-        # Show each stage's work
+        branches_visited = set()
         for stage in ["design", "implementation", "validation"]:
             t.switch(stage)
             ctx = t.compile()
-            print(f"\n  [{stage}] {len(ctx.messages)} messages, {ctx.token_count} tokens")
+            cfg = t.get_config("stage")
+            if ctx.token_count > 50:  # has content beyond just config
+                branches_visited.add(stage)
+            print(f"  [{stage}] stage={cfg}, {len(ctx.messages)} messages, "
+                  f"{ctx.token_count} tokens")
+
+        if len(branches_visited) >= 3:
+            print(f"\n  Agent navigated all 3 stages.")
+        elif len(branches_visited) > 0:
+            print(f"\n  Agent visited {len(branches_visited)} stage(s): "
+                  f"{sorted(branches_visited)}")
+        else:
+            print("\n  Agent did not navigate to any stages.")
 
 
 if __name__ == "__main__":
     main()
+
+
+# --- See also ---
+# Branching basics (no LLM):  getting_started/04_branches.py
+# Config per branch:           config_and_middleware/01_config_basics.py
