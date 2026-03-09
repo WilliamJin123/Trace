@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any, Iterator
+from typing import Any, AsyncIterator, Iterator
 
 import httpx
 import tenacity
@@ -482,3 +482,246 @@ class OpenAIClient:
                 return (think_match.group(1).strip(), "think_tags")
 
         return None
+
+    # ------------------------------------------------------------------
+    # Async support
+    # ------------------------------------------------------------------
+
+    async def achat(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        **kwargs: Any,
+    ) -> dict:
+        """Async chat completion with retry.
+
+        Uses an internal ``httpx.AsyncClient`` (created lazily on first call).
+        Same retry logic as :meth:`chat`.
+        """
+        retryer = tenacity.AsyncRetrying(
+            retry=tenacity.retry_if_exception(_is_retryable),
+            wait=(
+                tenacity.wait_exponential(multiplier=1, min=1, max=30)
+                + tenacity.wait_random(0, 2)
+            ),
+            stop=tenacity.stop_after_attempt(self._max_retries),
+            before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
+            reraise=True,
+        )
+        return await retryer(
+            self._ado_chat,
+            messages,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            **kwargs,
+        )
+
+    async def _ado_chat(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        **kwargs: Any,
+    ) -> dict:
+        """Execute a single async chat completion request (no retry)."""
+        client = self._get_async_client()
+        payload: dict[str, Any] = {
+            "model": model or self._default_model,
+            "messages": messages,
+        }
+        if temperature is not None:
+            payload["temperature"] = temperature
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        payload.update(kwargs)
+
+        response = await client.post(
+            f"{self._base_url}/chat/completions",
+            json=payload,
+        )
+
+        if response.status_code in _AUTH_ERROR_STATUS_CODES:
+            raise LLMAuthError(
+                f"Authentication failed: HTTP {response.status_code} - "
+                f"{response.text}"
+            )
+        if response.status_code == 429:
+            retry_after_raw = response.headers.get("Retry-After")
+            retry_after: float | None = None
+            if retry_after_raw is not None:
+                try:
+                    retry_after = float(retry_after_raw)
+                except (ValueError, TypeError):
+                    pass
+            raise LLMRateLimitError(
+                f"Rate limited: HTTP 429 - {response.text}",
+                retry_after=retry_after,
+            )
+        response.raise_for_status()
+
+        data = response.json()
+        if "choices" not in data:
+            raise LLMResponseError(
+                f"Unexpected response format: missing 'choices' key. "
+                f"Response: {data}"
+            )
+        return data
+
+    def _get_async_client(self) -> httpx.AsyncClient:
+        """Lazily create the async httpx client."""
+        if not hasattr(self, "_async_client") or self._async_client is None:
+            self._async_client = httpx.AsyncClient(
+                timeout=self._timeout,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self._api_key}",
+                },
+            )
+        return self._async_client
+
+    async def astream(
+        self,
+        messages: list[dict],
+        *,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        **kwargs: Any,
+    ) -> AsyncIterator:
+        """Async stream a chat completion, yielding typed events.
+
+        Async version of :meth:`stream`. Yields the same event types.
+        """
+        from tract.llm.anthropic_client import (
+            MessageDone,
+            TextDelta,
+            ToolCallDelta,
+            ToolCallStart,
+            UsageEvent,
+        )
+
+        client = self._get_async_client()
+        payload: dict[str, Any] = {
+            "model": model or self._default_model,
+            "messages": messages,
+            "stream": True,
+        }
+        if temperature is not None:
+            payload["temperature"] = temperature
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        payload.update(kwargs)
+
+        async with client.stream(
+            "POST",
+            f"{self._base_url}/chat/completions",
+            json=payload,
+        ) as response:
+            if response.status_code in _AUTH_ERROR_STATUS_CODES:
+                await response.aread()
+                raise LLMAuthError(
+                    f"Authentication failed: HTTP {response.status_code}"
+                )
+            if response.status_code == 429:
+                await response.aread()
+                raise LLMRateLimitError("Rate limited: HTTP 429")
+            if response.status_code >= 400:
+                await response.aread()
+                response.raise_for_status()
+
+            text_parts: list[str] = []
+            tool_calls_acc: dict[int, dict] = {}
+            full_response: dict = {}
+            finish_reason: str | None = None
+            model_name: str = ""
+
+            async for line in response.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                data_str = line[6:].strip()
+                if data_str == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(data_str)
+                except json.JSONDecodeError:
+                    continue
+
+                model_name = chunk.get("model", model_name)
+                choices = chunk.get("choices", [])
+                if not choices:
+                    usage = chunk.get("usage")
+                    if usage:
+                        yield UsageEvent(usage=usage)
+                    continue
+
+                delta = choices[0].get("delta", {})
+                finish_reason = choices[0].get("finish_reason", finish_reason)
+
+                content = delta.get("content")
+                if content:
+                    text_parts.append(content)
+                    yield TextDelta(text=content)
+
+                tcs = delta.get("tool_calls", [])
+                for tc_delta in tcs:
+                    idx = tc_delta.get("index", 0)
+                    if idx not in tool_calls_acc:
+                        tc_id = tc_delta.get("id", "")
+                        tc_name = tc_delta.get("function", {}).get("name", "")
+                        tool_calls_acc[idx] = {
+                            "id": tc_id,
+                            "name": tc_name,
+                            "args_parts": [],
+                        }
+                        if tc_id or tc_name:
+                            yield ToolCallStart(
+                                index=idx, id=tc_id, name=tc_name,
+                            )
+                    args_fragment = tc_delta.get("function", {}).get("arguments", "")
+                    if args_fragment:
+                        tool_calls_acc[idx]["args_parts"].append(args_fragment)
+                        yield ToolCallDelta(
+                            index=idx, partial_json=args_fragment,
+                        )
+
+            text = "".join(text_parts) or None
+            message: dict[str, Any] = {"role": "assistant", "content": text}
+
+            if tool_calls_acc:
+                oai_tcs = []
+                for idx in sorted(tool_calls_acc):
+                    tc = tool_calls_acc[idx]
+                    raw_args = "".join(tc["args_parts"])
+                    oai_tcs.append({
+                        "id": tc["id"],
+                        "type": "function",
+                        "function": {
+                            "name": tc["name"],
+                            "arguments": raw_args,
+                        },
+                    })
+                message["tool_calls"] = oai_tcs
+
+            full_response = {
+                "id": "",
+                "object": "chat.completion",
+                "model": model_name,
+                "choices": [{
+                    "index": 0,
+                    "message": message,
+                    "finish_reason": finish_reason or "stop",
+                }],
+            }
+            yield MessageDone(response=full_response)
+
+    async def aclose(self) -> None:
+        """Close async resources."""
+        if hasattr(self, "_async_client") and self._async_client is not None:
+            await self._async_client.aclose()
+            self._async_client = None

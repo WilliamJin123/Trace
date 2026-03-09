@@ -432,6 +432,51 @@ class Session:
 
         return result
 
+    async def acollapse(
+        self,
+        child: Tract,
+        into: Tract,
+        *,
+        content: str | None = None,
+        instructions: str | None = None,
+        auto_commit: bool | None = None,
+        target_tokens: int | None = None,
+    ) -> CollapseResult:
+        """Async version of :meth:`collapse`.
+
+        The LLM summarization is awaited; everything else is sync.
+        """
+        from tract.operations.spawn import acollapse_tract
+
+        if auto_commit is None:
+            if self._autonomy == "autonomous":
+                auto_commit = True
+            elif self._autonomy == "manual":
+                auto_commit = True
+            else:
+                auto_commit = False
+
+        llm_client = getattr(into, "_llm_client", None)
+
+        result = await acollapse_tract(
+            parent_tract=into,
+            child_tract=child,
+            spawn_repo=self._spawn_repo,
+            content=content,
+            instructions=instructions,
+            auto_commit=auto_commit,
+            target_tokens=target_tokens,
+            llm_client=llm_client,
+        )
+
+        if llm_client is not None and content is None:
+            import dataclasses as _dc
+            effective_config = getattr(into, "_default_config", None)
+            if effective_config is not None:
+                result = _dc.replace(result, config=effective_config)
+
+        return result
+
     def deploy(
         self,
         parent: Tract,

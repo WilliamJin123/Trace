@@ -444,3 +444,99 @@ def _row_to_spawn_info(row) -> SpawnInfo:
         display_name=row.display_name,
         created_at=row.created_at,
     )
+
+
+# ---------------------------------------------------------------------------
+# Async variants
+# ---------------------------------------------------------------------------
+
+
+async def acollapse_tract(
+    parent_tract,
+    child_tract,
+    spawn_repo,
+    *,
+    content: str | None = None,
+    instructions: str | None = None,
+    auto_commit: bool | None = None,
+    target_tokens: int | None = None,
+    llm_client=None,
+) -> "CollapseResult":
+    """Async version of :func:`collapse_tract`.
+
+    The LLM call is awaited; everything else (compile, commit) remains sync.
+    """
+    from tract.llm.protocols import acall_llm
+
+    # Look up spawn pointer
+    pointer = spawn_repo.get_by_child(child_tract.tract_id)
+    if pointer is None:
+        raise SpawnError(
+            f"No spawn pointer found for child tract: {child_tract.tract_id}"
+        )
+
+    purpose = pointer.purpose
+
+    # Compile child's full context (sync -- local operation)
+    compiled = child_tract.compile()
+    source_tokens = compiled.token_count
+
+    # Format child messages for summarization
+    lines = []
+    for msg in compiled.messages:
+        lines.append(f"[{msg.role}]: {msg.content}")
+    messages_text = "\n".join(lines)
+
+    # Determine summary text
+    if content is not None:
+        summary_text = content
+    else:
+        if llm_client is None:
+            raise SpawnError(
+                "Cannot collapse without content or LLM client. "
+                "Provide content= for manual mode, or configure an LLM client."
+            )
+        user_prompt = build_collapse_prompt(
+            messages_text,
+            purpose,
+            target_tokens=target_tokens,
+            instructions=instructions,
+        )
+        try:
+            response = await acall_llm(
+                llm_client,
+                messages=[
+                    {"role": "system", "content": DEFAULT_COLLAPSE_SYSTEM},
+                    {"role": "user", "content": user_prompt},
+                ],
+            )
+            summary_text = response["choices"][0]["message"]["content"]
+        except Exception as e:
+            raise SpawnError(f"LLM call failed during collapse: {e}") from e
+
+    # Count summary tokens
+    summary_tokens = parent_tract._token_counter.count_text(summary_text)
+
+    # Commit to parent if auto_commit (sync -- local operation)
+    commit_hash = None
+    effective_auto_commit = auto_commit if auto_commit is not None else False
+    if effective_auto_commit:
+        child_head = child_tract.head
+        info = parent_tract.commit(
+            DialogueContent(role="assistant", text=summary_text),
+            message=f"collapse: {purpose}",
+            metadata={
+                "collapse_source_tract_id": child_tract.tract_id,
+                "collapse_source_head": child_head,
+            },
+        )
+        commit_hash = info.commit_hash
+
+    return CollapseResult(
+        parent_commit_hash=commit_hash,
+        child_tract_id=child_tract.tract_id,
+        summary_text=summary_text,
+        summary_tokens=summary_tokens,
+        source_tokens=source_tokens,
+        purpose=purpose,
+    )

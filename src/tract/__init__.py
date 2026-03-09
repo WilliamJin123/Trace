@@ -86,6 +86,7 @@ from tract.middleware import MiddlewareContext, MiddlewareEvent
 
 # LLM protocol (always available — these are just Protocol definitions)
 from tract.llm.protocols import LLMClient, AgentLoop
+from tract.llm.protocols import AsyncLLMClient, acall_llm
 
 # Runner components (require optional dependencies: pip install tract-ai[runner])
 try:
@@ -111,7 +112,7 @@ except ImportError:
     pass
 
 try:
-    from tract.loop import LoopConfig, LoopResult, run_loop
+    from tract.loop import LoopConfig, LoopResult, run_loop, arun_loop
 except ImportError:
     pass
 
@@ -261,6 +262,8 @@ __all__ = [
     # LLM protocol
     "LLMClient",
     "AgentLoop",
+    "AsyncLLMClient",
+    "acall_llm",
     # LLM clients
     "OpenAIClient",
     "AnthropicClient",
@@ -284,6 +287,7 @@ __all__ = [
     "LoopConfig",
     "LoopResult",
     "run_loop",
+    "arun_loop",
     # Type aliases
     "CompileStrategy",
 ]

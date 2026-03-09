@@ -10,7 +10,7 @@ import json
 import logging
 import os
 import uuid
-from typing import Any, Iterator
+from typing import Any, AsyncIterator, Iterator
 
 import anthropic
 
@@ -60,6 +60,8 @@ class AnthropicClient:
         self._base_url = base_url
         self._default_model = default_model
         self._default_max_tokens = default_max_tokens
+        self._max_retries = max_retries
+        self._timeout = timeout
 
         sdk_kwargs: dict[str, Any] = {
             "api_key": resolved_key,
@@ -252,6 +254,97 @@ class AnthropicClient:
 
     def __exit__(self, *args: object) -> None:
         self.close()
+
+    # ------------------------------------------------------------------
+    # Async support
+    # ------------------------------------------------------------------
+
+    async def achat(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        **kwargs: Any,
+    ) -> dict:
+        """Async chat completion, return OpenAI-format response dict.
+
+        Async version of :meth:`chat`.  Uses ``anthropic.AsyncAnthropic``.
+        """
+        client = self._get_async_client()
+        create_kwargs = self._build_create_kwargs(
+            messages, model=model, temperature=temperature,
+            max_tokens=max_tokens, **kwargs,
+        )
+        try:
+            response = await client.messages.create(**create_kwargs)
+        except anthropic.AuthenticationError as e:
+            raise LLMAuthError(f"Authentication failed: {e}") from e
+        except anthropic.RateLimitError as e:
+            raise LLMRateLimitError(f"Rate limited: {e}") from e
+        except anthropic.APIStatusError as e:
+            raise LLMResponseError(f"API error ({e.status_code}): {e}") from e
+        except anthropic.APIConnectionError as e:
+            raise LLMResponseError(f"Connection error: {e}") from e
+
+        return self._normalize_response(response)
+
+    async def astream(
+        self,
+        messages: list[dict],
+        *,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[StreamEvent]:
+        """Async stream a chat completion, yielding typed events.
+
+        Async version of :meth:`stream`.
+        """
+        client = self._get_async_client()
+        create_kwargs = self._build_create_kwargs(
+            messages, model=model, temperature=temperature,
+            max_tokens=max_tokens, **kwargs,
+        )
+        try:
+            async with client.messages.stream(**create_kwargs) as stream:
+                async for event in stream:
+                    yielded = self._map_stream_event(event)
+                    if yielded is not None:
+                        yield yielded
+
+                final_message = await stream.get_final_message()
+                normalized = self._normalize_response(final_message)
+                yield UsageEvent(usage=normalized.get("usage", {}))
+                yield MessageDone(response=normalized)
+
+        except anthropic.AuthenticationError as e:
+            raise LLMAuthError(f"Authentication failed: {e}") from e
+        except anthropic.RateLimitError as e:
+            raise LLMRateLimitError(f"Rate limited: {e}") from e
+        except anthropic.APIStatusError as e:
+            raise LLMResponseError(f"API error ({e.status_code}): {e}") from e
+
+    def _get_async_client(self) -> Any:
+        """Lazily create the async Anthropic client."""
+        if not hasattr(self, "_async_client") or self._async_client is None:
+            sdk_kwargs: dict[str, Any] = {
+                "api_key": self._api_key,
+                "max_retries": self._max_retries,
+                "timeout": self._timeout,
+            }
+            if self._base_url:
+                sdk_kwargs["base_url"] = self._base_url.rstrip("/")
+            self._async_client = anthropic.AsyncAnthropic(**sdk_kwargs)
+        return self._async_client
+
+    async def aclose(self) -> None:
+        """Close async resources."""
+        if hasattr(self, "_async_client") and self._async_client is not None:
+            await self._async_client.close()
+            self._async_client = None
 
     # ------------------------------------------------------------------
     # Internal: build API kwargs

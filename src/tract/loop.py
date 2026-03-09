@@ -537,3 +537,244 @@ def _stream_to_response(
         raise ValueError("Stream completed without a MessageDone event")
 
     return response
+
+
+# ---------------------------------------------------------------------------
+# Async loop
+# ---------------------------------------------------------------------------
+
+
+async def arun_loop(
+    tract: Tract,
+    *,
+    task: str | None = None,
+    config: LoopConfig | None = None,
+    llm_client: LLMClient | None = None,
+    tools: list[dict] | None = None,
+    tool_handlers: dict[str, Callable[..., Any]] | None = None,
+    on_step: Callable[[int, Any], None] | None = None,
+    on_token: Callable[[str], None] | None = None,
+    on_tool_result: Callable[[str, str, str], None] | None = None,
+) -> LoopResult:
+    """Async version of :func:`run_loop`.
+
+    LLM calls are awaited. Tool execution uses ``asyncio.to_thread`` for
+    sync handlers. Custom async tool handlers (coroutine functions) are
+    awaited directly.
+
+    Args:
+        Same as :func:`run_loop`.
+
+    Returns:
+        LoopResult with status and metadata.
+    """
+    import asyncio
+    import inspect
+
+    from tract.llm.protocols import acall_llm
+    from tract.toolkit.executor import ToolExecutor
+
+    cfg = config or LoopConfig()
+    client = llm_client or getattr(tract, "_llm_client", None)
+    if client is None:
+        raise ValueError(
+            "No LLM client available. Pass llm_client= or configure on Tract.open()."
+        )
+
+    if tools is None:
+        tools = tract.as_tools(format="openai")
+
+    effective_config = getattr(tract, "_default_config", None)
+
+    # Commit task as initial user message (sync — local operation)
+    if task:
+        tract.user(task)
+
+    steps = 0
+    total_tool_calls = 0
+    last_response: str | None = None
+    last_compiled = None
+    step_usages: list[TokenUsage] = []
+    executor = ToolExecutor(tract)
+
+    strategy: CompileStrategy = tract.get_config("compile_strategy") or cfg.strategy
+    strategy_k: int = tract.get_config("compile_strategy_k") or cfg.strategy_k
+
+    for step in range(cfg.max_steps):
+        steps = step + 1
+
+        # 1. Compile (sync — local SQLite operation)
+        try:
+            last_compiled = tract.compile(strategy=strategy, strategy_k=strategy_k)
+        except BlockedError as e:
+            return LoopResult(
+                "blocked", str(e), steps, total_tool_calls, last_response,
+                compiled=last_compiled, step_usages=tuple(step_usages),
+                config=effective_config,
+            )
+        except Exception as e:
+            return LoopResult(
+                "error", f"Compile failed: {e}", steps, total_tool_calls,
+                compiled=last_compiled, step_usages=tuple(step_usages),
+                config=effective_config,
+            )
+
+        # Build messages
+        messages = last_compiled.to_dicts()
+        if cfg.system_prompt:
+            messages.insert(0, {"role": "system", "content": cfg.system_prompt})
+
+        # 2. Call LLM (async)
+        use_streaming = (
+            (on_token is not None or cfg.stream)
+            and hasattr(client, "astream")
+        )
+        llm_kwargs: dict[str, Any] = {}
+        if cfg.max_tokens is not None:
+            llm_kwargs["max_tokens"] = cfg.max_tokens
+        try:
+            if use_streaming:
+                response = await _astream_to_response(
+                    client, messages, tools, on_token, **llm_kwargs,
+                )
+            else:
+                response = await acall_llm(
+                    client, messages, tools=tools, **llm_kwargs,
+                )
+        except Exception as e:
+            return LoopResult(
+                "error", f"LLM call failed: {e}", steps, total_tool_calls,
+                compiled=last_compiled, step_usages=tuple(step_usages),
+                config=effective_config,
+            )
+
+        content = _extract_content(response, client)
+        tool_call_list = _extract_tool_calls(response, client)
+
+        # Extract and commit reasoning traces (sync)
+        content = _handle_reasoning(response, client, tract, content)
+
+        last_response = content
+
+        # Commit assistant response (sync — local)
+        if tool_call_list:
+            tc_meta = [
+                {"id": tc["id"], "name": tc["name"],
+                 "arguments": tc.get("arguments", {}), "type": "function"}
+                for tc in tool_call_list
+            ]
+            tc_msg = ", ".join(tc["name"] for tc in tool_call_list)
+            tract.assistant(
+                content or "",
+                message=f"call {tc_msg}" if not content else None,
+                metadata={"tool_calls": tc_meta},
+            )
+        elif content:
+            tract.assistant(content)
+
+        step_usage = _extract_and_record_usage(response, client, tract)
+        if step_usage is not None:
+            step_usages.append(step_usage)
+
+        if on_step:
+            on_step(steps, response)
+
+        # 3. If no tool calls, check if we should stop
+        if not tool_call_list:
+            if cfg.stop_on_no_tool_call:
+                try:
+                    last_compiled = tract.compile(strategy=strategy, strategy_k=strategy_k)
+                except Exception:
+                    pass
+                return LoopResult(
+                    "completed",
+                    "LLM finished (no tool calls)",
+                    steps,
+                    total_tool_calls,
+                    last_response,
+                    compiled=last_compiled,
+                    usage=step_usage,
+                    step_usages=tuple(step_usages),
+                    config=effective_config,
+                )
+            continue
+
+        # 4. Execute tool calls
+        for tc in tool_call_list:
+            total_tool_calls += 1
+            tc_name = tc["name"]
+            tc_id = tc.get("id", "")
+            tc_args = tc.get("arguments", {})
+            result_meta = {"tool_call_id": tc_id, "name": tc_name}
+
+            if tool_handlers and tc_name in tool_handlers:
+                try:
+                    handler = tool_handlers[tc_name]
+                    if inspect.iscoroutinefunction(handler):
+                        output = await handler(**tc_args)
+                    else:
+                        output = await asyncio.to_thread(handler, **tc_args)
+                    _commit_tool_result(tract, tc_name, str(output), "success", result_meta)
+                    if on_tool_result:
+                        on_tool_result(tc_name, str(output), "success")
+                except Exception as exc:
+                    _commit_tool_result(
+                        tract, tc_name,
+                        f"{type(exc).__name__}: {exc}", "error", result_meta,
+                    )
+                    if on_tool_result:
+                        on_tool_result(tc_name, f"{type(exc).__name__}: {exc}", "error")
+            else:
+                result = await asyncio.to_thread(executor.execute, tc_name, tc_args)
+                if result.success:
+                    _commit_tool_result(tract, tc_name, result.output, "success", result_meta)
+                    if on_tool_result:
+                        on_tool_result(tc_name, result.output, "success")
+                else:
+                    _commit_tool_result(tract, tc_name, result.error, "error", result_meta)
+                    if on_tool_result:
+                        on_tool_result(tc_name, result.error, "error")
+
+    return LoopResult(
+        "max_steps",
+        f"Reached max steps ({cfg.max_steps})",
+        steps,
+        total_tool_calls,
+        last_response,
+        compiled=last_compiled,
+        step_usages=tuple(step_usages),
+        config=effective_config,
+    )
+
+
+async def _astream_to_response(
+    client: Any,
+    messages: list[dict],
+    tools: list[dict] | None,
+    on_token: Callable[[str], None] | None,
+    **extra_kwargs: Any,
+) -> dict:
+    """Async version of :func:`_stream_to_response`.
+
+    Uses ``client.astream()`` (async generator) instead of ``client.stream()``.
+    """
+    from tract.llm.anthropic_client import MessageDone, TextDelta, ThinkingDelta
+
+    kwargs: dict = {**extra_kwargs}
+    if tools:
+        kwargs["tools"] = tools
+
+    response: dict = {}
+    async for event in client.astream(messages, **kwargs):
+        if isinstance(event, TextDelta):
+            if on_token is not None:
+                on_token(event.text)
+        elif isinstance(event, ThinkingDelta):
+            pass
+        elif isinstance(event, MessageDone):
+            response = event.response
+
+    if not response:
+        raise ValueError("Stream completed without a MessageDone event")
+
+    return response

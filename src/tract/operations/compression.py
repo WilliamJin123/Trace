@@ -1202,3 +1202,206 @@ def gc(
     return execute_gc(
         tract_id, commits_to_remove, commit_repo, blob_repo, event_repo,
     )
+
+
+# ---------------------------------------------------------------------------
+# Async variants
+# ---------------------------------------------------------------------------
+
+
+async def _asummarize_group(
+    messages_text: str,
+    llm_client,
+    token_counter,
+    *,
+    target_tokens: int | None = None,
+    instructions: str | None = None,
+    system_prompt: str | None = None,
+    llm_kwargs: dict | None = None,
+    retention_instructions: list[str] | None = None,
+) -> str:
+    """Async version of :func:`_summarize_group`.
+
+    Uses ``acall_llm`` for the LLM call; everything else is identical.
+    """
+    from tract.llm.protocols import acall_llm
+
+    system = system_prompt if system_prompt is not None else DEFAULT_SUMMARIZE_SYSTEM
+    user_prompt = build_summarize_prompt(
+        messages_text,
+        target_tokens=target_tokens,
+        instructions=instructions,
+        retention_instructions=retention_instructions,
+    )
+
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user_prompt},
+    ]
+
+    response = await acall_llm(llm_client, messages, **(llm_kwargs or {}))
+
+    try:
+        content = response["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise CompressionError(f"Invalid LLM response structure: {exc}") from exc
+
+    if not content or not content.strip():
+        raise CompressionError("LLM returned empty summary")
+
+    return content
+
+
+async def acompress_range(
+    tract_id: str,
+    commit_repo,
+    blob_repo,
+    annotation_repo,
+    ref_repo,
+    commit_engine,
+    token_counter,
+    event_repo,
+    parent_repo,
+    *,
+    commits: list[str] | None = None,
+    from_commit: str | None = None,
+    to_commit: str | None = None,
+    target_tokens: int | None = None,
+    preserve: list[str] | None = None,
+    llm_client=None,
+    content: str | None = None,
+    instructions: str | None = None,
+    system_prompt: str | None = None,
+    llm_kwargs: dict | None = None,
+    generation_config: dict | None = None,
+    type_registry: dict | None = None,
+    triggered_by: str | None = None,
+    two_stage: bool = False,
+) -> "CompressRangeResult":
+    """Async version of :func:`compress_range`.
+
+    The LLM calls (_asummarize_group, guidance generation) are awaited;
+    all local operations (DAG walking, classification, etc.) remain sync.
+    """
+    from tract.llm.protocols import acall_llm
+
+    # a. Resolve HEAD and current branch
+    head_hash = ref_repo.get_head(tract_id)
+    if head_hash is None:
+        raise CompressionError("No commits to compress")
+
+    branch_name = ref_repo.get_current_branch(tract_id)
+
+    # b. Resolve commit range
+    range_commits = _resolve_commit_range(
+        commit_repo, ref_repo, annotation_repo, tract_id, head_hash,
+        commits=commits, from_commit=from_commit, to_commit=to_commit,
+    )
+
+    # c. Classify by priority
+    pinned_commits, important_commits, normal_commits, skip_commits = (
+        _classify_by_priority(range_commits, annotation_repo, preserve=preserve)
+    )
+    compressible_commits = normal_commits + important_commits
+
+    # d. Nothing to compress?
+    if not compressible_commits:
+        raise CompressionError(
+            "Nothing to compress -- all commits are pinned or skipped"
+        )
+
+    # e. Partition around pinned
+    pinned_hashes = {r.commit_hash for r in pinned_commits}
+    skip_hashes = {r.commit_hash for r in skip_commits}
+    groups = _partition_around_pinned(range_commits, pinned_hashes, skip_hashes)
+
+    # e2. Gather retention criteria
+    important_hashes = {r.commit_hash for r in important_commits}
+    important_annotations = annotation_repo.batch_get_latest(
+        list(important_hashes)
+    ) if important_hashes else {}
+    group_retention: list[list] = []
+    group_retention_instructions: list[list[str]] = []
+    for group in groups:
+        criteria = []
+        ret_instructions: list[str] = []
+        for row in group:
+            if row.commit_hash in important_hashes:
+                ann = important_annotations.get(row.commit_hash)
+                if ann is not None and ann.retention_json:
+                    rc = RetentionCriteria(**ann.retention_json)
+                    criteria.append(rc)
+                    if rc.instructions:
+                        ret_instructions.append(rc.instructions)
+        group_retention.append(criteria)
+        group_retention_instructions.append(ret_instructions)
+
+    # f0. Two-stage guidance generation (async LLM call)
+    guidance_text: str | None = None
+    if two_stage and llm_client is not None:
+        from tract.prompts.guidance import (
+            COMPRESS_GUIDANCE_SYSTEM,
+            build_compress_guidance_prompt,
+        )
+
+        all_text = "\n\n".join(
+            _build_messages_text(group, blob_repo) for group in groups
+        )
+        guidance_response = await acall_llm(
+            llm_client,
+            [
+                {"role": "system", "content": COMPRESS_GUIDANCE_SYSTEM},
+                {"role": "user", "content": build_compress_guidance_prompt(
+                    all_text, instructions=instructions
+                )},
+            ],
+            **(llm_kwargs or {}),
+        )
+        guidance_text = guidance_response["choices"][0]["message"]["content"]
+        instructions = f"Guidance:\n{guidance_text}\n\n{instructions or ''}"
+    elif two_stage and llm_client is None and content is None:
+        raise CompressionError(
+            "two_stage=True requires an LLM client. "
+            "Call configure_llm() or pass api_key to Tract.open()."
+        )
+
+    # f. Generate summaries
+    if content is not None:
+        summaries = [content] + [None] * (len(groups) - 1)
+    elif llm_client is not None:
+        summaries = []
+        for gidx, group in enumerate(groups):
+            text = _build_messages_text(group, blob_repo)
+            g_ret_instructions = group_retention_instructions[gidx]
+
+            summary = await _asummarize_group(
+                text, llm_client, token_counter,
+                target_tokens=target_tokens,
+                instructions=instructions,
+                system_prompt=system_prompt,
+                llm_kwargs=llm_kwargs,
+                retention_instructions=g_ret_instructions or None,
+            )
+            summaries.append(summary)
+    else:
+        raise CompressionError(
+            "No LLM client configured and no manual content provided. "
+            "Call configure_llm() first or pass content='...'."
+        )
+
+    # g. Calculate token counts
+    original_tokens = sum(c.token_count for c in compressible_commits)
+    estimated_tokens = sum(
+        token_counter.count_text(s) for s in summaries if s is not None
+    )
+
+    # h. Build and return result
+    summary_text = "\n\n".join(s for s in summaries if s is not None)
+    return CompressRangeResult(
+        summary_text=summary_text,
+        summary_commits=summaries,
+        replaced_hashes=[c.commit_hash for c in compressible_commits],
+        pinned_hashes=[c.commit_hash for c in pinned_commits],
+        token_count=estimated_tokens,
+        generation_config=generation_config,
+    )

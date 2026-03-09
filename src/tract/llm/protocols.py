@@ -62,6 +62,31 @@ class LLMClient(Protocol):
         return response.get("usage")
 
 
+@runtime_checkable
+class AsyncLLMClient(Protocol):
+    """Protocol for async LLM clients.
+
+    Mirrors LLMClient but with async methods. Clients may implement
+    both protocols. The built-in OpenAIClient and AnthropicClient do.
+    """
+
+    async def achat(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        **kwargs: Any,
+    ) -> dict:
+        """Send messages asynchronously, return response dict."""
+        ...
+
+    async def aclose(self) -> None:
+        """Release underlying async resources."""
+        ...
+
+
 @dataclass
 class Resolution:
     """Result of conflict resolution.
@@ -132,3 +157,19 @@ class AgentLoop(Protocol):
     def stop(self) -> None:
         """Signal the loop to stop at the next safe point."""
         ...
+
+
+async def acall_llm(
+    client: Any,
+    messages: list[dict[str, str]],
+    **kwargs: Any,
+) -> dict:
+    """Call an LLM client asynchronously.
+
+    Uses ``achat()`` if the client implements it (AsyncLLMClient),
+    otherwise wraps the sync ``chat()`` in ``asyncio.to_thread()``.
+    """
+    import asyncio
+    if hasattr(client, "achat"):
+        return await client.achat(messages, **kwargs)
+    return await asyncio.to_thread(client.chat, messages, **kwargs)
