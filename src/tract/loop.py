@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -15,8 +16,6 @@ from tract.exceptions import BlockedError
 from tract.models.config import RetryConfig
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from tract.llm.protocols import LLMClient
     from tract.protocols import CompiledContext, TokenUsage
     from tract.tract import CompileStrategy, Tract
@@ -53,6 +52,15 @@ class LoopResult:
         """Sum of all tokens across all steps."""
         return sum(u.total_tokens for u in self.step_usages)
 
+    @property
+    def budget_exhausted(self) -> bool:
+        """Whether the loop stopped due to token budget exhaustion."""
+        return (
+            self.status == "completed"
+            and self.reason is not None
+            and "budget" in self.reason.lower()
+        )
+
     def pprint(
         self,
         *,
@@ -80,6 +88,10 @@ class LoopConfig:
     stop_on_no_tool_call: bool = True
     stream: bool = False
     max_tokens: int | None = None
+    step_budget: int | None = None
+    """Max total tokens across all steps; loop stops gracefully when exceeded."""
+    tool_validator: Callable[[str, dict], tuple[bool, str | None]] | None = None
+    """Validate tool calls before execution: (tool_name, args) -> (ok, error_msg)."""
 
 
 def run_loop(
@@ -266,6 +278,26 @@ def run_loop(
         if step_usage is not None:
             step_usages.append(step_usage)
 
+        # Check step budget
+        if cfg.step_budget is not None:
+            total_used = sum(u.total_tokens for u in step_usages)
+            if total_used >= cfg.step_budget:
+                try:
+                    last_compiled = tract.compile(strategy=strategy, strategy_k=strategy_k)
+                except Exception:
+                    pass
+                return LoopResult(
+                    "completed",
+                    f"Token budget exhausted ({total_used}/{cfg.step_budget})",
+                    steps,
+                    total_tool_calls,
+                    last_response,
+                    compiled=last_compiled,
+                    usage=step_usage,
+                    step_usages=tuple(step_usages),
+                    config=effective_config,
+                )
+
         # Callback
         if on_step:
             on_step(steps, response)
@@ -298,6 +330,16 @@ def run_loop(
             tc_id = tc.get("id", "")
             tc_args = tc.get("arguments", {})
             result_meta = {"tool_call_id": tc_id, "name": tc_name}
+
+            # Validate tool arguments if validator configured
+            if cfg.tool_validator is not None:
+                valid, err_msg = cfg.tool_validator(tc_name, tc_args)
+                if not valid:
+                    error_output = f"Tool validation failed: {err_msg or 'invalid arguments'}"
+                    _commit_tool_result(tract, tc_name, error_output, "error", result_meta)
+                    if on_tool_result:
+                        on_tool_result(tc_name, error_output, "error")
+                    continue
 
             # Pre-tool-execute middleware (can block to skip this tool)
             try:
@@ -925,6 +967,26 @@ async def arun_loop(
         if step_usage is not None:
             step_usages.append(step_usage)
 
+        # Check step budget
+        if cfg.step_budget is not None:
+            total_used = sum(u.total_tokens for u in step_usages)
+            if total_used >= cfg.step_budget:
+                try:
+                    last_compiled = tract.compile(strategy=strategy, strategy_k=strategy_k)
+                except Exception:
+                    pass
+                return LoopResult(
+                    "completed",
+                    f"Token budget exhausted ({total_used}/{cfg.step_budget})",
+                    steps,
+                    total_tool_calls,
+                    last_response,
+                    compiled=last_compiled,
+                    usage=step_usage,
+                    step_usages=tuple(step_usages),
+                    config=effective_config,
+                )
+
         if on_step:
             on_step(steps, response)
 
@@ -955,6 +1017,16 @@ async def arun_loop(
             tc_id = tc.get("id", "")
             tc_args = tc.get("arguments", {})
             result_meta = {"tool_call_id": tc_id, "name": tc_name}
+
+            # Validate tool arguments if validator configured
+            if cfg.tool_validator is not None:
+                valid, err_msg = cfg.tool_validator(tc_name, tc_args)
+                if not valid:
+                    error_output = f"Tool validation failed: {err_msg or 'invalid arguments'}"
+                    _commit_tool_result(tract, tc_name, error_output, "error", result_meta)
+                    if on_tool_result:
+                        on_tool_result(tc_name, error_output, "error")
+                    continue
 
             # Pre-tool-execute middleware (can block to skip this tool)
             try:
