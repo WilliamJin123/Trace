@@ -96,7 +96,7 @@ def main():
             "A colleague loaded these research notes and you're taking over. "
             "Assess what's here, then produce a short recommendation: "
             "which 2 platforms are the best investment bets and why?",
-            max_steps=10, max_tokens=512,
+            max_steps=10, max_tokens=1024,
             on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()

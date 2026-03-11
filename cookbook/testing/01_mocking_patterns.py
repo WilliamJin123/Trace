@@ -256,8 +256,8 @@ def test_chat_with_mock_llm():
     print("3. Chat with mock LLM tested successfully")
     print(f"   Mock calls: {len(mock.calls)}")
     print(f"   Commits: {len(log)}")
-    print(f"   Response 1: {response1.text[:50]}...")
-    print(f"   Response 2: {response2.text[:50]}...")
+    print(f"   Response 1: {(response1.text or '(no response)')[:50]}...")
+    print(f"   Response 2: {(response2.text or '(no response)')[:50]}...")
 
 
 # =====================================================================
@@ -420,7 +420,7 @@ def test_tool_execution_with_mock():
     print(f"   Loop status: {result.status}")
     print(f"   Tool calls: {len(tool_log)}")
     print(f"   LLM calls: {len(mock.calls)}")
-    print(f"   Final: {result.final_response[:60]}...")
+    print(f"   Final: {(result.final_response or '(no response)')[:60]}...")
 
 
 # =====================================================================
@@ -859,7 +859,7 @@ def test_fixture_coding_tract(coding_tract):
 
     print("8b. coding_tract fixture used for continued conversation test")
     print(f"    Total messages: {len(ctx.messages)}")
-    print(f"    Mock LLM response: {response.text[:50]}...")
+    print(f"    Mock LLM response: {(response.text or '(no response)')[:50]}...")
 
 
 # =====================================================================

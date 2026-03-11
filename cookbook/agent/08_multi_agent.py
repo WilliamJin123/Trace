@@ -137,7 +137,7 @@ def main():
         "Research 3 caching patterns: write-through, cache-aside, "
         "and write-back. For each: how it works, pros/cons, best use case.",
         profile=CHILD_PROFILE,
-        max_steps=10, max_tokens=512,
+        max_steps=10, max_tokens=1024,
         on_step=log.on_step, on_tool_result=log.on_tool_result,
     )
     result.pprint()
@@ -168,7 +168,7 @@ def main():
         "Research complete. Which caching strategy and why? "
         "Give a concrete recommendation.",
         profile=PARENT_PROFILE,
-        max_steps=6, max_tokens=512,
+        max_steps=6, max_tokens=1024,
         on_step=log.on_step, on_tool_result=log.on_tool_result,
     )
     result.pprint()

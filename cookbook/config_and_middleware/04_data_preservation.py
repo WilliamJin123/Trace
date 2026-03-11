@@ -126,7 +126,7 @@ def main():
         print("\n=== Log ===\n")
         for ci in t.log():
             tags_str = f" [{', '.join(ci.tags)}]" if ci.tags else ""
-            print(f"  {ci.commit_hash[:8]}  {ci.content_type:14s}{tags_str}  {ci.message[:50]}")
+            print(f"  {ci.commit_hash[:8]}  {ci.content_type:14s}{tags_str}  {(ci.message or '')[:50]}")
 
 
 if __name__ == "__main__":

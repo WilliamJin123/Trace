@@ -89,9 +89,9 @@ _DOMAIN_DESCRIPTIONS: dict[str, str] = {
     ),
     "branch": (
         "Manage parallel lines of work. Branch BEFORE exploring alternatives. "
-        "Actions: branch (create), switch (change), merge (combine), reset "
-        "(undo), checkout (inspect), list_branches (show all), transition "
-        "(move with handoff)."
+        "Actions: branch (create), switch (change to existing branch), merge "
+        "(combine), reset (undo), checkout (inspect read-only), list_branches "
+        "(show all), transition (move to next workflow stage with optional context handoff)."
     ),
     "annotate": (
         "Annotate commits or set directives. "

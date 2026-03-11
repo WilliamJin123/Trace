@@ -40,8 +40,7 @@ def get_all_tools(tract: Tract) -> list[ToolDefinition]:
             description=(
                 "Save content to your context history. Use after generating a "
                 "response, receiving input, or completing a reasoning step. "
-                "Content dict needs a 'content_type' ('dialogue', 'instruction', "
-                "'tool_io', 'reasoning', 'artifact', 'output', 'freeform'). "
+                "Content dict requires a 'content_type' field. "
                 "Tags are auto-registered if needed."
             ),
             parameters={
@@ -50,9 +49,15 @@ def get_all_tools(tract: Tract) -> list[ToolDefinition]:
                     "content": {
                         "type": "object",
                         "description": (
-                            "Content dict with 'content_type' field. "
-                            "For dialogue: {content_type: 'dialogue', role: 'user'|'assistant'|'system', text: '...'}. "
-                            "For instruction: {content_type: 'instruction', text: '...'}."
+                            "Content dict. Required field: content_type. "
+                            "Fields per type:\n"
+                            "- dialogue: role ('user'|'assistant'|'system'|'tool'), text (str)\n"
+                            "- instruction: text (str), optional name (str, for dedup)\n"
+                            "- tool_io: tool_name (str), direction ('call'|'result'), payload (dict), optional status ('success'|'error')\n"
+                            "- reasoning: text (str), optional format ('parsed'|'raw'|'think_tags'|'anthropic')\n"
+                            "- artifact: artifact_type (str), content (str), optional language (str)\n"
+                            "- output: text (str), optional format ('text'|'markdown'|'json')\n"
+                            "- freeform: payload (dict)"
                         ),
                     },
                     "operation": {
@@ -281,9 +286,9 @@ def get_all_tools(tract: Tract) -> list[ToolDefinition]:
         ToolDefinition(
             name="switch",
             description=(
-                "Switch to a different branch. Use when you need to resume "
-                "work on another line of thought, or return to main after "
-                "finishing a branch."
+                "Switch to an existing branch. Use to resume work on another "
+                "line of thought or return to main. For stage-based workflow "
+                "transitions (where you want context handoff), use transition instead."
             ),
             parameters={
                 "type": "object",
@@ -530,9 +535,9 @@ def get_all_tools(tract: Tract) -> list[ToolDefinition]:
         ToolDefinition(
             name="register_tag",
             description=(
-                "Register a custom tag name in the tag registry. Required before "
-                "using the tag in strict mode (the default). Optionally provide a "
-                "description explaining what the tag means."
+                "Pre-register a tag with an optional description. Not required for "
+                "commit (tags are auto-registered there), but useful to attach a "
+                "human-readable description to a tag before it is used."
             ),
             parameters={
                 "type": "object",
@@ -657,21 +662,27 @@ def get_all_tools(tract: Tract) -> list[ToolDefinition]:
         ToolDefinition(
             name="transition",
             description=(
-                "Transition to a target branch with optional handoff. "
-                "Runs pre/post_transition middleware and switches to the target."
+                "Move to the next stage in a workflow (e.g., research -> drafting -> review). "
+                "Creates the target branch if it doesn't exist, switches to it, and optionally "
+                "commits a context handoff so the new stage has relevant prior context. "
+                "Use this instead of switch when moving between workflow stages. "
+                "Runs pre/post_transition middleware."
             ),
             parameters={
                 "type": "object",
                 "properties": {
                     "target": {
                         "type": "string",
-                        "description": "Target branch name to transition to.",
+                        "description": "Target branch name (stage) to transition to. Created if it doesn't exist.",
                     },
                     "handoff": {
                         "type": "string",
                         "description": (
-                            "Handoff mode: 'full' (compile all), 'summary' "
-                            "(adaptive), 'none' (default), or custom text."
+                            "What context to carry to the new stage. "
+                            "'none' (default): switch only, no context carried. "
+                            "'summary': compile an adaptive summary of current context. "
+                            "'full': compile entire current context verbatim. "
+                            "Or pass a custom string to use as the handoff text."
                         ),
                         "default": "none",
                     },

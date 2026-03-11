@@ -239,6 +239,7 @@ def main():
             "  iteration (headline tweaks, CTA improvements, audience targeting)\n"
             "- Tag recommendations with 'optimization'",
             max_steps=25,
+            profile="full",
             tool_names=[
                 "commit", "tag", "register_tag", "branch", "switch",
                 "transition", "create_metadata", "get_config", "status",
@@ -279,7 +280,7 @@ def main():
                         meta_str += f" {key}={ci.metadata[key]}"
             print(
                 f"    {ci.commit_hash[:8]}  {ci.content_type:10s}{tags_str}"
-                f"{meta_str}  {ci.message[:40]}"
+                f"{meta_str}  {(ci.message or '')[:40]}"
             )
 
         print(f"\n  Total commits: {len(t.log())}")

@@ -27,7 +27,7 @@ def main():
     ctx = t.compile()
     print(f"  Compiled messages:")
     for m in ctx.messages:
-        preview = m.content[:80].replace("\n", " ")
+        preview = (m.content or "")[:80].replace("\n", " ")
         print(f"    [{m.role:9s}] {preview}")
 
     t.close()
@@ -62,7 +62,7 @@ def main():
     print(f"\n  After dropping failed turns:")
     ctx = t.compile()
     for m in ctx.messages:
-        preview = m.content[:80].replace("\n", " ")
+        preview = (m.content or "")[:80].replace("\n", " ")
         print(f"    [{m.role:9s}] {preview}")
 
     # Query tools: find_tool_turns, find_tool_results

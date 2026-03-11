@@ -276,7 +276,7 @@ def main():
         )
 
         # Show a preview of findings
-        preview = response.text[:300].replace("\n", "\n    ")
+        preview = (response.text or "(no response)")[:300].replace("\n", "\n    ")
         print(f"  Findings preview:\n    {preview}...")
 
         # Tag the response commit with the analyst's domain

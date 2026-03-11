@@ -76,7 +76,7 @@ def main():
         result = t.run(
             "Design CRUD endpoints for tasks (title, status, assignee). "
             "What URL structure and HTTP methods?",
-            max_steps=5, max_tokens=512,
+            max_steps=5, max_tokens=1024,
             on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()
@@ -91,7 +91,7 @@ def main():
         result = t.run(
             "Wait, different topic — plan a team offsite for 15 people "
             "next Friday, $2000 budget. Quick suggestions?",
-            max_steps=8, max_tokens=512,
+            max_steps=8, max_tokens=1024,
             on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()
@@ -106,7 +106,7 @@ def main():
         print(f"\n\n=== Phase 3: Resume API design ===\n")
         result = t.run(
             "Back to the API — what status codes for each endpoint?",
-            max_steps=5, max_tokens=512,
+            max_steps=5, max_tokens=1024,
             on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()

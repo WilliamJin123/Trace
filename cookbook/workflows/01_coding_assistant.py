@@ -123,6 +123,7 @@ def main():
             "When design is complete, transition to 'implementation' to write code. "
             "When implementation is complete, transition to 'validation' to write tests.",
             max_steps=15,
+            profile="full",
             tool_names=["commit", "transition", "get_config", "status"],
             on_step=log.on_step,
             on_tool_result=log.on_tool_result,
@@ -146,7 +147,7 @@ def main():
 
         print(f"\n  Log (last 8 commits):")
         for ci in t.log()[-8:]:
-            print(f"    {ci.commit_hash[:8]}  {ci.content_type:10s}  {ci.message[:50]}")
+            print(f"    {ci.commit_hash[:8]}  {ci.content_type:10s}  {(ci.message or '')[:50]}")
 
 
 if __name__ == "__main__":

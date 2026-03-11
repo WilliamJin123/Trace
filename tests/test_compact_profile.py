@@ -316,6 +316,86 @@ class TestExecutorCompact:
 # ---------------------------------------------------------------------------
 
 
+class TestActionNameTranslation:
+    """Verify that passing full-profile action names (e.g. 'commit', 'status')
+    transparently selects the correct compact domain tools."""
+
+    def test_action_names_resolve_to_domain_tools(self, tract):
+        """tool_names=["commit", "status"] should include tract_context."""
+        tools = tract.as_tools(
+            profile="compact",
+            tool_names=["commit", "status"],
+        )
+        names = {t["function"]["name"] for t in tools}
+        assert "tract_context" in names
+
+    def test_action_names_across_domains(self, tract):
+        """Names from different domains should include all relevant domains."""
+        tools = tract.as_tools(
+            profile="compact",
+            tool_names=["commit", "branch", "tag"],
+        )
+        names = {t["function"]["name"] for t in tools}
+        assert "tract_context" in names
+        assert "tract_branch" in names
+        assert "tract_tag" in names
+
+    def test_action_names_no_extra_domains(self, tract):
+        """Only relevant domains should be included, not all 7."""
+        tools = tract.as_tools(
+            profile="compact",
+            tool_names=["commit", "status"],
+        )
+        names = {t["function"]["name"] for t in tools}
+        # Should include tract_context but not unrelated domains
+        assert "tract_context" in names
+        assert "tract_middleware" not in names
+
+    def test_compact_domain_names_still_work(self, tract):
+        """Direct compact names like 'tract_context' should still work."""
+        tools = tract.as_tools(
+            profile="compact",
+            tool_names=["tract_context", "tract_branch"],
+        )
+        names = {t["function"]["name"] for t in tools}
+        assert names == {"tract_context", "tract_branch"}
+
+    def test_mixed_action_and_domain_names(self, tract):
+        """Mix of action names and compact domain names should work."""
+        tools = tract.as_tools(
+            profile="compact",
+            tool_names=["commit", "tract_branch"],
+        )
+        names = {t["function"]["name"] for t in tools}
+        assert "tract_context" in names
+        assert "tract_branch" in names
+
+    def test_discover_always_excluded_unless_named(self, tract):
+        """tract_discover should not appear unless explicitly requested."""
+        tools = tract.as_tools(
+            profile="compact",
+            tool_names=["commit"],
+        )
+        names = {t["function"]["name"] for t in tools}
+        assert "tract_discover" not in names
+
+    def test_empty_tool_names_returns_nothing(self, tract):
+        """Empty tool_names list should return no tools."""
+        tools = tract.as_tools(
+            profile="compact",
+            tool_names=[],
+        )
+        assert tools == []
+
+    def test_unrecognized_names_silently_ignored(self, tract):
+        """Names that match neither action nor domain are silently skipped."""
+        tools = tract.as_tools(
+            profile="compact",
+            tool_names=["nonexistent_tool"],
+        )
+        assert tools == []
+
+
 class TestDomainCoverage:
     def test_all_individual_tools_mapped(self, tract):
         from tract.toolkit.definitions import get_all_tools

@@ -2544,13 +2544,11 @@ class Tract:
             effective_profile = (
                 self._tool_profile or "compact"
             ) if profile is self._PROFILE_SENTINEL else profile
-            resolved_tools = self.as_tools(profile=effective_profile, format="openai")
-            if tool_names is not None:
-                allowed = set(tool_names)
-                resolved_tools = [
-                    t for t in resolved_tools
-                    if t.get("function", {}).get("name") in allowed
-                ]
+            resolved_tools = self.as_tools(
+                profile=effective_profile,
+                tool_names=tool_names,
+                format="openai",
+            )
         else:
             resolved_tools = tools  # type: ignore[assignment]  # user-supplied tools passthrough
 
@@ -2971,13 +2969,11 @@ class Tract:
             effective_profile = (
                 self._tool_profile or "compact"
             ) if profile is None or profile is _P_SENTINEL else profile
-            resolved_tools = self.as_tools(profile=effective_profile, format="openai")
-            if tool_names is not None:
-                allowed = set(tool_names)
-                resolved_tools = [
-                    t for t in resolved_tools
-                    if t.get("function", {}).get("name") in allowed
-                ]
+            resolved_tools = self.as_tools(
+                profile=effective_profile,
+                tool_names=tool_names,
+                format="openai",
+            )
         else:
             resolved_tools = tools
 
@@ -6914,12 +6910,21 @@ class Tract:
 
         # Special case: compact profile generates domain-grouped tools
         if resolved_profile.name == "compact":
-            from tract.toolkit.compact import get_compact_tools
+            from tract.toolkit.compact import ACTION_TO_DOMAIN, get_compact_tools
 
             compact_tools = get_compact_tools(self)
             if tool_names is not None:
                 allowed = set(tool_names)
-                compact_tools = [t for t in compact_tools if t.name in allowed]
+                # Translate action-level names (e.g. "commit", "status") to
+                # the compact domain tools that contain them (e.g.
+                # "tract_context").  This lets callers use the same tool_names
+                # regardless of whether the profile is "full" or "compact".
+                expanded = set(allowed)  # keep any direct compact names
+                for name in allowed:
+                    domain = ACTION_TO_DOMAIN.get(name)
+                    if domain is not None:
+                        expanded.add(f"tract_{domain}")
+                compact_tools = [t for t in compact_tools if t.name in expanded]
             if overrides:
                 compact_tools = [
                     replace(t, description=overrides[t.name])

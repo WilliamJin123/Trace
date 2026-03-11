@@ -65,7 +65,7 @@ def main():
         # Get a deliberately brief initial answer
         r1 = t.chat("Explain how a compiler works in one sentence.")
         original_hash = r1.commit_info.commit_hash
-        print(f"  Initial answer [{original_hash[:8]}]: {r1.text[:120]}")
+        print(f"  Initial answer [{original_hash[:8]}]: {(r1.text or '(no response)')[:120]}")
 
         # Ask to improve — no mention of tools, edit operations, or hashes
         print("\n  --- Task ---")
@@ -73,7 +73,7 @@ def main():
         result = t.run(
             "Too brief. Expand to cover lexing, parsing, optimization, "
             "and codegen. Replace the original, don't just append.",
-            max_steps=8, max_tokens=512,
+            max_steps=8, max_tokens=1024,
             on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()

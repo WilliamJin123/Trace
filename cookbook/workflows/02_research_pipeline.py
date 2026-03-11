@@ -133,6 +133,7 @@ def main():
             "metadata entries to classify the strategies. Then transition to "
             "'synthesize' and produce a comparative summary.",
             max_steps=20,
+            profile="full",
             tool_names=["commit", "tag", "register_tag", "transition",
                         "create_metadata", "get_config", "status"],
             on_step=log.on_step,
@@ -163,7 +164,7 @@ def main():
         for ci in t.log()[-10:]:
             tags_str = f" [{', '.join(ci.tags)}]" if ci.tags else ""
             print(f"    {ci.commit_hash[:8]}  {ci.content_type:10s}{tags_str}  "
-                  f"{ci.message[:40]}")
+                  f"{(ci.message or '')[:40]}")
 
 
 if __name__ == "__main__":

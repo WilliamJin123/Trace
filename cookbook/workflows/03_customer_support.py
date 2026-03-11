@@ -146,6 +146,7 @@ def main():
             "3. ESCALATE (if needed): Document what was tried, create a metadata\n"
             "   entry with the escalation summary, tag as 'escalated'.",
             max_steps=20,
+            profile="full",
             tool_names=["commit", "tag", "register_tag", "branch", "switch",
                         "transition", "create_metadata", "get_config", "status"],
             on_step=log.on_step,
@@ -172,7 +173,7 @@ def main():
         for ci in t.log()[-8:]:
             tags_str = f" [{', '.join(ci.tags)}]" if ci.tags else ""
             print(f"    {ci.commit_hash[:8]}  {ci.content_type:10s}{tags_str}  "
-                  f"{ci.message[:45]}")
+                  f"{(ci.message or '')[:45]}")
 
 
 if __name__ == "__main__":

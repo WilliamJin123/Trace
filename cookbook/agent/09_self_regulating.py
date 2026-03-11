@@ -66,8 +66,9 @@ def main():
             "Write short marketing copy for 'Nexus' API framework. "
             "Selling points: 1M req/sec, built-in auth, auto OpenAPI docs. "
             "Make it compelling for the landing page.",
+            profile="full",
             tool_names=_tool_names,
-            max_steps=6, max_tokens=512,
+            max_steps=6, max_tokens=1024,
             on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()
@@ -80,8 +81,9 @@ def main():
             "Now write a security audit of Nexus as a penetration tester. "
             "Be ruthlessly critical — find gaps in the auth claims, "
             "question the performance numbers, flag what was left out.",
+            profile="full",
             tool_names=_tool_names,
-            max_steps=8, max_tokens=512,
+            max_steps=8, max_tokens=1024,
             on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()

@@ -28,7 +28,7 @@ def main():
     ctx = t.compile()
     print(f"  Feature branch: {len(ctx.messages)} messages")
     for m in ctx.messages:
-        print(f"    [{m.role}] {m.content[:60]}")
+        print(f"    [{m.role}] {(m.content or '')[:60]}")
 
     # Switch back
     t.switch("main")
@@ -91,7 +91,7 @@ def main():
     ctx = t.compile()
     print(f"  After merge: {len(ctx.messages)} messages")
     for m in ctx.messages:
-        print(f"    [{m.role}] {m.content[:60]}")
+        print(f"    [{m.role}] {(m.content or '')[:60]}")
 
     t.close()
 
@@ -134,7 +134,7 @@ def main():
         ctx = t.compile()
         print(f"  Merged context: {len(ctx.messages)} messages")
         for m in ctx.messages:
-            print(f"    [{m.role}] {m.content[:60]}")
+            print(f"    [{m.role}] {(m.content or '')[:60]}")
 
     # With LLM resolver (auto-resolves conflicts, requires LLM config):
     # result = t.merge("formal", resolver="llm")

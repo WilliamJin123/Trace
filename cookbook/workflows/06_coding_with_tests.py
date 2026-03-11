@@ -163,6 +163,7 @@ def main():
             "Commit your analysis as a structured plan. When done, "
             "transition to 'test_writing'.",
             max_steps=8,
+            profile="full",
             tool_names=["commit", "transition", "get_config", "status"],
             on_step=log.on_step,
             on_tool_result=log.on_tool_result,
@@ -214,6 +215,7 @@ def main():
             "Format as a complete pytest file. Commit the test file. "
             "When done, transition to 'implementation'.",
             max_steps=8,
+            profile="full",
             tool_names=["commit", "transition", "get_config", "status"],
             on_step=log.on_step,
             on_tool_result=log.on_tool_result,
@@ -251,6 +253,7 @@ def main():
             "- No regex -- use string operations only\n\n"
             "Commit the implementation. Do NOT transition yet.",
             max_steps=6,
+            profile="full",
             tool_names=["commit", "get_config", "status"],
             on_step=log.on_step,
             on_tool_result=log.on_tool_result,
@@ -279,6 +282,7 @@ def main():
             "  failures: list of failing test names (if any)\n\n"
             "Be HONEST about failures. It's better to catch bugs now.",
             max_steps=6,
+            profile="full",
             tool_names=["commit", "get_config", "status", "log"],
             on_step=log.on_step,
             on_tool_result=log.on_tool_result,
@@ -341,6 +345,7 @@ def main():
                 "- Empty string and missing @ handling\n\n"
                 "Commit the improved implementation.",
                 max_steps=6,
+                profile="full",
                 tool_names=["commit", "get_config", "status"],
                 on_step=log.on_step,
                 on_tool_result=log.on_tool_result,
@@ -366,6 +371,7 @@ def main():
                 "  tests_failed: number\n"
                 "  failures: list (if any)",
                 max_steps=6,
+                profile="full",
                 tool_names=["commit", "get_config", "status", "log"],
                 on_step=log.on_step,
                 on_tool_result=log.on_tool_result,
@@ -431,6 +437,7 @@ def main():
                 "4. Performance: Any unnecessary complexity?\n\n"
                 "Commit your review summary with a final assessment.",
                 max_steps=6,
+                profile="full",
                 tool_names=["commit", "get_config", "status", "log"],
                 on_step=log.on_step,
                 on_tool_result=log.on_tool_result,
@@ -456,7 +463,7 @@ def main():
         pinned = t.pinned()
         print(f"\n  Pinned commits (survived compression): {len(pinned)}")
         for p in pinned[:5]:
-            print(f"    {p.commit_hash[:8]}  {p.content_type:10s}  {p.message[:50]}")
+            print(f"    {p.commit_hash[:8]}  {p.content_type:10s}  {(p.message or '')[:50]}")
 
         # Searchable history: find all test-related commits
         test_artifacts = t.find(content="validate_email", limit=10)
@@ -474,7 +481,7 @@ def main():
             if ci.metadata and "test_status" in ci.metadata:
                 meta = f"  [{ci.metadata['test_status']}]"
             print(f"    {ci.commit_hash[:8]}  {ci.content_type:12s}  "
-                  f"{ci.message[:45]}{meta}")
+                  f"{(ci.message or '')[:45]}{meta}")
 
         print(f"\n{'=' * 70}")
         print("WHY TRACT > NAIVE PROMPT CHAINS:")

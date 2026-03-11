@@ -116,7 +116,7 @@ def main():
         result = t.run(
             "Organize everything by discipline — biology, physics, "
             "chemistry, and CS. I'll be querying this repeatedly.",
-            max_steps=15, max_tokens=512,
+            max_steps=15, max_tokens=1024,
             on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()
@@ -126,7 +126,7 @@ def main():
         result = t.run(
             "Find everything related to energy transfer — which topics "
             "involve energy across disciplines?",
-            max_steps=10, max_tokens=512,
+            max_steps=10, max_tokens=1024,
             on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()
