@@ -2472,6 +2472,9 @@ class Tract:
         on_token: Callable | None = None,
         on_tool_result: Callable | None = None,
         stream: bool = False,
+        step_budget: int | None = None,
+        tool_validator: Callable | None = None,
+        auto_compress_threshold: float | None = None,
     ) -> LoopResult:  # noqa: F821
         """Run the default agent loop on this tract.
 
@@ -2508,6 +2511,15 @@ class Tract:
                 Called after each tool execution with the tool name, output text,
                 and ``"success"`` or ``"error"`` status.
             stream: Enable streaming even without on_token callback.
+            step_budget: Maximum total tokens across all loop steps.
+                When exceeded, the loop stops gracefully with
+                ``result.budget_exhausted == True``.
+            tool_validator: Callable ``(tool_name, args_dict) -> (ok, error_msg)``
+                that validates tool arguments before execution. Invalid
+                calls are committed as errors without executing the tool.
+            auto_compress_threshold: Float 0.0-1.0. When compiled context
+                exceeds this fraction of ``max_tokens``, the loop
+                auto-compresses before the next LLM call.
 
         Returns:
             LoopResult with status, reason, steps, and tool_calls.
@@ -2534,6 +2546,9 @@ class Tract:
             system_prompt=system_prompt,
             stream=stream,
             max_tokens=max_tokens,
+            step_budget=step_budget,
+            tool_validator=tool_validator,
+            auto_compress_threshold=auto_compress_threshold,
         )
         return run_loop(
             self,

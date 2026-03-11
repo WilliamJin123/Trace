@@ -125,7 +125,7 @@ except ImportError:
     pass
 
 try:
-    from tract.loop import LoopConfig, LoopResult, run_loop, arun_loop
+    from tract.loop import LoopConfig, LoopResult, StepMetrics, run_loop, arun_loop
 except ImportError:
     pass
 
@@ -312,6 +312,7 @@ __all__ = [
     # Default loop
     "LoopConfig",
     "LoopResult",
+    "StepMetrics",
     "run_loop",
     "arun_loop",
     # Type aliases
