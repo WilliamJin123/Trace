@@ -85,6 +85,17 @@ from tract.operations.diff import DiffResult, MessageDiff, DiffStat
 from tract.operations.config_index import ConfigIndex
 from tract.middleware import MiddlewareContext, MiddlewareEvent
 
+# Directive templates
+from tract.templates import DirectiveTemplate, list_templates, get_template, register_template
+
+# Workflow profiles
+from tract.profiles import (
+    WorkflowProfile,
+    get_profile as get_workflow_profile,
+    list_profiles as list_workflow_profiles,
+    register_profile as register_workflow_profile,
+)
+
 # LLM protocol (always available — these are just Protocol definitions)
 from tract.llm.protocols import LLMClient, AgentLoop
 from tract.llm.protocols import AsyncLLMClient, acall_llm
@@ -219,6 +230,16 @@ __all__ = [
     "ConfigIndex",
     "MiddlewareContext",
     "MiddlewareEvent",
+    # Directive templates
+    "DirectiveTemplate",
+    "list_templates",
+    "get_template",
+    "register_template",
+    # Workflow profiles
+    "WorkflowProfile",
+    "get_workflow_profile",
+    "list_workflow_profiles",
+    "register_workflow_profile",
     # Exceptions
     "TraceError",
     "CommitNotFoundError",

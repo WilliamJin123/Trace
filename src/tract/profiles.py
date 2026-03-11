@@ -1,0 +1,162 @@
+"""Pre-built workflow profiles for common use cases.
+
+A workflow profile bundles configuration, directives, tool profile, and
+stage definitions into a single reusable package. Load a profile with
+``t.load_profile("coding")`` then advance stages with ``t.apply_stage("test")``.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+
+@dataclass(frozen=True)
+class WorkflowProfile:
+    """A pre-built configuration bundle for a specific workflow type.
+
+    Attributes:
+        name: Short identifier (e.g. ``"coding"``, ``"research"``).
+        description: Human-readable summary of what this profile is for.
+        config: Settings applied via ``t.configure()`` when the profile is loaded.
+        directive_templates: Template names to apply via ``t.apply_template()``.
+            Maps ``template_name -> {param: value}``.
+        directives: Raw directives (``name -> content``) committed via ``t.directive()``.
+        tool_profile: Tool profile name to use (``"self"``, ``"supervisor"``, etc.).
+        stages: Stage definitions mapping ``stage_name -> config overrides``.
+    """
+
+    name: str
+    description: str
+    # Config settings to apply via t.configure()
+    config: dict[str, object] = field(default_factory=dict)
+    # Directive template names to apply (from templates.py)
+    directive_templates: dict[str, dict[str, str]] = field(default_factory=dict)  # template_name -> {param: value}
+    # Raw directives (name -> content) for workflow-specific instructions
+    directives: dict[str, str] = field(default_factory=dict)
+    # Tool profile name
+    tool_profile: str = "self"
+    # Stage definitions (name -> config overrides for that stage)
+    stages: dict[str, dict[str, object]] = field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Built-in profiles
+# ---------------------------------------------------------------------------
+
+CODING = WorkflowProfile(
+    name="coding",
+    description="Software engineering workflow: design, implement, test, review",
+    config={
+        "temperature": 0.3,
+        "compile_strategy": "messages",
+    },
+    directives={
+        "methodology": (
+            "Follow test-driven development: write failing tests first, then implement.\n"
+            "Break complex tasks into small, verifiable steps.\n"
+            "Always consider edge cases and error handling."
+        ),
+        "code_quality": (
+            "Write clean, readable code following language idioms.\n"
+            "Include meaningful variable names and minimal comments.\n"
+            "Prefer simple solutions over clever ones."
+        ),
+    },
+    tool_profile="self",
+    stages={
+        "design": {"temperature": 0.5, "compile_strategy": "full"},
+        "implement": {"temperature": 0.2, "compile_strategy": "messages"},
+        "test": {"temperature": 0.1, "compile_strategy": "messages"},
+        "review": {"temperature": 0.4, "compile_strategy": "adaptive"},
+    },
+)
+
+RESEARCH = WorkflowProfile(
+    name="research",
+    description="Research pipeline: ingest, organize, synthesize, validate",
+    config={
+        "temperature": 0.5,
+        "compile_strategy": "full",
+    },
+    directives={
+        "methodology": (
+            "Investigate systematically from multiple perspectives.\n"
+            "Track source reliability and recency.\n"
+            "Identify contradictions and knowledge gaps.\n"
+            "Tag findings: pro, con, risk, opportunity."
+        ),
+        "synthesis": (
+            "Synthesize findings with explicit confidence levels.\n"
+            "Distinguish between established facts and interpretations.\n"
+            "Note areas of consensus and disagreement."
+        ),
+    },
+    tool_profile="self",
+    stages={
+        "ingest": {"temperature": 0.3, "compile_strategy": "full"},
+        "organize": {"temperature": 0.4, "compile_strategy": "messages"},
+        "synthesize": {"temperature": 0.6, "compile_strategy": "adaptive"},
+        "validate": {"temperature": 0.2, "compile_strategy": "full"},
+    },
+)
+
+ECOMMERCE = WorkflowProfile(
+    name="ecommerce",
+    description="E-commerce optimization: research, create, campaign, analyze, optimize",
+    config={
+        "temperature": 0.6,
+        "compile_strategy": "messages",
+    },
+    directives={
+        "brand_consistency": (
+            "Maintain consistent brand voice across all content.\n"
+            "Lead with customer benefits, not features.\n"
+            "Include clear calls-to-action in all customer-facing content."
+        ),
+        "data_driven": (
+            "Base decisions on metrics: conversion rate, CTR, engagement.\n"
+            "A/B test all major creative decisions.\n"
+            "Track ROI for every campaign variant."
+        ),
+    },
+    tool_profile="self",
+    stages={
+        "research": {"temperature": 0.4, "compile_strategy": "full"},
+        "creative": {"temperature": 0.8, "compile_strategy": "messages"},
+        "campaign": {"temperature": 0.5, "compile_strategy": "messages"},
+        "analysis": {"temperature": 0.2, "compile_strategy": "adaptive"},
+        "optimize": {"temperature": 0.5, "compile_strategy": "messages"},
+    },
+)
+
+# ---------------------------------------------------------------------------
+# Registry
+# ---------------------------------------------------------------------------
+
+BUILT_IN_PROFILES: dict[str, WorkflowProfile] = {
+    "coding": CODING,
+    "research": RESEARCH,
+    "ecommerce": ECOMMERCE,
+}
+
+
+def get_profile(name: str) -> WorkflowProfile:
+    """Get a workflow profile by name.
+
+    Raises:
+        KeyError: If no profile with that name is registered.
+    """
+    if name not in BUILT_IN_PROFILES:
+        available = ", ".join(sorted(BUILT_IN_PROFILES.keys()))
+        raise KeyError(f"Profile '{name}' not found. Available: {available}")
+    return BUILT_IN_PROFILES[name]
+
+
+def list_profiles() -> list[WorkflowProfile]:
+    """List all available workflow profiles."""
+    return list(BUILT_IN_PROFILES.values())
+
+
+def register_profile(profile: WorkflowProfile) -> None:
+    """Register a custom workflow profile."""
+    BUILT_IN_PROFILES[profile.name] = profile

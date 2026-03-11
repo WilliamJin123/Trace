@@ -5,12 +5,14 @@ Provides:
 - collapse_tract(): Compress child tract history into a summary commit in parent
 - _head_snapshot(): Compile parent context and seed child with it
 - _full_clone(): Replay all parent commits into child tract
+- _selective_clone(): Replay filtered subset of parent commits into child tract
 """
 
 from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -42,6 +44,11 @@ def spawn_tract(
     inheritance: str = "head_snapshot",
     display_name: str | None = None,
     max_tokens: int | None = None,
+    filter_func: Callable | None = None,
+    include_tags: list[str] | None = None,
+    exclude_tags: list[str] | None = None,
+    include_types: list[str] | None = None,
+    include_instructions: bool = True,
 ) -> Tract:
     """Create a child tract linked to parent via spawn pointer.
 
@@ -52,24 +59,49 @@ def spawn_tract(
         parent_tract: The parent Tract instance.
         purpose: Description of the child's task.
         inheritance: Inheritance mode: "head_snapshot" (default), "full_clone",
-            or "selective" (not implemented).
+            or "selective".
         display_name: Optional human-readable name for the child.
         max_tokens: Max tokens for head_snapshot (truncates from oldest).
+        filter_func: For selective mode: callable ``(commit_row) -> bool``
+            that receives each parent commit and returns True to include it.
+        include_tags: For selective mode: include commits that have at least
+            one of these tags (immutable tags from ``tags_json``).
+        exclude_tags: For selective mode: exclude commits that have any of
+            these tags.
+        include_types: For selective mode: include only commits whose
+            ``content_type`` is in this list.
+        include_instructions: For selective mode: always include instruction
+            and config commits even when filtered out. Default True.
 
     Returns:
         The new child Tract instance.
 
     Raises:
         SpawnError: If inheritance mode is invalid.
-        NotImplementedError: If inheritance is "selective".
+        ValueError: If selective mode is used without any filter criteria.
     """
-    if inheritance == "selective":
-        raise NotImplementedError(
-            "Selective inheritance is not yet implemented (deferred to future version)"
-        )
-
-    if inheritance not in ("head_snapshot", "full_clone"):
+    if inheritance not in ("head_snapshot", "full_clone", "selective"):
         raise SpawnError(f"Unknown inheritance mode: {inheritance}")
+
+    if inheritance == "selective":
+        # Build auto-filter from convenience parameters if no filter_func
+        if filter_func is None and (include_tags or exclude_tags or include_types):
+            def _auto_filter(commit_row):
+                tags = set(commit_row.tags_json or [])
+                if include_tags and not any(t in tags for t in include_tags):
+                    return False
+                if exclude_tags and any(t in tags for t in exclude_tags):
+                    return False
+                if include_types and commit_row.content_type not in include_types:
+                    return False
+                return True
+            filter_func = _auto_filter
+
+        if filter_func is None:
+            raise ValueError(
+                "selective inheritance requires a filter_func, include_tags, "
+                "exclude_tags, or include_types parameter"
+            )
 
     # Import here to avoid circular imports
     from tract.engine.cache import CacheManager
@@ -96,7 +128,7 @@ def spawn_tract(
     parent_head = parent_tract.head
     parent_compiled = parent_tract.compile() if parent_head else None
     parent_commits_snapshot = None
-    if inheritance == "full_clone":
+    if inheritance in ("full_clone", "selective"):
         parent_commits_snapshot = list(
             parent_tract._commit_repo.get_all(parent_tract.tract_id)
         )
@@ -177,6 +209,19 @@ def spawn_tract(
             child_ref_repo,
             child_annotation_repo,
             commits_snapshot=parent_commits_snapshot,
+        )
+        child_session.commit()
+    elif inheritance == "selective":
+        _selective_clone(
+            parent_tract,
+            child_commit_engine,
+            child_commit_repo,
+            child_blob_repo,
+            child_ref_repo,
+            child_annotation_repo,
+            commits_snapshot=parent_commits_snapshot,
+            filter_func=filter_func,  # type: ignore[arg-type]
+            include_instructions=include_instructions,
         )
         child_session.commit()
 
@@ -290,6 +335,121 @@ def _full_clone(
     # A hash remapping could be added here if edit_target fidelity is needed.
     last_hash = None
     for commit_row in all_commits:
+        # Read blob content
+        blob = parent_tract._blob_repo.get(commit_row.content_hash)
+        if blob is None:
+            continue
+
+        # Parse content from blob
+        content_dict = json.loads(blob.payload_json)
+        content = validate_content(content_dict)
+
+        # Create commit in child (new hashes, new timestamps)
+        info = child_commit_engine.create_commit(
+            content=content,
+            operation=commit_row.operation,
+            message=commit_row.message,
+            metadata=commit_row.metadata_json,
+            generation_config=commit_row.generation_config_json,
+        )
+        last_hash = info.commit_hash
+
+        # Copy annotations
+        annotations = parent_tract._annotation_repo.get_history(
+            commit_row.commit_hash
+        )
+        for ann in annotations:
+            child_commit_engine.annotate(
+                info.commit_hash, ann.priority, ann.reason
+            )
+
+    return last_hash
+
+
+def _selective_clone(
+    parent_tract,
+    child_commit_engine: CommitEngine,
+    child_commit_repo,
+    child_blob_repo,
+    child_ref_repo,
+    child_annotation_repo,
+    *,
+    commits_snapshot: list | None = None,
+    filter_func: Callable,
+    include_instructions: bool = True,
+) -> str | None:
+    """Replay a filtered subset of parent commits into child tract.
+
+    Walks the parent commit chain (oldest first) and applies the filter_func
+    to each commit. Commits that pass the filter are replayed into the child.
+
+    Special handling:
+    - instruction and config commits are always included when
+      ``include_instructions=True`` (default), even if the filter rejects them.
+    - EDIT commits whose edit_target was filtered out are skipped (the target
+      does not exist in the child, so the edit would be dangling).
+
+    Args:
+        parent_tract: The parent Tract to selectively clone.
+        child_commit_engine: CommitEngine for the child tract.
+        child_commit_repo: Child's commit repository.
+        child_blob_repo: Child's blob repository.
+        child_ref_repo: Child's ref repository.
+        child_annotation_repo: Child's annotation repository.
+        commits_snapshot: Pre-captured list of parent CommitRows (oldest first).
+        filter_func: Callable ``(commit_row) -> bool`` that returns True to include.
+        include_instructions: If True, instruction and config commits bypass
+            the filter and are always included.
+
+    Returns:
+        Child's HEAD hash after selective cloning, or None if nothing was included.
+    """
+    from tract.models.commit import CommitOperation
+    from tract.models.content import validate_content
+
+    # Use pre-captured snapshot or read from parent (fallback)
+    all_commits = commits_snapshot if commits_snapshot is not None else list(
+        parent_tract._commit_repo.get_all(parent_tract.tract_id)
+    )
+    if not all_commits:
+        return None
+
+    # Types that are always included when include_instructions is True
+    _always_include_types = {"instruction", "config"}
+
+    # First pass: determine which commits are included
+    included_hashes: set[str] = set()
+    for commit_row in all_commits:
+        is_always = (
+            include_instructions
+            and commit_row.content_type in _always_include_types
+        )
+        if is_always or filter_func(commit_row):
+            included_hashes.add(commit_row.commit_hash)
+
+    # Second pass: remove EDIT commits whose edit_target is not included
+    final_included: set[str] = set()
+    for commit_row in all_commits:
+        if commit_row.commit_hash not in included_hashes:
+            continue
+        if (
+            commit_row.operation == CommitOperation.EDIT
+            and commit_row.edit_target
+            and commit_row.edit_target not in included_hashes
+        ):
+            # Edit target was filtered out — skip this edit
+            continue
+        final_included.add(commit_row.commit_hash)
+
+    if not final_included:
+        return None
+
+    # Third pass: replay included commits in order (oldest first)
+    last_hash = None
+    for commit_row in all_commits:
+        if commit_row.commit_hash not in final_included:
+            continue
+
         # Read blob content
         blob = parent_tract._blob_repo.get(commit_row.content_hash)
         if blob is None:

@@ -125,10 +125,10 @@ class TestSpawn:
 
         session.close()
 
-    def test_spawn_selective_not_implemented(self, tmp_path):
-        """Spawn with selective raises NotImplementedError."""
+    def test_spawn_selective_requires_filter(self, tmp_path):
+        """Spawn with selective but no filter criteria raises ValueError."""
         session, parent = _create_session_with_parent(tmp_path)
-        with pytest.raises(NotImplementedError, match="Selective"):
+        with pytest.raises(ValueError, match="selective inheritance requires"):
             session.spawn(parent, purpose="selective", inheritance="selective")
 
         session.close()

@@ -351,15 +351,26 @@ class Session:
         inheritance: str = "head_snapshot",
         display_name: str | None = None,
         max_tokens: int | None = None,
+        filter_func=None,
+        include_tags: list[str] | None = None,
+        exclude_tags: list[str] | None = None,
+        include_types: list[str] | None = None,
+        include_instructions: bool = True,
     ) -> Tract:
         """Spawn a child tract from a parent.
 
         Args:
             parent: The parent Tract.
             purpose: Description of the child's task.
-            inheritance: "head_snapshot" (default) or "full_clone".
+            inheritance: "head_snapshot" (default), "full_clone", or "selective".
             display_name: Optional human-readable name for the child.
             max_tokens: Max tokens for head_snapshot truncation.
+            filter_func: For selective mode: callable ``(commit_row) -> bool``.
+            include_tags: For selective mode: include commits with these tags.
+            exclude_tags: For selective mode: exclude commits with these tags.
+            include_types: For selective mode: include these content types.
+            include_instructions: For selective mode: always include instruction
+                and config commits even when filtered out. Default True.
 
         Returns:
             The new child Tract instance.
@@ -373,6 +384,11 @@ class Session:
             inheritance=inheritance,
             display_name=display_name,
             max_tokens=max_tokens,
+            filter_func=filter_func,
+            include_tags=include_tags,
+            exclude_tags=exclude_tags,
+            include_types=include_types,
+            include_instructions=include_instructions,
         )
         self._tracts[child.tract_id] = child
         child._seed_base_tags()
