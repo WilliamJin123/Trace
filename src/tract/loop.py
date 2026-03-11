@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
 from tract.exceptions import BlockedError
@@ -21,6 +22,19 @@ if TYPE_CHECKING:
     from tract.tract import CompileStrategy, Tract
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class StepMetrics:
+    """Metrics for a single loop step."""
+
+    step: int
+    duration_ms: float  # wall-clock time for this step
+    llm_duration_ms: float  # time spent in LLM call
+    tool_count: int  # number of tool calls this step
+    tool_names: tuple[str, ...]  # names of tools called
+    context_tokens: int  # compiled context token count at start of step
+    compressed: bool  # whether auto-compress fired this step
 
 
 @dataclass(frozen=True)
@@ -36,6 +50,7 @@ class LoopResult:
     usage: TokenUsage | None = None
     step_usages: tuple[TokenUsage, ...] = ()
     config: Any = None
+    step_metrics: tuple[StepMetrics, ...] = ()
 
     @property
     def total_prompt_tokens(self) -> int:
@@ -60,6 +75,21 @@ class LoopResult:
             and self.reason is not None
             and "budget" in self.reason.lower()
         )
+
+    @property
+    def total_duration_ms(self) -> float:
+        """Total wall-clock time across all steps."""
+        return sum(m.duration_ms for m in self.step_metrics)
+
+    @property
+    def total_llm_duration_ms(self) -> float:
+        """Total time spent in LLM calls."""
+        return sum(m.llm_duration_ms for m in self.step_metrics)
+
+    @property
+    def compressions_triggered(self) -> int:
+        """Number of times auto-compression was triggered."""
+        return sum(1 for m in self.step_metrics if m.compressed)
 
     def pprint(
         self,
@@ -90,6 +120,8 @@ class LoopConfig:
     max_tokens: int | None = None
     step_budget: int | None = None
     """Max total tokens across all steps; loop stops gracefully when exceeded."""
+    auto_compress_threshold: float | None = None
+    """Ratio of max_tokens (0.0-1.0) that triggers auto-compression when exceeded."""
     tool_validator: Callable[[str, dict], tuple[bool, str | None]] | None = None
     """Validate tool calls before execution: (tool_name, args) -> (ok, error_msg)."""
 
@@ -165,6 +197,7 @@ def run_loop(
     last_response: str | None = None
     last_compiled = None
     step_usages: list[TokenUsage] = []
+    step_metrics_list: list[StepMetrics] = []
     executor = ToolExecutor(tract)
 
     # Resolve config once (unlikely to change mid-loop)
@@ -173,6 +206,9 @@ def run_loop(
 
     for step in range(cfg.max_steps):
         steps = step + 1
+        step_start = time.monotonic()
+        context_tokens = 0
+        compressed_this_step = False
 
         # 1. Compile
         try:
@@ -182,13 +218,34 @@ def run_loop(
                 "blocked", str(e), steps, total_tool_calls, last_response,
                 compiled=last_compiled, step_usages=tuple(step_usages),
                 config=effective_config,
+                step_metrics=tuple(step_metrics_list),
             )
         except Exception as e:
             return LoopResult(
                 "error", f"Compile failed: {e}", steps, total_tool_calls,
                 compiled=last_compiled, step_usages=tuple(step_usages),
                 config=effective_config,
+                step_metrics=tuple(step_metrics_list),
             )
+
+        context_tokens = last_compiled.token_count if last_compiled else 0
+
+        # Auto-compress if context is too large
+        if cfg.auto_compress_threshold is not None and cfg.max_tokens is not None:
+            token_count = last_compiled.token_count
+            threshold = int(cfg.max_tokens * cfg.auto_compress_threshold)
+            if token_count > threshold:
+                logger.debug(
+                    "Auto-compressing: %d tokens > %d threshold (%.0f%% of %d)",
+                    token_count, threshold,
+                    cfg.auto_compress_threshold * 100, cfg.max_tokens,
+                )
+                compressed_this_step = True
+                try:
+                    tract.compress(strategy="sliding_window", window_size=cfg.strategy_k)
+                    last_compiled = tract.compile(strategy=strategy, strategy_k=strategy_k)
+                except Exception:
+                    logger.debug("Auto-compress failed, continuing with large context", exc_info=True)
 
         # Build messages
         messages = last_compiled.to_dicts()
@@ -215,9 +272,11 @@ def run_loop(
                 "blocked", str(e), steps, total_tool_calls, last_response,
                 compiled=last_compiled, step_usages=tuple(step_usages),
                 config=effective_config,
+                step_metrics=tuple(step_metrics_list),
             )
 
         retry_cfg: RetryConfig | None = getattr(tract, "_retry_config", None)
+        llm_start = time.monotonic()
         try:
             if use_streaming:
                 response = _retry_with_backoff(
@@ -234,7 +293,9 @@ def run_loop(
                 "error", f"LLM call failed: {e}", steps, total_tool_calls,
                 compiled=last_compiled, step_usages=tuple(step_usages),
                 config=effective_config,
+                step_metrics=tuple(step_metrics_list),
             )
+        llm_duration = time.monotonic() - llm_start
 
         content = _extract_content(response, client)
         tool_call_list = _extract_tool_calls(response, client)
@@ -282,6 +343,16 @@ def run_loop(
         if cfg.step_budget is not None:
             total_used = sum(u.total_tokens for u in step_usages)
             if total_used >= cfg.step_budget:
+                step_end = time.monotonic()
+                step_metrics_list.append(StepMetrics(
+                    step=steps,
+                    duration_ms=(step_end - step_start) * 1000,
+                    llm_duration_ms=llm_duration * 1000,
+                    tool_count=0,
+                    tool_names=(),
+                    context_tokens=context_tokens,
+                    compressed=compressed_this_step,
+                ))
                 try:
                     last_compiled = tract.compile(strategy=strategy, strategy_k=strategy_k)
                 except Exception:
@@ -296,6 +367,7 @@ def run_loop(
                     usage=step_usage,
                     step_usages=tuple(step_usages),
                     config=effective_config,
+                    step_metrics=tuple(step_metrics_list),
                 )
 
         # Callback
@@ -305,6 +377,16 @@ def run_loop(
         # 3. If no tool calls, check if we should stop
         if not tool_call_list:
             if cfg.stop_on_no_tool_call:
+                step_end = time.monotonic()
+                step_metrics_list.append(StepMetrics(
+                    step=steps,
+                    duration_ms=(step_end - step_start) * 1000,
+                    llm_duration_ms=llm_duration * 1000,
+                    tool_count=0,
+                    tool_names=(),
+                    context_tokens=context_tokens,
+                    compressed=compressed_this_step,
+                ))
                 # Re-compile to capture the final state (includes assistant commit)
                 try:
                     last_compiled = tract.compile(strategy=strategy, strategy_k=strategy_k)
@@ -320,7 +402,19 @@ def run_loop(
                     usage=step_usage,
                     step_usages=tuple(step_usages),
                     config=effective_config,
+                    step_metrics=tuple(step_metrics_list),
                 )
+            # Not stopping — record metrics for this step and continue
+            step_end = time.monotonic()
+            step_metrics_list.append(StepMetrics(
+                step=steps,
+                duration_ms=(step_end - step_start) * 1000,
+                llm_duration_ms=llm_duration * 1000,
+                tool_count=0,
+                tool_names=(),
+                context_tokens=context_tokens,
+                compressed=compressed_this_step,
+            ))
             continue
 
         # 4. Execute tool calls
@@ -409,6 +503,19 @@ def run_loop(
                         },
                     )
 
+        # Record step metrics after tool execution
+        tool_names_this_step = tuple(tc["name"] for tc in tool_call_list) if tool_call_list else ()
+        step_end = time.monotonic()
+        step_metrics_list.append(StepMetrics(
+            step=steps,
+            duration_ms=(step_end - step_start) * 1000,
+            llm_duration_ms=llm_duration * 1000,
+            tool_count=len(tool_call_list) if tool_call_list else 0,
+            tool_names=tool_names_this_step,
+            context_tokens=context_tokens,
+            compressed=compressed_this_step,
+        ))
+
     return LoopResult(
         "max_steps",
         f"Reached max steps ({cfg.max_steps})",
@@ -418,6 +525,7 @@ def run_loop(
         compiled=last_compiled,
         step_usages=tuple(step_usages),
         config=effective_config,
+        step_metrics=tuple(step_metrics_list),
     )
 
 
@@ -854,6 +962,7 @@ async def arun_loop(
     last_response: str | None = None
     last_compiled = None
     step_usages: list[TokenUsage] = []
+    step_metrics_list: list[StepMetrics] = []
     executor = ToolExecutor(tract)
 
     strategy: CompileStrategy = tract.get_config("compile_strategy") or cfg.strategy
@@ -861,6 +970,9 @@ async def arun_loop(
 
     for step in range(cfg.max_steps):
         steps = step + 1
+        step_start = time.monotonic()
+        context_tokens = 0
+        compressed_this_step = False
 
         # 1. Compile (sync — local SQLite operation)
         try:
@@ -870,13 +982,34 @@ async def arun_loop(
                 "blocked", str(e), steps, total_tool_calls, last_response,
                 compiled=last_compiled, step_usages=tuple(step_usages),
                 config=effective_config,
+                step_metrics=tuple(step_metrics_list),
             )
         except Exception as e:
             return LoopResult(
                 "error", f"Compile failed: {e}", steps, total_tool_calls,
                 compiled=last_compiled, step_usages=tuple(step_usages),
                 config=effective_config,
+                step_metrics=tuple(step_metrics_list),
             )
+
+        context_tokens = last_compiled.token_count if last_compiled else 0
+
+        # Auto-compress if context is too large
+        if cfg.auto_compress_threshold is not None and cfg.max_tokens is not None:
+            token_count = last_compiled.token_count
+            threshold = int(cfg.max_tokens * cfg.auto_compress_threshold)
+            if token_count > threshold:
+                logger.debug(
+                    "Auto-compressing: %d tokens > %d threshold (%.0f%% of %d)",
+                    token_count, threshold,
+                    cfg.auto_compress_threshold * 100, cfg.max_tokens,
+                )
+                compressed_this_step = True
+                try:
+                    tract.compress(strategy="sliding_window", window_size=cfg.strategy_k)
+                    last_compiled = tract.compile(strategy=strategy, strategy_k=strategy_k)
+                except Exception:
+                    logger.debug("Auto-compress failed, continuing with large context", exc_info=True)
 
         # Build messages
         messages = last_compiled.to_dicts()
@@ -903,9 +1036,11 @@ async def arun_loop(
                 "blocked", str(e), steps, total_tool_calls, last_response,
                 compiled=last_compiled, step_usages=tuple(step_usages),
                 config=effective_config,
+                step_metrics=tuple(step_metrics_list),
             )
 
         retry_cfg: RetryConfig | None = getattr(tract, "_retry_config", None)
+        llm_start = time.monotonic()
         try:
             if use_streaming:
                 async def _do_stream() -> dict:
@@ -924,7 +1059,9 @@ async def arun_loop(
                 "error", f"LLM call failed: {e}", steps, total_tool_calls,
                 compiled=last_compiled, step_usages=tuple(step_usages),
                 config=effective_config,
+                step_metrics=tuple(step_metrics_list),
             )
+        llm_duration = time.monotonic() - llm_start
 
         content = _extract_content(response, client)
         tool_call_list = _extract_tool_calls(response, client)
@@ -971,6 +1108,16 @@ async def arun_loop(
         if cfg.step_budget is not None:
             total_used = sum(u.total_tokens for u in step_usages)
             if total_used >= cfg.step_budget:
+                step_end = time.monotonic()
+                step_metrics_list.append(StepMetrics(
+                    step=steps,
+                    duration_ms=(step_end - step_start) * 1000,
+                    llm_duration_ms=llm_duration * 1000,
+                    tool_count=0,
+                    tool_names=(),
+                    context_tokens=context_tokens,
+                    compressed=compressed_this_step,
+                ))
                 try:
                     last_compiled = tract.compile(strategy=strategy, strategy_k=strategy_k)
                 except Exception:
@@ -985,6 +1132,7 @@ async def arun_loop(
                     usage=step_usage,
                     step_usages=tuple(step_usages),
                     config=effective_config,
+                    step_metrics=tuple(step_metrics_list),
                 )
 
         if on_step:
@@ -993,6 +1141,16 @@ async def arun_loop(
         # 3. If no tool calls, check if we should stop
         if not tool_call_list:
             if cfg.stop_on_no_tool_call:
+                step_end = time.monotonic()
+                step_metrics_list.append(StepMetrics(
+                    step=steps,
+                    duration_ms=(step_end - step_start) * 1000,
+                    llm_duration_ms=llm_duration * 1000,
+                    tool_count=0,
+                    tool_names=(),
+                    context_tokens=context_tokens,
+                    compressed=compressed_this_step,
+                ))
                 try:
                     last_compiled = tract.compile(strategy=strategy, strategy_k=strategy_k)
                 except Exception:
@@ -1007,7 +1165,19 @@ async def arun_loop(
                     usage=step_usage,
                     step_usages=tuple(step_usages),
                     config=effective_config,
+                    step_metrics=tuple(step_metrics_list),
                 )
+            # Not stopping — record metrics for this step and continue
+            step_end = time.monotonic()
+            step_metrics_list.append(StepMetrics(
+                step=steps,
+                duration_ms=(step_end - step_start) * 1000,
+                llm_duration_ms=llm_duration * 1000,
+                tool_count=0,
+                tool_names=(),
+                context_tokens=context_tokens,
+                compressed=compressed_this_step,
+            ))
             continue
 
         # 4. Execute tool calls
@@ -1099,6 +1269,19 @@ async def arun_loop(
                         },
                     )
 
+        # Record step metrics after tool execution
+        tool_names_this_step = tuple(tc["name"] for tc in tool_call_list) if tool_call_list else ()
+        step_end = time.monotonic()
+        step_metrics_list.append(StepMetrics(
+            step=steps,
+            duration_ms=(step_end - step_start) * 1000,
+            llm_duration_ms=llm_duration * 1000,
+            tool_count=len(tool_call_list) if tool_call_list else 0,
+            tool_names=tool_names_this_step,
+            context_tokens=context_tokens,
+            compressed=compressed_this_step,
+        ))
+
     return LoopResult(
         "max_steps",
         f"Reached max steps ({cfg.max_steps})",
@@ -1108,6 +1291,7 @@ async def arun_loop(
         compiled=last_compiled,
         step_usages=tuple(step_usages),
         config=effective_config,
+        step_metrics=tuple(step_metrics_list),
     )
 
 
