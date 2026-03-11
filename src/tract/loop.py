@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
 from tract.exceptions import BlockedError
+from tract.models.config import RetryConfig
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -128,6 +129,8 @@ def run_loop(
     """
     from tract.toolkit.executor import ToolExecutor
 
+    from tract.tract import _retry_with_backoff
+
     cfg = config or LoopConfig()
     client = llm_client or getattr(tract, "_llm_client", None)
     if client is None:
@@ -188,13 +191,32 @@ def run_loop(
         llm_kwargs: dict[str, Any] = {}
         if cfg.max_tokens is not None:
             llm_kwargs["max_tokens"] = cfg.max_tokens
+
+        # Pre-generate middleware (can block)
+        try:
+            tract._run_middleware(
+                "pre_generate",
+                pending={"messages": messages, "config": llm_kwargs},
+            )
+        except BlockedError as e:
+            return LoopResult(
+                "blocked", str(e), steps, total_tool_calls, last_response,
+                compiled=last_compiled, step_usages=tuple(step_usages),
+                config=effective_config,
+            )
+
+        retry_cfg: RetryConfig | None = getattr(tract, "_retry_config", None)
         try:
             if use_streaming:
-                response = _stream_to_response(
+                response = _retry_with_backoff(
+                    _stream_to_response, retry_cfg,
                     client, messages, tools, on_token, **llm_kwargs,
                 )
             else:
-                response = client.chat(messages=messages, tools=tools, **llm_kwargs)
+                response = _retry_with_backoff(
+                    client.chat, retry_cfg,
+                    messages=messages, tools=tools, **llm_kwargs,
+                )
         except Exception as e:
             return LoopResult(
                 "error", f"LLM call failed: {e}", steps, total_tool_calls,
@@ -204,6 +226,19 @@ def run_loop(
 
         content = _extract_content(response, client)
         tool_call_list = _extract_tool_calls(response, client)
+
+        # Post-generate middleware (informational)
+        _post_gen_usage = _extract_usage(response, client)
+        tract._run_middleware(
+            "post_generate",
+            pending={
+                "response": content or "",
+                "tokens_used": (
+                    _post_gen_usage.get("total_tokens", 0)
+                    if _post_gen_usage else 0
+                ),
+            },
+        )
 
         # Extract and commit reasoning traces (e.g. <think> tags from Qwen)
         content = _handle_reasoning(response, client, tract, content)
@@ -264,6 +299,21 @@ def run_loop(
             tc_args = tc.get("arguments", {})
             result_meta = {"tool_call_id": tc_id, "name": tc_name}
 
+            # Pre-tool-execute middleware (can block to skip this tool)
+            try:
+                tract._run_middleware(
+                    "pre_tool_execute",
+                    pending={"tool_name": tc_name, "arguments": tc_args},
+                )
+            except BlockedError:
+                _commit_tool_result(
+                    tract, tc_name,
+                    "Tool execution blocked by middleware", "error", result_meta,
+                )
+                if on_tool_result:
+                    on_tool_result(tc_name, "Tool execution blocked by middleware", "error")
+                continue
+
             # Custom handler takes priority over built-in executor
             if tool_handlers and tc_name in tool_handlers:
                 try:
@@ -271,6 +321,11 @@ def run_loop(
                     _commit_tool_result(tract, tc_name, str(output), "success", result_meta)
                     if on_tool_result:
                         on_tool_result(tc_name, str(output), "success")
+                    # Post-tool-execute middleware (informational)
+                    tract._run_middleware(
+                        "post_tool_execute",
+                        pending={"tool_name": tc_name, "result": str(output), "success": True},
+                    )
                 except Exception as exc:
                     _commit_tool_result(
                         tract, tc_name,
@@ -278,16 +333,39 @@ def run_loop(
                     )
                     if on_tool_result:
                         on_tool_result(tc_name, f"{type(exc).__name__}: {exc}", "error")
+                    # Post-tool-execute middleware (informational)
+                    tract._run_middleware(
+                        "post_tool_execute",
+                        pending={
+                            "tool_name": tc_name,
+                            "result": f"{type(exc).__name__}: {exc}",
+                            "success": False,
+                        },
+                    )
             else:
                 result = executor.execute(tc_name, tc_args)
                 if result.success:
                     _commit_tool_result(tract, tc_name, result.output, "success", result_meta)
                     if on_tool_result:
                         on_tool_result(tc_name, result.output, "success")
+                    # Post-tool-execute middleware (informational)
+                    tract._run_middleware(
+                        "post_tool_execute",
+                        pending={"tool_name": tc_name, "result": result.output, "success": True},
+                    )
                 else:
                     _commit_tool_result(tract, tc_name, result.error, "error", result_meta)
                     if on_tool_result:
                         on_tool_result(tc_name, result.error, "error")
+                    # Post-tool-execute middleware (informational)
+                    tract._run_middleware(
+                        "post_tool_execute",
+                        pending={
+                            "tool_name": tc_name,
+                            "result": result.error,
+                            "success": False,
+                        },
+                    )
 
     return LoopResult(
         "max_steps",
@@ -711,6 +789,7 @@ async def arun_loop(
 
     from tract.llm.protocols import acall_llm
     from tract.toolkit.executor import ToolExecutor
+    from tract.tract import _aretry_with_backoff
 
     cfg = config or LoopConfig()
     client = llm_client or getattr(tract, "_llm_client", None)
@@ -770,15 +849,34 @@ async def arun_loop(
         llm_kwargs: dict[str, Any] = {}
         if cfg.max_tokens is not None:
             llm_kwargs["max_tokens"] = cfg.max_tokens
+
+        # Pre-generate middleware (can block)
+        try:
+            tract._run_middleware(
+                "pre_generate",
+                pending={"messages": messages, "config": llm_kwargs},
+            )
+        except BlockedError as e:
+            return LoopResult(
+                "blocked", str(e), steps, total_tool_calls, last_response,
+                compiled=last_compiled, step_usages=tuple(step_usages),
+                config=effective_config,
+            )
+
+        retry_cfg: RetryConfig | None = getattr(tract, "_retry_config", None)
         try:
             if use_streaming:
-                response = await _astream_to_response(
-                    client, messages, tools, on_token, **llm_kwargs,
-                )
+                async def _do_stream() -> dict:
+                    return await _astream_to_response(
+                        client, messages, tools, on_token, **llm_kwargs,
+                    )
+                response = await _aretry_with_backoff(_do_stream, retry_cfg)
             else:
-                response = await acall_llm(
-                    client, messages, tools=tools, **llm_kwargs,
-                )
+                async def _do_llm() -> Any:
+                    return await acall_llm(
+                        client, messages, tools=tools, **llm_kwargs,
+                    )
+                response = await _aretry_with_backoff(_do_llm, retry_cfg)
         except Exception as e:
             return LoopResult(
                 "error", f"LLM call failed: {e}", steps, total_tool_calls,
@@ -788,6 +886,19 @@ async def arun_loop(
 
         content = _extract_content(response, client)
         tool_call_list = _extract_tool_calls(response, client)
+
+        # Post-generate middleware (informational)
+        _post_gen_usage = _extract_usage(response, client)
+        tract._run_middleware(
+            "post_generate",
+            pending={
+                "response": content or "",
+                "tokens_used": (
+                    _post_gen_usage.get("total_tokens", 0)
+                    if _post_gen_usage else 0
+                ),
+            },
+        )
 
         # Extract and commit reasoning traces (sync)
         content = _handle_reasoning(response, client, tract, content)
@@ -845,6 +956,21 @@ async def arun_loop(
             tc_args = tc.get("arguments", {})
             result_meta = {"tool_call_id": tc_id, "name": tc_name}
 
+            # Pre-tool-execute middleware (can block to skip this tool)
+            try:
+                tract._run_middleware(
+                    "pre_tool_execute",
+                    pending={"tool_name": tc_name, "arguments": tc_args},
+                )
+            except BlockedError:
+                _commit_tool_result(
+                    tract, tc_name,
+                    "Tool execution blocked by middleware", "error", result_meta,
+                )
+                if on_tool_result:
+                    on_tool_result(tc_name, "Tool execution blocked by middleware", "error")
+                continue
+
             if tool_handlers and tc_name in tool_handlers:
                 try:
                     handler = tool_handlers[tc_name]
@@ -855,6 +981,11 @@ async def arun_loop(
                     _commit_tool_result(tract, tc_name, str(output), "success", result_meta)
                     if on_tool_result:
                         on_tool_result(tc_name, str(output), "success")
+                    # Post-tool-execute middleware (informational)
+                    tract._run_middleware(
+                        "post_tool_execute",
+                        pending={"tool_name": tc_name, "result": str(output), "success": True},
+                    )
                 except Exception as exc:
                     _commit_tool_result(
                         tract, tc_name,
@@ -862,16 +993,39 @@ async def arun_loop(
                     )
                     if on_tool_result:
                         on_tool_result(tc_name, f"{type(exc).__name__}: {exc}", "error")
+                    # Post-tool-execute middleware (informational)
+                    tract._run_middleware(
+                        "post_tool_execute",
+                        pending={
+                            "tool_name": tc_name,
+                            "result": f"{type(exc).__name__}: {exc}",
+                            "success": False,
+                        },
+                    )
             else:
                 result = await asyncio.to_thread(executor.execute, tc_name, tc_args)
                 if result.success:
                     _commit_tool_result(tract, tc_name, result.output, "success", result_meta)
                     if on_tool_result:
                         on_tool_result(tc_name, result.output, "success")
+                    # Post-tool-execute middleware (informational)
+                    tract._run_middleware(
+                        "post_tool_execute",
+                        pending={"tool_name": tc_name, "result": result.output, "success": True},
+                    )
                 else:
                     _commit_tool_result(tract, tc_name, result.error, "error", result_meta)
                     if on_tool_result:
                         on_tool_result(tc_name, result.error, "error")
+                    # Post-tool-execute middleware (informational)
+                    tract._run_middleware(
+                        "post_tool_execute",
+                        pending={
+                            "tool_name": tc_name,
+                            "result": result.error,
+                            "success": False,
+                        },
+                    )
 
     return LoopResult(
         "max_steps",

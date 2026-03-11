@@ -260,6 +260,37 @@ class OperationPrompts:
 
 
 @dataclass(frozen=True)
+class RetryConfig:
+    """Configuration for LLM call retries with exponential backoff.
+
+    Controls automatic retry behavior for transient LLM failures
+    (network errors, rate limits, server errors).  Validation errors
+    and user-facing errors are never retried.
+
+    Attributes:
+        max_retries: Maximum number of retry attempts (0 = no retries).
+        initial_delay: Base delay in seconds before the first retry.
+        max_delay: Upper bound on delay in seconds (caps exponential growth).
+        backoff_factor: Multiplier applied to delay after each attempt.
+        jitter: If True, randomize delay to prevent thundering-herd effects.
+        retryable_errors: Tuple of exception types eligible for retry.
+            Empty tuple means retry all non-validation/non-blocked errors.
+
+    Example::
+
+        from tract import RetryConfig
+        t = Tract.open(api_key="...", retry=RetryConfig(max_retries=5))
+    """
+
+    max_retries: int = 3
+    initial_delay: float = 1.0
+    max_delay: float = 60.0
+    backoff_factor: float = 2.0
+    jitter: bool = True
+    retryable_errors: tuple[type[Exception], ...] = ()
+
+
+@dataclass(frozen=True)
 class ToolSummarizationConfig:
     """Configuration for automatic tool result summarization.
 

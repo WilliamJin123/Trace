@@ -31,7 +31,7 @@ from tract.models.commit import CommitInfo, CommitMetadata, CommitOperation
 from tract.models.annotations import Priority, PriorityAnnotation, RetentionCriteria
 
 # Configuration
-from tract.models.config import TractConfig, TokenBudgetConfig, BudgetAction, LLMConfig, Operator, OperationConfigs, OperationClients, OperationPrompts, ToolSummarizationConfig
+from tract.models.config import TractConfig, TokenBudgetConfig, BudgetAction, LLMConfig, Operator, OperationConfigs, OperationClients, OperationPrompts, RetryConfig, ToolSummarizationConfig
 
 # Protocols and output types
 from tract.protocols import (
@@ -186,6 +186,7 @@ __all__ = [
     "OperationConfigs",
     "OperationClients",
     "OperationPrompts",
+    "RetryConfig",
     "ToolSummarizationConfig",
     # Protocols
     "TokenCounter",

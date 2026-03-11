@@ -24,7 +24,7 @@ from tract.engine.compiler import DefaultContextCompiler
 from tract.engine.tokens import TiktokenCounter
 from tract.models.annotations import DEFAULT_TYPE_PRIORITIES, Priority, PriorityAnnotation, RetentionCriteria
 from tract.models.commit import CommitInfo, CommitMetadata, CommitOperation
-from tract.models.config import LLMConfig, Operator, OperationClients, OperationConfigs, OperationPrompts, TractConfig
+from tract.models.config import LLMConfig, Operator, OperationClients, OperationConfigs, OperationPrompts, RetryConfig, TractConfig
 from tract.models.content import validate_content
 from tract.exceptions import (
     BlockedError,
@@ -131,6 +131,91 @@ def _detect_provider(
     return "openai"
 
 
+# ------------------------------------------------------------------
+# Retry helpers (exponential backoff for LLM calls)
+# ------------------------------------------------------------------
+
+
+def _retry_with_backoff(
+    func: Callable,
+    retry_config: RetryConfig | None,
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    """Execute *func* with exponential backoff on transient failure.
+
+    Validation errors (:class:`ContentValidationError`,
+    :class:`BlockedError`) are never retried.  When
+    ``retry_config.retryable_errors`` is non-empty, only those exception
+    types are retried; all others propagate immediately.
+    """
+    import random
+    import time
+
+    if not retry_config or retry_config.max_retries <= 0:
+        return func(*args, **kwargs)
+
+    last_error: Exception | None = None
+    for attempt in range(retry_config.max_retries + 1):
+        try:
+            return func(*args, **kwargs)
+        except (ContentValidationError, BlockedError):
+            raise
+        except Exception as e:
+            if retry_config.retryable_errors and not isinstance(
+                e, retry_config.retryable_errors
+            ):
+                raise
+            last_error = e
+            if attempt < retry_config.max_retries:
+                delay = min(
+                    retry_config.initial_delay
+                    * (retry_config.backoff_factor ** attempt),
+                    retry_config.max_delay,
+                )
+                if retry_config.jitter:
+                    delay *= 0.5 + random.random()
+                time.sleep(delay)
+    raise last_error  # type: ignore[misc]
+
+
+async def _aretry_with_backoff(
+    func: Callable,
+    retry_config: RetryConfig | None,
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    """Async version of :func:`_retry_with_backoff`."""
+    import asyncio
+    import random
+
+    if not retry_config or retry_config.max_retries <= 0:
+        return await func(*args, **kwargs)
+
+    last_error: Exception | None = None
+    for attempt in range(retry_config.max_retries + 1):
+        try:
+            return await func(*args, **kwargs)
+        except (ContentValidationError, BlockedError):
+            raise
+        except Exception as e:
+            if retry_config.retryable_errors and not isinstance(
+                e, retry_config.retryable_errors
+            ):
+                raise
+            last_error = e
+            if attempt < retry_config.max_retries:
+                delay = min(
+                    retry_config.initial_delay
+                    * (retry_config.backoff_factor ** attempt),
+                    retry_config.max_delay,
+                )
+                if retry_config.jitter:
+                    delay *= 0.5 + random.random()
+                await asyncio.sleep(delay)
+    raise last_error  # type: ignore[misc]
+
+
 class Tract:
     """Primary entry point for Trace -- git-like version control for LLM context.
 
@@ -209,6 +294,7 @@ class Tract:
         self._tool_summarization_config: ToolSummarizationConfig | None = None
         self._commit_reasoning: bool = True
         self._auto_message_enabled: bool = False
+        self._retry_config: RetryConfig | None = None
 
         # Tool defaults (set via open() or set_tool_profile/set_tool_result_format)
         self._tool_profile: str | ToolProfile | None = None
@@ -251,6 +337,7 @@ class Tract:
         provider: Literal["openai", "anthropic"] | None = None,
         tool_profile: str | ToolProfile | None = None,
         tool_result_format: Literal["minimal", "json", "verbose"] | None = None,
+        retry: RetryConfig | None = None,
     ) -> Tract:
         """Open (or create) a Trace repository.
 
@@ -318,6 +405,11 @@ class Tract:
                 ``"minimal"`` (default): compact single-line output.
                 ``"json"``: compact JSON (no indentation).
                 ``"verbose"``: full JSON with ``indent=2`` (legacy behavior).
+            retry: Default retry configuration for LLM calls.  When
+                provided, transient errors (network, rate limit, server)
+                are retried with exponential backoff.  Per-call overrides
+                are accepted by :meth:`generate`, :meth:`chat`, and their
+                async counterparts.
 
         Returns:
             A ready-to-use ``Tract`` instance.
@@ -516,6 +608,10 @@ class Tract:
         # Sync format to compiler
         if hasattr(tract._compiler, "tool_result_format"):
             tract._compiler.tool_result_format = tract._tool_result_format
+
+        # Retry config
+        if retry is not None:
+            tract._retry_config = retry
 
         return tract
 
@@ -1917,6 +2013,7 @@ class Tract:
         max_retries: int = 3,
         hide_retries: bool = True,
         retry_prompt: str | None = None,
+        retry: RetryConfig | None = None,
         **kwargs: Any,
     ) -> ChatResponse:
         """Compile context, call LLM, commit assistant response, record usage.
@@ -1950,6 +2047,9 @@ class Tract:
                 context. If False, all retry artifacts remain visible.
             retry_prompt: Custom steering prompt template. The diagnosis string
                 is appended to this. Defaults to a standard steering message.
+            retry: Per-call :class:`RetryConfig` override.  When provided,
+                the raw LLM call is retried with exponential backoff on
+                transient errors.  Overrides the tract-level retry config.
             **kwargs: Extra provider-specific parameters passed through to the
                 LLM client (e.g. ``reasoning_effort="high"``).  Highest
                 priority in the config resolution chain.
@@ -1978,7 +2078,7 @@ class Tract:
                 model=model, temperature=temperature,
                 max_tokens=max_tokens, llm_config=llm_config,
                 message=message, metadata=metadata,
-                reasoning=reasoning, **kwargs,
+                reasoning=reasoning, retry=retry, **kwargs,
             )
 
         # Validation retry loop
@@ -1992,7 +2092,7 @@ class Tract:
                 model=model, temperature=temperature,
                 max_tokens=max_tokens, llm_config=llm_config,
                 message=message, metadata=metadata,
-                reasoning=reasoning, **kwargs,
+                reasoning=reasoning, retry=retry, **kwargs,
             )
 
             ok, diagnosis = validator(response.text)
@@ -2052,11 +2152,14 @@ class Tract:
         message: str | None = None,
         metadata: dict | None = None,
         reasoning: bool = True,
+        retry: RetryConfig | None = None,
         **kwargs: Any,
     ) -> ChatResponse:
         """Single generate attempt (no retry). Internal helper.
 
         Contains the original generate() logic: compile, LLM call, commit, usage.
+        When *retry* is provided, the raw LLM call is wrapped in
+        :func:`_retry_with_backoff` to handle transient failures.
         """
         from tract.protocols import ChatResponse
 
@@ -2082,12 +2185,33 @@ class Tract:
         )
         if compiled.tools:
             llm_kwargs["tools"] = compiled.tools
-        response = chat_client.chat(messages, **llm_kwargs)
+
+        # Pre-generate middleware (can block)
+        self._run_middleware(
+            "pre_generate",
+            pending={"messages": messages, "config": llm_kwargs},
+        )
+
+        effective_retry = retry or self._retry_config
+        response = _retry_with_backoff(
+            chat_client.chat, effective_retry, messages, **llm_kwargs,
+        )
 
         # 3. Extract content and usage (dispatch to client methods, with
         #    OpenAI-format defaults for duck-typed clients that lack them)
         text = self._extract_content(response, client=chat_client)
         usage_dict = self._extract_usage(response, client=chat_client)
+
+        # Post-generate middleware (informational, cannot block)
+        self._run_middleware(
+            "post_generate",
+            pending={
+                "response": text or "",
+                "tokens_used": (
+                    usage_dict.get("total_tokens", 0) if usage_dict else 0
+                ),
+            },
+        )
 
         # 3a. Extract reasoning (duck-typed optional on LLM client)
         reasoning_text: str | None = None
@@ -2168,6 +2292,7 @@ class Tract:
         max_retries: int = 3,
         hide_retries: bool = True,
         retry_prompt: str | None = None,
+        retry: RetryConfig | None = None,
         **kwargs: Any,
     ) -> ChatResponse:
         """Send a user message and get an LLM response in one call.
@@ -2228,6 +2353,7 @@ class Tract:
             max_retries=max_retries,
             hide_retries=hide_retries,
             retry_prompt=retry_prompt,
+            retry=retry,
             **kwargs,
         )
         return _dc.replace(response, prompt=text)
@@ -2438,6 +2564,7 @@ class Tract:
         message: str | None = None,
         metadata: dict | None = None,
         reasoning: bool = True,
+        retry: RetryConfig | None = None,
         **kwargs: Any,
     ) -> ChatResponse:
         """Async version of :meth:`_generate_once`."""
@@ -2465,11 +2592,34 @@ class Tract:
         )
         if compiled.tools:
             llm_kwargs["tools"] = compiled.tools
-        response = await acall_llm(chat_client, messages, **llm_kwargs)
+
+        # Pre-generate middleware (can block)
+        self._run_middleware(
+            "pre_generate",
+            pending={"messages": messages, "config": llm_kwargs},
+        )
+
+        effective_retry = retry or self._retry_config
+
+        async def _do_llm_call() -> Any:
+            return await acall_llm(chat_client, messages, **llm_kwargs)
+
+        response = await _aretry_with_backoff(_do_llm_call, effective_retry)
 
         # 3. Extract content and usage (sync)
         text = self._extract_content(response, client=chat_client)
         usage_dict = self._extract_usage(response, client=chat_client)
+
+        # Post-generate middleware (informational, cannot block)
+        self._run_middleware(
+            "post_generate",
+            pending={
+                "response": text or "",
+                "tokens_used": (
+                    usage_dict.get("total_tokens", 0) if usage_dict else 0
+                ),
+            },
+        )
 
         # 3a. Extract reasoning
         reasoning_text: str | None = None
@@ -2546,6 +2696,7 @@ class Tract:
         max_retries: int = 3,
         hide_retries: bool = True,
         retry_prompt: str | None = None,
+        retry: RetryConfig | None = None,
         **kwargs: Any,
     ) -> ChatResponse:
         """Async version of :meth:`generate`.
@@ -2568,7 +2719,7 @@ class Tract:
                 model=model, temperature=temperature,
                 max_tokens=max_tokens, llm_config=llm_config,
                 message=message, metadata=metadata,
-                reasoning=reasoning, **kwargs,
+                reasoning=reasoning, retry=retry, **kwargs,
             )
 
         # Validation retry loop
@@ -2582,7 +2733,7 @@ class Tract:
                 model=model, temperature=temperature,
                 max_tokens=max_tokens, llm_config=llm_config,
                 message=message, metadata=metadata,
-                reasoning=reasoning, **kwargs,
+                reasoning=reasoning, retry=retry, **kwargs,
             )
 
             ok, diagnosis = validator(response.text)
@@ -2642,6 +2793,7 @@ class Tract:
         max_retries: int = 3,
         hide_retries: bool = True,
         retry_prompt: str | None = None,
+        retry: RetryConfig | None = None,
         **kwargs: Any,
     ) -> ChatResponse:
         """Async version of :meth:`chat`.
@@ -2661,6 +2813,7 @@ class Tract:
             max_retries=max_retries,
             hide_retries=hide_retries,
             retry_prompt=retry_prompt,
+            retry=retry,
             **kwargs,
         )
         return _dc.replace(response, prompt=text)
@@ -4221,6 +4374,83 @@ class Tract:
         return compute_diff(
             commit_a_hash=commit_a or "(empty)",
             commit_b_hash=commit_b,
+            messages_a=compiled_a.messages,
+            messages_b=compiled_b.messages,
+            configs_a=compiled_a.generation_configs,
+            configs_b=compiled_b.generation_configs,
+        )
+
+    def compare(
+        self,
+        branch_a: str | None = None,
+        branch_b: str | None = None,
+        *,
+        commit_a: str | None = None,
+        commit_b: str | None = None,
+    ) -> "DiffResult":
+        """Compare compiled contexts between two branches or commits without switching HEAD.
+
+        Unlike :meth:`diff` which compares sequential commits on the current branch,
+        ``compare()`` works across branches.  Useful for A/B variant comparison,
+        inspecting divergent context windows, or auditing branch differences before
+        a merge.
+
+        Exactly one of ``branch_a``/``commit_a`` may be provided for side A,
+        and exactly one of ``branch_b``/``commit_b`` for side B.
+
+        Args:
+            branch_a: First branch name.  Resolved to the branch tip.
+                Defaults to the current branch when *commit_a* is also None.
+            branch_b: Second branch name.  Resolved to the branch tip.
+            commit_a: Specific commit hash (or prefix / ref) for side A.
+                Mutually exclusive with *branch_a*.
+            commit_b: Specific commit hash (or prefix / ref) for side B.
+                Mutually exclusive with *branch_b*.
+
+        Returns:
+            :class:`DiffResult` comparing the two compiled contexts.
+
+        Raises:
+            ValueError: If both branch and commit are given for the same side,
+                or if no target is specified for side B.
+            TraceError: If the current branch has no commits (when defaulting side A).
+            CommitNotFoundError: If a reference cannot be resolved.
+        """
+        from tract.operations.diff import compute_diff
+
+        # --- Validate mutual exclusivity ---
+        if branch_a is not None and commit_a is not None:
+            raise ValueError("Cannot specify both branch_a and commit_a; use one or the other.")
+        if branch_b is not None and commit_b is not None:
+            raise ValueError("Cannot specify both branch_b and commit_b; use one or the other.")
+
+        # --- Resolve side A ---
+        if commit_a is not None:
+            hash_a = self.resolve_commit(commit_a)
+        elif branch_a is not None:
+            hash_a = self.resolve_commit(branch_a)
+        else:
+            # Default to current HEAD
+            current_head = self.head
+            if current_head is None:
+                raise TraceError("No commits on current branch to use as side A")
+            hash_a = current_head
+
+        # --- Resolve side B ---
+        if commit_b is not None:
+            hash_b = self.resolve_commit(commit_b)
+        elif branch_b is not None:
+            hash_b = self.resolve_commit(branch_b)
+        else:
+            raise ValueError("Must specify branch_b or commit_b for the comparison target.")
+
+        # --- Compile both sides without switching HEAD ---
+        compiled_a = self._compile_at(hash_a)
+        compiled_b = self._compile_at(hash_b)
+
+        return compute_diff(
+            commit_a_hash=hash_a,
+            commit_b_hash=hash_b,
             messages_a=compiled_a.messages,
             messages_b=compiled_b.messages,
             configs_a=compiled_a.generation_configs,

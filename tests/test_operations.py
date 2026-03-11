@@ -430,3 +430,174 @@ class TestDiff:
 
         with pytest.raises(EnvironmentError, match="No editor found"):
             result.open()
+
+
+# ==================================================================
+# Compare (cross-branch diff) tests
+# ==================================================================
+
+class TestCompare:
+    """Tests for Tract.compare() -- cross-branch diff without switching HEAD."""
+
+    def test_compare_two_branches(self):
+        """compare(branch_a, branch_b) returns DiffResult across branches."""
+        t = make_tract()
+        t.commit(DialogueContent(role="user", text="Shared root"))
+        t.branch("feature")
+        t.commit(DialogueContent(role="assistant", text="Feature reply"))
+        t.checkout("main")
+        t.commit(DialogueContent(role="assistant", text="Main reply"))
+
+        original_branch = t.current_branch
+        original_head = t.head
+
+        result = t.compare("main", "feature")
+
+        assert isinstance(result, DiffResult)
+        # HEAD and branch must be unchanged
+        assert t.current_branch == original_branch
+        assert t.head == original_head
+
+        # Both branches have the shared root + one assistant message each,
+        # but the assistant messages differ
+        modified = [d for d in result.message_diffs if d.status == "modified"]
+        assert len(modified) >= 1
+
+    def test_compare_branch_a_defaults_to_current(self):
+        """When branch_a is omitted, it defaults to current branch HEAD."""
+        t = make_tract()
+        t.commit(DialogueContent(role="user", text="Hello"))
+        t.branch("other")
+        t.commit(DialogueContent(role="assistant", text="Other branch reply"))
+        t.checkout("main")
+
+        result = t.compare(branch_b="other")
+        assert isinstance(result, DiffResult)
+        assert result.commit_a == t.head
+
+    def test_compare_with_commit_hashes(self):
+        """compare() works with explicit commit hashes."""
+        t = make_tract()
+        h1 = t.commit(DialogueContent(role="user", text="Hello")).commit_hash
+        h2 = t.commit(DialogueContent(role="assistant", text="World")).commit_hash
+
+        result = t.compare(commit_a=h1, commit_b=h2)
+        assert result.commit_a == h1
+        assert result.commit_b == h2
+        added = [d for d in result.message_diffs if d.status == "added"]
+        assert len(added) == 1
+
+    def test_compare_identical_branches(self):
+        """Comparing a branch against itself yields all unchanged."""
+        t = make_tract()
+        t.commit(DialogueContent(role="user", text="Hello"))
+        t.branch("copy", switch=False)
+
+        result = t.compare("main", "copy")
+        assert result.stat.messages_unchanged == 1
+        assert result.stat.messages_added == 0
+        assert result.stat.messages_removed == 0
+        assert result.stat.messages_modified == 0
+
+    def test_compare_does_not_modify_head(self):
+        """compare() must not alter HEAD, current branch, or any refs."""
+        t = make_tract()
+        t.commit(DialogueContent(role="user", text="Root"))
+        t.branch("feat")
+        t.commit(DialogueContent(role="user", text="Feat commit"))
+        t.checkout("main")
+
+        head_before = t.head
+        branch_before = t.current_branch
+
+        t.compare("main", "feat")
+
+        assert t.head == head_before
+        assert t.current_branch == branch_before
+
+    def test_compare_mutual_exclusivity_branch_a_commit_a(self):
+        """Cannot provide both branch_a and commit_a."""
+        t = make_tract()
+        h = t.commit(DialogueContent(role="user", text="Hello")).commit_hash
+
+        with pytest.raises(ValueError, match="branch_a and commit_a"):
+            t.compare(branch_a="main", commit_a=h, branch_b="main")
+
+    def test_compare_mutual_exclusivity_branch_b_commit_b(self):
+        """Cannot provide both branch_b and commit_b."""
+        t = make_tract()
+        h = t.commit(DialogueContent(role="user", text="Hello")).commit_hash
+
+        with pytest.raises(ValueError, match="branch_b and commit_b"):
+            t.compare(branch_b="main", commit_b=h)
+
+    def test_compare_no_side_b_raises(self):
+        """Must specify at least branch_b or commit_b."""
+        t = make_tract()
+        t.commit(DialogueContent(role="user", text="Hello"))
+
+        with pytest.raises(ValueError, match="branch_b or commit_b"):
+            t.compare("main")
+
+    def test_compare_no_commits_raises(self):
+        """Defaulting side A with no commits raises TraceError."""
+        t = make_tract()
+        # No commits, so defaulting branch_a to HEAD should fail
+        with pytest.raises(TraceError, match="No commits"):
+            t.compare(branch_b="main")
+
+    def test_compare_invalid_branch_raises(self):
+        """Nonexistent branch raises CommitNotFoundError."""
+        t = make_tract()
+        t.commit(DialogueContent(role="user", text="Hello"))
+
+        with pytest.raises(CommitNotFoundError):
+            t.compare("main", "nonexistent")
+
+    def test_compare_divergent_branches(self):
+        """Branches that diverge from a common ancestor show correct diffs."""
+        t = make_tract()
+        t.commit(DialogueContent(role="user", text="Shared"))
+
+        t.branch("alpha")
+        t.commit(DialogueContent(role="assistant", text="Alpha response"))
+        t.commit(DialogueContent(role="user", text="Alpha followup"))
+
+        t.checkout("main")
+        t.branch("beta")
+        t.commit(DialogueContent(role="assistant", text="Beta response"))
+
+        result = t.compare("alpha", "beta")
+
+        assert isinstance(result, DiffResult)
+        # alpha has 3 messages (shared + 2), beta has 2 messages (shared + 1)
+        # The shared root should be unchanged
+        unchanged = [d for d in result.message_diffs if d.status == "unchanged"]
+        assert len(unchanged) >= 1
+
+    def test_compare_mixed_branch_and_commit(self):
+        """One side by branch name, other by commit hash."""
+        t = make_tract()
+        h1 = t.commit(DialogueContent(role="user", text="Root")).commit_hash
+        t.branch("feat")
+        t.commit(DialogueContent(role="assistant", text="Feature reply"))
+
+        result = t.compare(commit_a=h1, branch_b="feat")
+        assert result.commit_a == h1
+        added = [d for d in result.message_diffs if d.status == "added"]
+        assert len(added) >= 1
+
+    def test_compare_returns_diff_result_with_stat(self):
+        """DiffResult has populated stat object."""
+        t = make_tract()
+        t.commit(DialogueContent(role="user", text="Main only"))
+        t.branch("other")
+        t.commit(DialogueContent(role="assistant", text="Other only"))
+
+        result = t.compare("main", "other")
+        assert isinstance(result.stat, DiffStat)
+        # At minimum, stat fields should be non-negative integers
+        assert result.stat.messages_added >= 0
+        assert result.stat.messages_removed >= 0
+        assert result.stat.messages_modified >= 0
+        assert result.stat.messages_unchanged >= 0

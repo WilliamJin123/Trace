@@ -27,6 +27,10 @@ MiddlewareEvent = Literal[
     "pre_gc",
     "pre_transition",
     "post_transition",
+    "pre_generate",
+    "post_generate",
+    "pre_tool_execute",
+    "post_tool_execute",
 ]
 
 VALID_EVENTS: frozenset[str] = frozenset(get_args(MiddlewareEvent))
@@ -42,4 +46,4 @@ class MiddlewareContext:
     branch: str
     head: str
     target: str | None = None
-    pending: BaseModel | None = None
+    pending: BaseModel | dict | None = None

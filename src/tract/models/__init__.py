@@ -5,7 +5,7 @@ Re-exports key models for convenient access.
 
 from tract.models.annotations import DEFAULT_TYPE_PRIORITIES, Priority, PriorityAnnotation
 from tract.models.commit import CommitInfo, CommitOperation
-from tract.models.config import BudgetAction, LLMConfig, OperationPrompts, TractConfig, TokenBudgetConfig
+from tract.models.config import BudgetAction, LLMConfig, OperationPrompts, RetryConfig, TractConfig, TokenBudgetConfig
 from tract.models.merge import MergeStrategy
 from tract.models.content import (
     BUILTIN_TYPE_HINTS,
@@ -47,6 +47,7 @@ __all__ = [
     "BudgetAction",
     "LLMConfig",
     "OperationPrompts",
+    "RetryConfig",
     "TokenBudgetConfig",
     "TractConfig",
     # Merge
