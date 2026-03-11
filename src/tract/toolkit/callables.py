@@ -92,7 +92,7 @@ def tool_to_callable(tool_def: ToolDefinition) -> Any:
     wrapper.__name__ = tool_def.name
     wrapper.__qualname__ = tool_def.name
     wrapper.__doc__ = tool_def.description
-    wrapper.__signature__ = sig  # type: ignore[attr-defined]
+    wrapper.__signature__ = sig  # type: ignore[attr-defined]  # inject inspect.Signature for tool schema
     wrapper.__annotations__ = annotations
 
     return wrapper

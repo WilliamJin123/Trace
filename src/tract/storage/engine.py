@@ -50,8 +50,8 @@ def create_trace_engine(
     if engine.dialect.name == "sqlite":
 
         @event.listens_for(engine, "connect")
-        def set_sqlite_pragma(dbapi_conn, connection_record):  # type: ignore[no-untyped-def]
-            cursor = dbapi_conn.cursor()
+        def set_sqlite_pragma(dbapi_conn: object, connection_record: object) -> None:
+            cursor = dbapi_conn.cursor()  # type: ignore[attr-defined]  # DBAPI connection
             cursor.execute("PRAGMA journal_mode=WAL")
             cursor.execute("PRAGMA busy_timeout=5000")
             cursor.execute("PRAGMA synchronous=NORMAL")

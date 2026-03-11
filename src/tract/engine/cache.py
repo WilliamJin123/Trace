@@ -263,7 +263,12 @@ class CacheManager:
             )
             return
 
-        assert isinstance(self._compiler, DefaultContextCompiler)
+        # Cache requires DefaultContextCompiler for incremental message building
+        if not isinstance(self._compiler, DefaultContextCompiler):
+            raise TypeError(
+                "CompileCache requires DefaultContextCompiler, "
+                f"got {type(self._compiler).__name__}"
+            )
         new_message = self._compiler.build_message_for_commit(commit_row)
         new_config = dict(commit_row.generation_config_json or {})
 
@@ -325,7 +330,12 @@ class CacheManager:
         except ValueError:
             return None  # Target not in snapshot
 
-        assert isinstance(self._compiler, DefaultContextCompiler)
+        # Cache requires DefaultContextCompiler for incremental message building
+        if not isinstance(self._compiler, DefaultContextCompiler):
+            raise TypeError(
+                "CompileCache requires DefaultContextCompiler, "
+                f"got {type(self._compiler).__name__}"
+            )
         new_message = self._compiler.build_message_for_commit(edit_row)
 
         # Replace message at target position

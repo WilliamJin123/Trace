@@ -10,7 +10,8 @@ import json
 import logging
 import os
 import uuid
-from typing import Any, AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterator
+from typing import Any
 
 import anthropic
 

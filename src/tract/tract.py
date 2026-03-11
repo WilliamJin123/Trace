@@ -185,7 +185,7 @@ def _retry_with_backoff(
                     type(e).__name__, e, delay,
                 )
                 time.sleep(delay)
-    raise last_error  # type: ignore[misc]
+    raise last_error  # type: ignore[misc]  # guaranteed non-None after loop
 
 
 async def _aretry_with_backoff(
@@ -227,7 +227,7 @@ async def _aretry_with_backoff(
                     type(e).__name__, e, delay,
                 )
                 await asyncio.sleep(delay)
-    raise last_error  # type: ignore[misc]
+    raise last_error  # type: ignore[misc]  # guaranteed non-None after loop
 
 
 class Tract:
@@ -304,7 +304,7 @@ class Tract:
         self._operation_prompts: OperationPrompts = OperationPrompts()
         self._operation_clients: OperationClients = OperationClients()
         self._active_tools: list[dict] | None = None
-        self._tool_executor: ToolExecutor | None = None  # type: ignore[assignment]
+        self._tool_executor: ToolExecutor | None = None  # type: ignore[assignment]  # lazy runner import
         self._tool_summarization_config: ToolSummarizationConfig | None = None
         self._commit_reasoning: bool = True
         self._auto_message_enabled: bool = False
@@ -2552,7 +2552,7 @@ class Tract:
                     if t.get("function", {}).get("name") in allowed
                 ]
         else:
-            resolved_tools = tools  # type: ignore[assignment]
+            resolved_tools = tools  # type: ignore[assignment]  # user-supplied tools passthrough
 
         config = LoopConfig(
             max_steps=max_steps,
@@ -3540,34 +3540,39 @@ class Tract:
             if self._verify_cache:
                 fresh = self._compiler.compile(self._tract_id, current_head)
                 # Compare messages ignoring per-message token_count (computed
-                # by cache, not compiler — fresh Messages have token_count=0)
+                # by cache, not compiler -- fresh Messages have token_count=0)
                 cached_core = [(m.role, m.content, m.name, m.tool_calls, m.tool_call_id) for m in result.messages]
                 fresh_core = [(m.role, m.content, m.name, m.tool_calls, m.tool_call_id) for m in fresh.messages]
-                assert cached_core == fresh_core, (
-                    f"Cache message mismatch: cached {len(result.messages)} msgs, "
-                    f"fresh {len(fresh.messages)} msgs"
-                )
-                # Skip token_count assertion when API-sourced (record_usage
+                if cached_core != fresh_core:
+                    raise RuntimeError(
+                        f"Cache message mismatch: cached {len(result.messages)} msgs, "
+                        f"fresh {len(fresh.messages)} msgs"
+                    )
+                # Skip token_count check when API-sourced (record_usage
                 # calibrates to API totals which legitimately differ from tiktoken)
                 if not result.token_source.startswith("api:"):
-                    assert result.token_count == fresh.token_count, (
-                        f"Cache token mismatch: cached {result.token_count}, "
-                        f"fresh {fresh.token_count}"
+                    if result.token_count != fresh.token_count:
+                        raise RuntimeError(
+                            f"Cache token mismatch: cached {result.token_count}, "
+                            f"fresh {fresh.token_count}"
+                        )
+                if result.commit_count != fresh.commit_count:
+                    raise RuntimeError(
+                        f"Cache commit_count mismatch: cached {result.commit_count}, "
+                        f"fresh {fresh.commit_count}"
                     )
-                assert result.commit_count == fresh.commit_count, (
-                    f"Cache commit_count mismatch: cached {result.commit_count}, "
-                    f"fresh {fresh.commit_count}"
-                )
-                assert result.generation_configs == fresh.generation_configs, (
-                    f"Cache generation_configs mismatch: "
-                    f"cached {len(result.generation_configs)}, "
-                    f"fresh {len(fresh.generation_configs)}"
-                )
-                assert result.commit_hashes == fresh.commit_hashes, (
-                    f"Cache commit_hashes mismatch: "
-                    f"cached {len(result.commit_hashes)}, "
-                    f"fresh {len(fresh.commit_hashes)}"
-                )
+                if result.generation_configs != fresh.generation_configs:
+                    raise RuntimeError(
+                        f"Cache generation_configs mismatch: "
+                        f"cached {len(result.generation_configs)}, "
+                        f"fresh {len(fresh.generation_configs)}"
+                    )
+                if result.commit_hashes != fresh.commit_hashes:
+                    raise RuntimeError(
+                        f"Cache commit_hashes mismatch: "
+                        f"cached {len(result.commit_hashes)}, "
+                        f"fresh {len(fresh.commit_hashes)}"
+                    )
             return self._inject_tools(result)
 
         # Cache miss: full compile and build snapshot
@@ -4873,7 +4878,7 @@ class Tract:
         from tract.operations.navigation import reset as _reset
 
         resolved = self.resolve_commit(target)
-        result = _reset(resolved, mode, self._tract_id, self._ref_repo)  # type: ignore[arg-type]
+        result = _reset(resolved, mode, self._tract_id, self._ref_repo)  # type: ignore[arg-type]  # resolve_commit narrows str
         self._session.commit()
         return result
 
@@ -6599,7 +6604,7 @@ class Tract:
         source_commits: list[str] = []
 
         for result_ci, summary in zip(results_to_compact, summaries):
-            r_meta: CommitMetadata = result_ci.metadata or {}  # type: ignore[assignment]
+            r_meta: CommitMetadata = result_ci.metadata or {}  # type: ignore[assignment]  # {} is valid CommitMetadata (total=False)
             original_tokens += result_ci.token_count
             source_commits.append(result_ci.commit_hash)
 
@@ -6784,7 +6789,8 @@ class Tract:
         commit_hashes: tuple[str, ...] | list[str] = (),
     ) -> None:
         """Persist a compile record to storage."""
-        assert self._compile_record_repo is not None
+        if self._compile_record_repo is None:
+            return  # compile records not enabled; silently skip
         record_id = uuid.uuid4().hex
         self._compile_record_repo.save_record(
             record_id=record_id,
@@ -6855,7 +6861,7 @@ class Tract:
         def _noop_commit() -> None:
             pass
 
-        self._session.commit = _noop_commit  # type: ignore[assignment]
+        self._session.commit = _noop_commit  # type: ignore[assignment]  # intentional monkey-patch for batch atomicity
         try:
             yield
             # Success: flush pending and commit once
@@ -6865,7 +6871,7 @@ class Tract:
             raise
         finally:
             self._in_batch = False
-            self._session.commit = _real_commit  # type: ignore[assignment]
+            self._session.commit = _real_commit  # type: ignore[assignment]  # restore original
 
 
     def register_content_type(self, name: str, model: type[BaseModel]) -> None:

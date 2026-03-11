@@ -215,7 +215,7 @@ def spawn_tract(
             child_ref_repo,
             child_annotation_repo,
             commits_snapshot=parent_commits_snapshot,
-            filter_func=filter_func,  # type: ignore[arg-type]
+            filter_func=filter_func,  # type: ignore[arg-type]  # Optional narrowed by caller
             include_instructions=include_instructions,
         )
         child_session.commit()

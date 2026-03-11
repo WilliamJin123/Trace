@@ -49,7 +49,7 @@ def open_in_editor(
             auto_detected = True
 
     if not editor:
-        raise EnvironmentError(
+        raise OSError(
             "No editor found.  Set $EDITOR or $TRACT_DIFF_EDITOR, "
             "or install VS Code ('code' on PATH)."
         )

@@ -18,7 +18,6 @@ No LLM required.
 
 from tract import Tract, BlockedError
 from tract.profiles import get_profile, list_profiles
-from tract.templates import list_templates
 
 
 def profile_discovery():

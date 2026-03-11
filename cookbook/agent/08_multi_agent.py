@@ -20,7 +20,7 @@ from pathlib import Path
 # Windows console encoding fix
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
-from tract import Tract, Session, TractConfig, TokenBudgetConfig
+from tract import Session, TractConfig, TokenBudgetConfig
 from tract.toolkit import ToolConfig, ToolProfile
 
 # Budget applied to parent — child inherits it via deploy(), creating
@@ -76,7 +76,7 @@ def main():
     # Configure LLM
     from dataclasses import replace
     from tract.llm.client import OpenAIClient
-    from tract.models.config import LLMConfig, OperationConfigs
+    from tract.models.config import LLMConfig
 
     parent_client = OpenAIClient(
         api_key=llm.api_key,

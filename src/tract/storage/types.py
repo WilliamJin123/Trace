@@ -7,7 +7,7 @@ transparently.
 
 from __future__ import annotations
 
-from typing import Any, Type
+from typing import Any
 
 from pydantic import BaseModel
 from sqlalchemy import JSON, TypeDecorator
@@ -25,7 +25,7 @@ class PydanticJSON(TypeDecorator):
     impl = JSON
     cache_ok = True
 
-    def __init__(self, pydantic_type: Type[BaseModel]) -> None:
+    def __init__(self, pydantic_type: type[BaseModel]) -> None:
         super().__init__()
         self.pydantic_type = pydantic_type
 

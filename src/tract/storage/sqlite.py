@@ -7,7 +7,7 @@ Each repository takes a Session in its constructor.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Sequence
+from collections.abc import Sequence
 
 from sqlalchemy import func, select, and_, or_
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert

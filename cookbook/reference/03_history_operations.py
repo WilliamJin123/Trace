@@ -71,10 +71,13 @@ def main():
     # result.open()                  # open in VS Code / $EDITOR
 
     # DiffResult fields:
-    #   result.added      — messages only in B
-    #   result.removed    — messages only in A
-    #   result.modified   — messages changed between A and B
-    #   result.unchanged  — same in both
+    #   result.message_diffs  — list of MessageDiff entries (per-message changes)
+    #   result.stat           — DiffStat with aggregate counts:
+    #     .messages_added     — messages only in B
+    #     .messages_removed   — messages only in A
+    #     .messages_modified  — messages changed between A and B
+    #     .messages_unchanged — same in both
+    #     .total_token_delta  — net token change (B - A)
 
     # =================================================================
     # 4. RESET — roll HEAD back to an earlier commit

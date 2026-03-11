@@ -12,19 +12,16 @@ Patterns shown:
   5. Multi-Strategy Fallback   -- try primary/secondary/minimal strategies
 
 Demonstrates: t.tag(), t.reset(), t.branch(), t.switch(), t.merge(),
-              t.compress(), t.use(), BlockedError, BudgetExceededError,
-              RetryExhaustedError, CompressionError
+              t.compress(), t.use(), BlockedError, CompressionError
 
 No LLM required.
 """
 
 from tract import (
     BlockedError,
-    BudgetExceededError,
     CompressionError,
     Tract,
 )
-from tract.exceptions import RetryExhaustedError
 
 
 def main():

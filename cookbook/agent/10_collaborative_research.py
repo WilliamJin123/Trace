@@ -38,7 +38,7 @@ from pathlib import Path
 # Windows console encoding fix
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
-from tract import Tract, Session, TractConfig, TokenBudgetConfig
+from tract import Session, TractConfig, TokenBudgetConfig
 from tract.llm.client import OpenAIClient
 from tract.models.config import LLMConfig
 

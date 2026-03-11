@@ -17,15 +17,13 @@ Demonstrates: t.compress(), t.branch(), t.merge(), t.switch(),
 No LLM required.
 """
 
-import json
-import time
 from typing import Any
 
 from tract import (
     BlockedError,
     Tract,
 )
-from tract.loop import LoopConfig, LoopResult, run_loop
+from tract.loop import LoopConfig, run_loop
 
 
 def compression_fallback_chain():

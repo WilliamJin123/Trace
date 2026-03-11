@@ -103,10 +103,13 @@ async def main():
         before = t.compile()
         print(f"  Before: {before.token_count} tokens, {before.commit_count} commits")
 
-        compressed = await t.acompress(target_ratio=0.5)
+        compressed = await t.acompress(
+            content="User asked about Python and Rust, agent compared them.",
+        )
         after = t.compile()
+        saved = compressed.original_tokens - compressed.compressed_tokens
         print(f"  After:  {after.token_count} tokens, {after.commit_count} commits")
-        print(f"  Saved:  {compressed.tokens_saved} tokens")
+        print(f"  Saved:  {saved} tokens")
 
 
 if __name__ == "__main__":

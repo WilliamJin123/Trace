@@ -17,7 +17,8 @@ from tract.models.commit import CommitInfo
 from tract.storage.schema import BlobRow, CommitRow
 
 if TYPE_CHECKING:
-    from sqlalchemy.orm import Session
+    from sqlalchemy import Engine
+    from sqlalchemy.orm import Session, sessionmaker
 
     from tract.protocols import CompiledContext
     from tract.storage.sqlite import SqliteSpawnPointerRepository
@@ -162,8 +163,8 @@ def search(
 
 
 def compile_at(
-    session_factory,
-    engine,
+    session_factory: sessionmaker[Session],
+    engine: Engine,
     tract_id: str,
     *,
     at_time: datetime | None = None,

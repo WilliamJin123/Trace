@@ -96,7 +96,7 @@ def replay_commit(
 
     # Create the new commit via the engine (engine reads HEAD for parent)
     return commit_engine.create_commit(
-        content=content,  # type: ignore[arg-type]
+        content=content,  # type: ignore[arg-type]  # deserialized BaseModel subclass
         operation=original_row.operation,
         message=original_row.message,
         edit_target=edit_target if original_row.operation == CommitOperation.EDIT else None,

@@ -280,7 +280,9 @@ class DefaultContextCompiler:
         the second parent's unique commits (not already in the list)
         are inserted before the merge commit in chronological order.
         """
-        assert self._parent_repo is not None
+        # _walk_with_merge_parents is only called when _parent_repo is set
+        if self._parent_repo is None:
+            raise RuntimeError("_parent_repo must be set for merge-aware compilation")
 
         seen: set[str] = {c.commit_hash for c in first_parent_commits}
         result: list[CommitRow] = []

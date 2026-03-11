@@ -642,7 +642,7 @@ def compress_range(
     if content is not None:
         # Manual mode: single summary placed at group 0, subsequent groups
         # are absorbed (their commits replaced without a separate summary).
-        summaries = [content] + [None] * (len(groups) - 1)  # type: ignore[list-item]
+        summaries = [content] + [None] * (len(groups) - 1)  # type: ignore[list-item]  # None marks groups to absorb
     elif llm_client is not None:
         # LLM mode: one summary per group
         summaries = []
@@ -828,7 +828,7 @@ def sliding_window_compress(
     # 8. Generate summaries
     if content is not None:
         # Manual mode: single summary for first group, rest absorbed
-        summaries = [content] + [None] * (len(groups) - 1)  # type: ignore[list-item]
+        summaries = [content] + [None] * (len(groups) - 1)  # type: ignore[list-item]  # None marks groups to absorb
     elif llm_client is not None:
         summaries = []
         for gidx, group in enumerate(groups):
@@ -1391,8 +1391,8 @@ def gc(
 
 async def _asummarize_group(
     messages_text: str,
-    llm_client,
-    token_counter,
+    llm_client: LLMClient,
+    token_counter: TokenCounter,
     *,
     target_tokens: int | None = None,
     instructions: str | None = None,
@@ -1434,30 +1434,30 @@ async def _asummarize_group(
 
 async def acompress_range(
     tract_id: str,
-    commit_repo,
-    blob_repo,
-    annotation_repo,
-    ref_repo,
-    commit_engine,
-    token_counter,
-    event_repo,
-    parent_repo,
+    commit_repo: CommitRepository,
+    blob_repo: BlobRepository,
+    annotation_repo: AnnotationRepository,
+    ref_repo: RefRepository,
+    commit_engine: CommitEngine,
+    token_counter: TokenCounter,
+    event_repo: OperationEventRepository,
+    parent_repo: CommitParentRepository,
     *,
     commits: list[str] | None = None,
     from_commit: str | None = None,
     to_commit: str | None = None,
     target_tokens: int | None = None,
     preserve: list[str] | None = None,
-    llm_client=None,
+    llm_client: LLMClient | None = None,
     content: str | None = None,
     instructions: str | None = None,
     system_prompt: str | None = None,
     llm_kwargs: dict | None = None,
     generation_config: dict | None = None,
-    type_registry: dict | None = None,
+    type_registry: dict[str, type] | None = None,
     triggered_by: str | None = None,
     two_stage: bool = False,
-) -> "CompressRangeResult":
+) -> CompressRangeResult:
     """Async version of :func:`compress_range`.
 
     The LLM calls (_asummarize_group, guidance generation) are awaited;

@@ -52,12 +52,13 @@ def extract_text_from_content(content: BaseModel) -> str:
     Returns:
         The text representation of the content.
     """
+    # Duck-type access: BaseModel subclasses have varied field names
     if hasattr(content, "text"):
-        return content.text  # type: ignore[return-value]
-    if hasattr(content, "content") and isinstance(content.content, str):  # type: ignore[union-attr]
+        return content.text  # type: ignore[return-value]  # InstructionContent, DialogueContent, etc.
+    if hasattr(content, "content") and isinstance(content.content, str):  # type: ignore[union-attr]  # ArtifactContent
         return content.content  # type: ignore[return-value]
     if hasattr(content, "payload"):
-        return json.dumps(content.payload, sort_keys=True)  # type: ignore[attr-defined]
+        return json.dumps(content.payload, sort_keys=True)  # type: ignore[attr-defined]  # ToolIOContent, FreeformContent
     return ""
 
 

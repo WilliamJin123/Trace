@@ -24,7 +24,7 @@ import json
 import os
 import tempfile
 
-from tract import Tract, Priority
+from tract import Tract
 
 
 def main():
