@@ -3,19 +3,14 @@
 Uses rich library for formatted terminal output.
 All functions accept their target object and print to a rich Console.
 
-To avoid circular imports, this module does NOT import domain models
-at module level. Functions access object attributes dynamically.
+Domain models that import from this module (via lazy ``from tract.formatting
+import ...`` inside their ``.pprint()`` methods) are imported here under
+``TYPE_CHECKING`` only, to avoid circular imports at runtime.
 """
 from __future__ import annotations
 
 import time
-from io import StringIO
-from typing import Any, Callable, Literal
-
-from tract.protocols import CompiledContext
-
-_COMPACT_DEFAULT_MAX_CHARS = 1000
-"""Default max_chars for compact style when None is passed."""
+from typing import IO, TYPE_CHECKING, Literal
 
 from rich.console import Console, Group
 from rich.markdown import Markdown
@@ -23,6 +18,28 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 from rich.theme import Theme
+
+from tract.models.config import LLMConfig
+from tract.protocols import ChatResponse, CompiledContext, Message
+
+if TYPE_CHECKING:
+    from rich.live import Live
+
+    from tract.loop import LoopResult
+    from tract.models.commit import CommitInfo
+    from tract.models.compression import (
+        CompressResult,
+        GCResult,
+        ToolCompactResult,
+        ToolDropResult,
+    )
+    from tract.models.merge import ConflictInfo, ImportResult, MergeResult, RebaseResult
+    from tract.models.session import CollapseResult
+    from tract.operations.diff import DiffResult, DiffStat
+    from tract.operations.history import StatusInfo
+
+_COMPACT_DEFAULT_MAX_CHARS = 1000
+"""Default max_chars for compact style when None is passed."""
 
 # Brighter markdown theme for dark terminals — replaces Rich's default
 # magenta/cyan with white/bright_white tones.
@@ -57,7 +74,7 @@ def _ensure_utf8_stdout() -> None:
             pass
 
 
-def _make_console(file: Any = None) -> Console:
+def _make_console(file: IO[str] | None = None) -> Console:
     """Create a Console, optionally writing to a file-like object."""
     if file is not None:
         return Console(file=file, force_terminal=True, width=100, theme=_MARKDOWN_THEME)
@@ -70,7 +87,7 @@ def _is_estimate(token_source: str) -> bool:
     return not token_source or token_source.startswith("tiktoken:")
 
 
-def _format_config_lines(config: Any, *, label_width: int = 10) -> list[str]:
+def _format_config_lines(config: LLMConfig | None, *, label_width: int = 10) -> list[str]:
     """Format an LLMConfig into Rich markup lines with model shown prominently.
 
     Returns a list of markup strings. First line shows model (bold),
@@ -95,7 +112,7 @@ def _format_config_lines(config: Any, *, label_width: int = 10) -> list[str]:
     return lines
 
 
-def _format_config_inline(config: Any) -> str | None:
+def _format_config_inline(config: LLMConfig | None) -> str | None:
     """Format an LLMConfig into a single inline string for footers.
 
     Returns a Rich markup string like 'model: gpt-4o  temperature=0.7'
@@ -117,7 +134,7 @@ def _format_config_inline(config: Any) -> str | None:
     return "  ".join(parts) if parts else None
 
 
-def pprint_chat_response(response: Any, *, max_chars: int | None = None, file: Any = None) -> None:
+def pprint_chat_response(response: ChatResponse, *, max_chars: int | None = None, file: IO[str] | None = None) -> None:
     """Pretty-print a ChatResponse.
 
     Args:
@@ -149,7 +166,7 @@ def pprint_chat_response(response: Any, *, max_chars: int | None = None, file: A
     has_tool_calls = bool(tool_calls)
 
     if has_tool_calls:
-        body_parts: list[Any] = []
+        body_parts: list[Text | Markdown] = []
         if text:
             body_parts.append(Markdown(text))
             body_parts.append(Text(""))
@@ -161,7 +178,7 @@ def pprint_chat_response(response: Any, *, max_chars: int | None = None, file: A
             call_text.append(", ".join(arg_parts), style="white")
             call_text.append(")", style="dim")
             body_parts.append(call_text)
-        body: Any = Group(*body_parts) if len(body_parts) > 1 else body_parts[0]
+        body: Text | Markdown | Group = Group(*body_parts) if len(body_parts) > 1 else body_parts[0]
         panel_title = "[bold]Tool Call[/bold]"
         panel_border = "magenta"
     else:
@@ -200,7 +217,7 @@ def pprint_compiled_context(
     *,
     max_chars: int | None = None,
     style: Literal["table", "chat", "compact"] = "table",
-    file: Any = None,
+    file: IO[str] | None = None,
 ) -> None:
     """Pretty-print a CompiledContext.
 
@@ -251,7 +268,7 @@ def pprint_compiled_context(
             if max_chars is not None and len(display_text) > max_chars:
                 display_text = display_text[:max_chars - 3] + "..."
             role_label = Text("tool call", style="bold magenta")
-            cell: Any = Text(display_text, style="bold magenta")
+            cell: Text | Markdown = Text(display_text, style="bold magenta")
         else:
             content = msg.content
             if max_chars is not None and len(content) > max_chars:
@@ -292,9 +309,9 @@ def pprint_compiled_context(
     prefix = "\u2248" if estimate else ""
     summary = Text()
     summary.append(f"  {prefix}{ctx.token_count}", style="bold")
-    summary.append(f" tokens | ", style="dim")
+    summary.append(" tokens | ", style="dim")
     summary.append(f"{ctx.commit_count}", style="bold")
-    summary.append(f" commits | ", style="dim")
+    summary.append(" commits | ", style="dim")
     summary.append(f"source: {ctx.token_source}", style="dim")
     console.print(summary)
 
@@ -341,19 +358,19 @@ _ROLE_COLORS: dict[str, str] = {
 }
 
 
-def _style_key(msg: Any) -> str:
+def _style_key(msg: Message) -> str:
     """Return the style lookup key for a message.
 
     Prefers content_type (e.g. 'reasoning') over role so that reasoning
     commits get distinct styling even though their role is 'assistant'.
     """
-    ct = getattr(msg, "content_type", None)
+    ct = msg.content_type
     if ct and ct in _ROLE_COLORS:
         return ct
     return msg.role
 
 
-def _pprint_compiled_compact(ctx: CompiledContext, *, max_chars: int | None = None, file: Any = None) -> None:
+def _pprint_compiled_compact(ctx: CompiledContext, *, max_chars: int | None = None, file: IO[str] | None = None) -> None:
     """Render a CompiledContext as a compact one-line-per-message summary."""
     import textwrap
 
@@ -452,7 +469,7 @@ def _pprint_compiled_compact(ctx: CompiledContext, *, max_chars: int | None = No
     console.print(footer)
 
 
-def _pprint_compiled_chat(ctx: CompiledContext, *, max_chars: int | None = None, file: Any = None) -> None:
+def _pprint_compiled_chat(ctx: CompiledContext, *, max_chars: int | None = None, file: IO[str] | None = None) -> None:
     """Render a CompiledContext as a chat transcript with panels per message."""
     console = _make_console(file)
     hashes = ctx.commit_hashes if ctx.commit_hashes else []
@@ -472,7 +489,7 @@ def _pprint_compiled_chat(ctx: CompiledContext, *, max_chars: int | None = None,
 
         # Tool-calling assistant messages: show calls instead of "(empty)"
         if msg.role == "assistant" and msg.tool_calls:
-            parts: list[Any] = []
+            parts: list[Text | Markdown] = []
             if content:
                 parts.append(Markdown(content))
                 parts.append(Text(""))
@@ -485,7 +502,7 @@ def _pprint_compiled_chat(ctx: CompiledContext, *, max_chars: int | None = None,
                 call_text.append(", ".join(arg_parts), style="white")
                 call_text.append(")", style="dim")
                 parts.append(call_text)
-            body: Any = Group(*parts) if len(parts) > 1 else parts[0]
+            body: Text | Markdown | Group | str = Group(*parts) if len(parts) > 1 else parts[0]
             title = "Tool Call"
             border = "magenta"
         elif sk == "reasoning":
@@ -519,19 +536,19 @@ def _pprint_compiled_chat(ctx: CompiledContext, *, max_chars: int | None = None,
     prefix = "\u2248" if estimate else ""
     summary = Text()
     summary.append(f"  {len(ctx.messages)} messages", style="bold")
-    summary.append(f" | ", style="dim")
+    summary.append(" | ", style="dim")
     summary.append(f"{prefix}{ctx.token_count} tokens", style="bold")
-    summary.append(f" | ", style="dim")
+    summary.append(" | ", style="dim")
     summary.append(f"source: {ctx.token_source}", style="dim")
     console.print(summary)
 
 
 def pprint_commit_info(
-    info: Any,
+    info: CommitInfo,
     *,
     max_chars: int | None = None,
     content: str | None = None,
-    file: Any = None,
+    file: IO[str] | None = None,
 ) -> None:
     """Pretty-print a CommitInfo.
 
@@ -582,7 +599,7 @@ def pprint_commit_info(
         if max_chars is not None and len(display_content) > max_chars:
             display_content = display_content[:max_chars - 3] + "..."
         body_parts.append("")
-        body_parts.append(f"[bold]Content:[/bold]")
+        body_parts.append("[bold]Content:[/bold]")
         body_parts.append(display_content)
 
     short_hash = info.commit_hash[:8]
@@ -594,7 +611,7 @@ def pprint_commit_info(
     console.print(panel)
 
 
-def pprint_diff_result(result: Any, *, stat_only: bool = False, file: Any = None) -> None:
+def pprint_diff_result(result: DiffResult, *, stat_only: bool = False, file: IO[str] | None = None) -> None:
     """Pretty-print a DiffResult with VS Code-style inline word highlights.
 
     Modified lines show the specific changed words highlighted against a
@@ -646,10 +663,8 @@ def _render_inline_diff(diff_lines: list[str], console: Console) -> None:
     Pairs consecutive -/+ lines and highlights the specific changed words.
     Unpaired lines are shown as full red/green.
     """
-    import difflib
-
     # Collect lines, stripping trailing newlines
-    lines = [l.rstrip("\n") for l in diff_lines]
+    lines = [ln.rstrip("\n") for ln in diff_lines]
 
     # Group into removed/added pairs for word-level diffing
     i = 0
@@ -728,7 +743,7 @@ def _word_level_highlight(old_text: str, new_text: str) -> tuple[Text, Text]:
     return old_rich, new_rich
 
 
-def _pprint_diff_stat(stat: Any, config_changes: dict, console: Console) -> None:
+def _pprint_diff_stat(stat: DiffStat, config_changes: dict[str, tuple[object, object]], console: Console) -> None:
     """Print diff summary statistics."""
     parts: list[str] = []
     if stat.messages_added:
@@ -751,7 +766,7 @@ def _pprint_diff_stat(stat: Any, config_changes: dict, console: Console) -> None
     console.print("  ".join(parts) if parts else "[dim]No changes[/dim]")
 
 
-def pprint_status_info(status: Any, *, max_chars: int | None = None, file: Any = None) -> None:
+def pprint_status_info(status: StatusInfo, *, max_chars: int | None = None, file: IO[str] | None = None) -> None:
     """Pretty-print a StatusInfo.
 
     Args:
@@ -803,7 +818,7 @@ def pprint_status_info(status: Any, *, max_chars: int | None = None, file: Any =
 # ---------------------------------------------------------------------------
 
 
-def pprint_conflict_info(conflict: Any, *, file: Any = None) -> None:
+def pprint_conflict_info(conflict: ConflictInfo, *, file: IO[str] | None = None) -> None:
     """Pretty-print a ConflictInfo as a git-style conflict diff.
 
     Shows both sides with ``<<<<<<<`` / ``=======`` / ``>>>>>>>`` markers,
@@ -828,7 +843,7 @@ def pprint_conflict_info(conflict: Any, *, file: Any = None) -> None:
 
     # Ancestor (if available)
     if conflict.ancestor_content_text:
-        console.print(Text(f"  ||||||| ancestor", style="dim"))
+        console.print(Text("  ||||||| ancestor", style="dim"))
         console.print(Text(f"  {conflict.ancestor_content_text}", style="dim"))
 
     # Side A (target / current branch)
@@ -852,7 +867,7 @@ def pprint_conflict_info(conflict: Any, *, file: Any = None) -> None:
     console.print(Text(f"  >>>>>>> {label_b}", style="bold green"))
 
 
-def pprint_merge_result(result: Any, *, file: Any = None) -> None:
+def pprint_merge_result(result: MergeResult, *, file: IO[str] | None = None) -> None:
     """Pretty-print a MergeResult summary.
 
     Shows merge type, status, conflict count, and resolutions. For conflict
@@ -878,18 +893,18 @@ def pprint_merge_result(result: Any, *, file: Any = None) -> None:
 
     # Summary fields
     info = Text()
-    info.append(f"  type:      ", style="dim")
+    info.append("  type:      ", style="dim")
     info.append(f"{mtype}\n", style="bold")
-    info.append(f"  status:    ", style="dim")
+    info.append("  status:    ", style="dim")
     info.append(f"{status_text}\n", style=f"bold {status_style}")
-    info.append(f"  conflicts: ", style="dim")
+    info.append("  conflicts: ", style="dim")
     conflict_count = len(result.conflicts)
     info.append(
         f"{conflict_count}\n",
         style="bold red" if conflict_count > 0 else "bold green",
     )
     if result.merge_commit_hash and result.merge_type != "fast_forward":
-        info.append(f"  commit:    ", style="dim")
+        info.append("  commit:    ", style="dim")
         info.append(f"{result.merge_commit_hash[:8]}\n", style="bold")
     console.print(info)
 
@@ -909,7 +924,8 @@ def pprint_merge_result(result: Any, *, file: Any = None) -> None:
             console.print(line)
 
 
-def pprint_log(entries: list[Any], *, file: Any = None) -> None:
+# NOTE: unused but part of public API
+def pprint_log(entries: list[CommitInfo], *, file: IO[str] | None = None) -> None:
     """Pretty-print a list of CommitInfo entries as a log table.
 
     Args:
@@ -940,7 +956,8 @@ def pprint_log(entries: list[Any], *, file: Any = None) -> None:
     console.print(Text(f"  {len(entries)} entries", style="dim"))
 
 
-def pprint_tag_registry(entries: list[dict], *, file: Any = None) -> None:
+# NOTE: unused but part of public API
+def pprint_tag_registry(entries: list[dict[str, object]], *, file: IO[str] | None = None) -> None:
     """Pretty-print a tag registry listing.
 
     Args:
@@ -982,10 +999,10 @@ _LOOP_STATUS_STYLES: dict[str, str] = {
 
 
 def pprint_loop_result(
-    result: Any,
+    result: LoopResult,
     *,
     style: Literal["compact", "chat"] = "compact",
-    file: Any = None,
+    file: IO[str] | None = None,
 ) -> None:
     """Pretty-print a LoopResult.
 
@@ -1112,7 +1129,7 @@ def pprint_loop_result(
 # ---------------------------------------------------------------------------
 
 
-def pprint_compress_result(result: Any, *, file: Any = None) -> None:
+def pprint_compress_result(result: CompressResult, *, file: IO[str] | None = None) -> None:
     """Pretty-print a CompressResult.
 
     Args:
@@ -1146,7 +1163,7 @@ def pprint_compress_result(result: Any, *, file: Any = None) -> None:
     ))
 
 
-def pprint_tool_compact_result(result: Any, *, file: Any = None) -> None:
+def pprint_tool_compact_result(result: ToolCompactResult, *, file: IO[str] | None = None) -> None:
     """Pretty-print a ToolCompactResult.
 
     Args:
@@ -1177,7 +1194,7 @@ def pprint_tool_compact_result(result: Any, *, file: Any = None) -> None:
     ))
 
 
-def pprint_tool_drop_result(result: Any, *, file: Any = None) -> None:
+def pprint_tool_drop_result(result: ToolDropResult, *, file: IO[str] | None = None) -> None:
     """Pretty-print a ToolDropResult.
 
     Args:
@@ -1199,7 +1216,7 @@ def pprint_tool_drop_result(result: Any, *, file: Any = None) -> None:
     ))
 
 
-def pprint_gc_result(result: Any, *, file: Any = None) -> None:
+def pprint_gc_result(result: GCResult, *, file: IO[str] | None = None) -> None:
     """Pretty-print a GCResult.
 
     Args:
@@ -1227,7 +1244,7 @@ def pprint_gc_result(result: Any, *, file: Any = None) -> None:
 # ---------------------------------------------------------------------------
 
 
-def pprint_rebase_result(result: Any, *, file: Any = None) -> None:
+def pprint_rebase_result(result: RebaseResult, *, file: IO[str] | None = None) -> None:
     """Pretty-print a RebaseResult.
 
     Args:
@@ -1257,7 +1274,7 @@ def pprint_rebase_result(result: Any, *, file: Any = None) -> None:
         console.print(Text(f"  ! {w}", style="yellow"))
 
 
-def pprint_import_result(result: Any, *, file: Any = None) -> None:
+def pprint_import_result(result: ImportResult, *, file: IO[str] | None = None) -> None:
     """Pretty-print an ImportResult.
 
     Args:
@@ -1282,7 +1299,7 @@ def pprint_import_result(result: Any, *, file: Any = None) -> None:
     ))
 
 
-def pprint_collapse_result(result: Any, *, file: Any = None) -> None:
+def pprint_collapse_result(result: CollapseResult, *, file: IO[str] | None = None) -> None:
     """Pretty-print a CollapseResult.
 
     Args:
@@ -1300,7 +1317,7 @@ def pprint_collapse_result(result: Any, *, file: Any = None) -> None:
     if result.parent_commit_hash:
         body_parts.append(f"[bold]Commit:[/bold]       {result.parent_commit_hash[:8]}")
     else:
-        body_parts.append(f"[bold]Commit:[/bold]       [dim](not auto-committed)[/dim]")
+        body_parts.append("[bold]Commit:[/bold]       [dim](not auto-committed)[/dim]")
 
     config = getattr(result, "config", None)
     for line in _format_config_lines(config, label_width=14):
@@ -1364,7 +1381,7 @@ class StreamPrinter:
         self._buffer: list[str] = []
         self._chunks_since_render = 0
         self._last_render_time = 0.0
-        self._live: Any | None = None  # rich.live.Live
+        self._live: Live | None = None
         self._console: Console | None = None
         self._finished = False
 
@@ -1391,7 +1408,7 @@ class StreamPrinter:
     def __enter__(self) -> StreamPrinter:
         return self
 
-    def __exit__(self, *exc: Any) -> None:
+    def __exit__(self, *exc: object) -> None:
         self.finish()
 
     # -- public API ---------------------------------------------------------

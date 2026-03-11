@@ -3,6 +3,35 @@
 All Trace-specific exceptions inherit from TraceError.
 """
 
+__all__: list[str] = [
+    "TraceError",
+    "CommitNotFoundError",
+    "BlobNotFoundError",
+    "ContentValidationError",
+    "BudgetExceededError",
+    "EditTargetError",
+    "DetachedHeadError",
+    "AmbiguousPrefixError",
+    "BranchExistsError",
+    "BranchNotFoundError",
+    "InvalidBranchNameError",
+    "UnmergedBranchError",
+    "MergeError",
+    "MergeConflictError",
+    "NothingToMergeError",
+    "RebaseError",
+    "ImportCommitError",
+    "SemanticSafetyError",
+    "CompressionError",
+    "GCError",
+    "SpawnError",
+    "SessionError",
+    "RetryExhaustedError",
+    "TagNotRegisteredError",
+    "CurationError",
+    "BlockedError",
+]
+
 
 class TraceError(Exception):
     """Base exception for all Trace errors."""

@@ -476,6 +476,7 @@ class ContextCompiler(Protocol):
         ...
 
 
+# NOTE: unused but part of public API
 @runtime_checkable
 class TokenUsageExtractor(Protocol):
     """Protocol for extracting token usage from LLM API responses.

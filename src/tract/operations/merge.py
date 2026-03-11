@@ -10,9 +10,10 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
-from tract.exceptions import MergeConflictError, MergeError, NothingToMergeError
+from tract.exceptions import MergeError, NothingToMergeError
 from tract.models.commit import CommitInfo, CommitOperation
 from tract.models.merge import ConflictInfo, ConflictType, MergeResult, MergeStrategy
+from tract.operations import row_to_info as _row_to_info
 from tract.operations.dag import find_merge_base, get_branch_commits, is_ancestor
 
 logger = logging.getLogger(__name__)
@@ -33,9 +34,6 @@ if TYPE_CHECKING:
         RefRepository,
     )
     from tract.storage.schema import CommitRow
-
-
-from tract.operations import row_to_info as _row_to_info
 
 
 def _load_content_text(blob_repo: BlobRepository, content_hash: str) -> str:
@@ -468,8 +466,6 @@ def create_merge_commit(
     Returns:
         CommitInfo for the new merge commit.
     """
-    from pydantic import BaseModel
-
     # Create the commit using the engine
     # The engine will use HEAD as parent_hash and update HEAD
     info = commit_engine.create_commit(

@@ -7,6 +7,7 @@ and semantic safety checks for reordering.
 from __future__ import annotations
 
 import json
+import logging
 from typing import TYPE_CHECKING
 
 from tract.exceptions import ImportCommitError, RebaseError, SemanticSafetyError
@@ -17,7 +18,10 @@ from tract.models.merge import (
     RebaseResult,
     RebaseWarning,
 )
+from tract.operations import row_to_info as _row_to_info
 from tract.operations.dag import find_merge_base, get_all_ancestors, get_branch_commits
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
@@ -32,9 +36,6 @@ if TYPE_CHECKING:
         RefRepository,
     )
     from tract.storage.schema import CommitRow
-
-
-from tract.operations import row_to_info as _row_to_info
 
 
 def _load_content_model(blob_repo: BlobRepository, content_hash: str) -> BaseModel | None:
@@ -460,8 +461,12 @@ def execute_rebase(
         ref_repo.attach_head(tract_id, current_branch)
 
     except Exception:
-        # On any failure, re-attach HEAD to original branch position
-        # The session will be rolled back by the caller (Tract facade)
+        # On any failure, restore the branch ref and re-attach HEAD so the
+        # caller's session rollback leaves refs in a consistent state.
+        logger.debug(
+            "Reorganize failed on branch %r; restoring tip to %s",
+            current_branch, current_tip, exc_info=True,
+        )
         ref_repo.set_branch(tract_id, current_branch, current_tip)
         ref_repo.attach_head(tract_id, current_branch)
         raise

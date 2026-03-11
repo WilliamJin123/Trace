@@ -13,8 +13,8 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import func, select
 
-from tract.models.commit import CommitInfo, CommitOperation
-from tract.storage.schema import BlobRow, CommitRow, SpawnPointerRow
+from tract.models.commit import CommitInfo
+from tract.storage.schema import BlobRow, CommitRow
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -183,7 +183,6 @@ def compile_at(
     Returns:
         CompiledContext for the tract at the specified point.
     """
-    from tract.engine.commit import CommitEngine
     from tract.engine.compiler import DefaultContextCompiler
     from tract.engine.tokens import TiktokenCounter
     from tract.models.config import TractConfig

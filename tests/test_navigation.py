@@ -270,6 +270,259 @@ class TestCheckout:
         assert t.current_branch == "main"
         assert t.head == hashes[-1]
 
+    def test_checkout_full_commit_hash(self):
+        """Checkout with full 64-char commit hash detaches HEAD at that commit."""
+        t = make_tract()
+        hashes = populate_tract(t, 3)
+
+        full_hash = hashes[1]
+        assert len(full_hash) == 64  # SHA-256 hex
+        result = t.checkout(full_hash)
+        assert result == full_hash
+        assert t.is_detached
+        assert t.head == full_hash
+
+    def test_checkout_short_prefix_4_chars(self):
+        """Checkout with minimum 4-char prefix resolves and detaches."""
+        t = make_tract()
+        hashes = populate_tract(t, 1)
+
+        prefix = hashes[0][:4]
+        result = t.checkout(prefix)
+        assert result == hashes[0]
+        assert t.is_detached
+
+    def test_checkout_non_main_branch(self):
+        """Checkout a feature branch attaches HEAD to that branch."""
+        t = make_tract()
+        populate_tract(t, 2)
+        t.branch("feature")
+        t.commit(DialogueContent(role="user", text="On feature"))
+        feature_head = t.head
+
+        # Switch to main
+        t.checkout("main")
+        assert t.current_branch == "main"
+
+        # Switch back to feature
+        t.checkout("feature")
+        assert t.current_branch == "feature"
+        assert not t.is_detached
+        assert t.head == feature_head
+
+    def test_checkout_between_feature_branches(self):
+        """Switching between two feature branches preserves branch attachment."""
+        t = make_tract()
+        populate_tract(t, 1)
+
+        t.branch("alpha")
+        t.commit(DialogueContent(role="user", text="On alpha"))
+        alpha_head = t.head
+
+        t.checkout("main")
+        t.branch("beta")
+        t.commit(DialogueContent(role="user", text="On beta"))
+        beta_head = t.head
+
+        # Switch from beta to alpha
+        t.checkout("alpha")
+        assert t.current_branch == "alpha"
+        assert t.head == alpha_head
+
+        # Switch back to beta
+        t.checkout("beta")
+        assert t.current_branch == "beta"
+        assert t.head == beta_head
+
+    def test_checkout_dash_toggles_between_positions(self):
+        """Double dash toggles back: A -> B -> '-' -> '-' returns to B."""
+        t = make_tract()
+        hashes = populate_tract(t, 3)
+
+        # Position A: main (hashes[-1])
+        pos_a = t.head
+
+        # Position B: hashes[0] (detached)
+        t.checkout(hashes[0])
+        pos_b = t.head
+        assert pos_b == hashes[0]
+
+        # First dash: back to A
+        t.checkout("-")
+        assert t.head == pos_a
+
+        # Second dash: back to B
+        t.checkout("-")
+        assert t.head == pos_b
+
+    def test_checkout_dash_between_two_branches(self):
+        """Dash toggles between two branches, restoring attachment each time."""
+        t = make_tract()
+        populate_tract(t, 1)
+        t.branch("feature")
+        t.commit(DialogueContent(role="user", text="On feature"))
+        feature_head = t.head
+
+        main_head = t.checkout("main")
+
+        # Dash back to feature
+        t.checkout("-")
+        assert t.current_branch == "feature"
+        assert t.head == feature_head
+
+        # Dash back to main
+        t.checkout("-")
+        assert t.current_branch == "main"
+        assert t.head == main_head
+
+    def test_checkout_dash_from_detached_to_detached(self):
+        """Dash works when both previous and current positions are detached."""
+        t = make_tract()
+        hashes = populate_tract(t, 3)
+
+        # Detach at hashes[0]
+        t.checkout(hashes[0])
+        assert t.is_detached
+
+        # Detach at hashes[1]
+        t.checkout(hashes[1])
+        assert t.is_detached
+
+        # Dash: back to hashes[0], still detached
+        t.checkout("-")
+        assert t.head == hashes[0]
+        assert t.is_detached
+
+    def test_checkout_current_branch_is_noop(self):
+        """Checkout the branch you're already on is effectively a no-op."""
+        t = make_tract()
+        hashes = populate_tract(t, 3)
+        assert t.current_branch == "main"
+
+        old_head = t.head
+        result = t.checkout("main")
+        assert result == old_head
+        assert t.current_branch == "main"
+        assert not t.is_detached
+
+    def test_checkout_nonexistent_branch_name(self):
+        """Checkout a branch name that doesn't exist raises CommitNotFoundError."""
+        t = make_tract()
+        populate_tract(t, 1)
+        with pytest.raises(CommitNotFoundError):
+            t.checkout("no_such_branch")
+
+    def test_checkout_nonexistent_hash(self):
+        """Checkout a hash that doesn't match any commit raises CommitNotFoundError."""
+        t = make_tract()
+        populate_tract(t, 1)
+        with pytest.raises(CommitNotFoundError):
+            t.checkout("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
+
+    def test_checkout_nonexistent_short_prefix(self):
+        """Checkout a 4+ char prefix that matches nothing raises CommitNotFoundError."""
+        t = make_tract()
+        populate_tract(t, 1)
+        with pytest.raises(CommitNotFoundError):
+            t.checkout("zzzz")
+
+
+# ==================================================================
+# PREV_HEAD and PREV_BRANCH tracking
+# ==================================================================
+
+class TestPrevHeadTracking:
+    """Tests for PREV_HEAD and PREV_BRANCH ref management."""
+
+    def test_prev_branch_set_when_leaving_branch(self):
+        """PREV_BRANCH records the branch we departed from."""
+        t = make_tract()
+        populate_tract(t, 2)
+        assert t.current_branch == "main"
+
+        t.checkout(t.head)  # detach from main
+        prev_branch = t._ref_repo.get_symbolic_ref(t.tract_id, "PREV_BRANCH")
+        assert prev_branch == "refs/heads/main"
+
+    def test_prev_branch_cleared_when_leaving_detached(self):
+        """PREV_BRANCH is deleted when leaving a detached state."""
+        t = make_tract()
+        hashes = populate_tract(t, 3)
+
+        # Go to detached state
+        t.checkout(hashes[0])
+        assert t.is_detached
+
+        # Go to another detached state
+        t.checkout(hashes[1])
+
+        # PREV_BRANCH should be None since we left a detached position
+        prev_branch = t._ref_repo.get_symbolic_ref(t.tract_id, "PREV_BRANCH")
+        assert prev_branch is None
+
+    def test_prev_head_tracks_through_long_chain(self):
+        """PREV_HEAD always points to the immediately-previous position."""
+        t = make_tract()
+        hashes = populate_tract(t, 5)
+        positions = []
+
+        # Walk through several checkouts and verify PREV_HEAD at each step
+        for target_hash in [hashes[0], hashes[2], hashes[4], hashes[1]]:
+            positions.append(t.head)
+            t.checkout(target_hash)
+            prev = t._ref_repo.get_ref(t.tract_id, "PREV_HEAD")
+            assert prev == positions[-1]
+
+    def test_prev_head_not_set_on_first_checkout(self):
+        """First checkout from empty has no PREV_HEAD since HEAD was None."""
+        t = make_tract()
+        # No commits yet, so HEAD is None
+        # Make one commit so we have something to checkout
+        hashes = populate_tract(t, 2)
+        # Clear PREV_HEAD if it exists
+        # After first checkout, PREV_HEAD should be set to the old HEAD
+        old_head = t.head
+        t.checkout(hashes[0])
+        prev = t._ref_repo.get_ref(t.tract_id, "PREV_HEAD")
+        assert prev == old_head
+
+    def test_prev_branch_preserved_across_branch_switches(self):
+        """Switching branches updates PREV_BRANCH to the departed branch."""
+        t = make_tract()
+        populate_tract(t, 1)
+        t.branch("feature")
+        t.commit(DialogueContent(role="user", text="Feature work"))
+
+        # Switch from feature to main
+        t.checkout("main")
+        prev_branch = t._ref_repo.get_symbolic_ref(t.tract_id, "PREV_BRANCH")
+        assert prev_branch == "refs/heads/feature"
+
+        # Switch from main to feature
+        t.checkout("feature")
+        prev_branch = t._ref_repo.get_symbolic_ref(t.tract_id, "PREV_BRANCH")
+        assert prev_branch == "refs/heads/main"
+
+    def test_checkout_dash_swaps_prev_state(self):
+        """After checkout('-'), PREV_HEAD/PREV_BRANCH swap to the position we left."""
+        t = make_tract()
+        hashes = populate_tract(t, 3)
+        main_head = t.head
+
+        # Detach at hashes[0]
+        t.checkout(hashes[0])
+        assert t.is_detached
+
+        # Dash back to main
+        t.checkout("-")
+        assert t.current_branch == "main"
+        # PREV_HEAD should now point to hashes[0] (where we just were)
+        prev = t._ref_repo.get_ref(t.tract_id, "PREV_HEAD")
+        assert prev == hashes[0]
+        # PREV_BRANCH should be None since hashes[0] was detached
+        prev_branch = t._ref_repo.get_symbolic_ref(t.tract_id, "PREV_BRANCH")
+        assert prev_branch is None
+
 
 # ==================================================================
 # Detached HEAD blocks commits
@@ -393,6 +646,75 @@ class TestNavigationEdgeCases:
         t.checkout(hashes[1])
         prev2 = t._ref_repo.get_ref(t.tract_id, "PREV_HEAD")
         assert prev2 == hashes[0]
+
+    def test_checkout_current_branch_sets_prev_head(self):
+        """Checking out the branch you're on still sets PREV_HEAD."""
+        t = make_tract()
+        hashes = populate_tract(t, 2)
+        old_head = t.head
+
+        # Checkout "main" while already on main
+        t.checkout("main")
+        prev = t._ref_repo.get_ref(t.tract_id, "PREV_HEAD")
+        assert prev == old_head
+
+    def test_checkout_history_across_multiple_branches(self):
+        """Verify correct state after rapid-fire switches across branches."""
+        t = make_tract()
+        populate_tract(t, 1)
+
+        # Create three branches
+        t.branch("b1")
+        t.commit(DialogueContent(role="user", text="b1 work"))
+        b1_head = t.head
+
+        t.checkout("main")
+        t.branch("b2")
+        t.commit(DialogueContent(role="user", text="b2 work"))
+        b2_head = t.head
+
+        t.checkout("main")
+        t.branch("b3")
+        t.commit(DialogueContent(role="user", text="b3 work"))
+        b3_head = t.head
+
+        # Now switch: b3 -> b1 -> b2 -> main
+        t.checkout("b1")
+        assert t.current_branch == "b1"
+        assert t.head == b1_head
+
+        t.checkout("b2")
+        assert t.current_branch == "b2"
+        assert t.head == b2_head
+
+        t.checkout("main")
+        assert t.current_branch == "main"
+
+        # PREV_HEAD should track b2's head
+        prev = t._ref_repo.get_ref(t.tract_id, "PREV_HEAD")
+        assert prev == b2_head
+
+        # Dash goes back to b2
+        t.checkout("-")
+        assert t.current_branch == "b2"
+        assert t.head == b2_head
+
+    def test_checkout_returns_correct_hash(self):
+        """checkout() return value matches the new HEAD."""
+        t = make_tract()
+        hashes = populate_tract(t, 3)
+
+        # Branch checkout returns branch tip
+        result = t.checkout("main")
+        assert result == hashes[-1]
+
+        # Hash checkout returns resolved hash
+        result = t.checkout(hashes[0])
+        assert result == hashes[0]
+
+        # Prefix checkout returns full hash
+        result = t.checkout(hashes[1][:6])
+        assert result == hashes[1]
 
     def test_resolve_commit_prefers_exact_hash_over_branch(self):
         """Full hash match takes priority over branch name resolution."""

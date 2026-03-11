@@ -14,6 +14,7 @@ from sqlalchemy import JSON, TypeDecorator
 from sqlalchemy.engine import Dialect
 
 
+# NOTE: unused but part of public API
 class PydanticJSON(TypeDecorator):
     """Store Pydantic models as JSON in SQLite.
 

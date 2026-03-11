@@ -69,7 +69,7 @@ def _render_tool_io(
         if status == "error":
             header += " \u2717"
         elif status:
-            header += f" \u2192"
+            header += " \u2192"
         return f"{header}\n{json.dumps(payload, separators=(',', ':'))}"
 
     # direction == "call"

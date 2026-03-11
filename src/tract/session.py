@@ -14,14 +14,15 @@ Usage::
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from tract.exceptions import CurationError, SessionError, SpawnError
+from tract.exceptions import CurationError, SessionError
 from tract.storage.repositories import RefRepository
 from tract.models.config import TractConfig
-from tract.models.session import CollapseResult, SpawnInfo
+from tract.models.session import CollapseResult
 from tract.operations.spawn import (
     collapse_tract,
     spawn_tract,
@@ -36,6 +37,8 @@ if TYPE_CHECKING:
     from tract.protocols import CompiledContext
     from tract.models.commit import CommitInfo
     from tract.tract import Tract
+
+logger = logging.getLogger(__name__)
 
 
 class _BranchScopedRefProxy(RefRepository):
@@ -190,7 +193,6 @@ class Session:
         Returns:
             A new Tract instance sharing the session's engine.
         """
-        from tract.engine.cache import CacheManager
         from tract.engine.commit import CommitEngine
         from tract.engine.compiler import DefaultContextCompiler
         from tract.engine.tokens import TiktokenCounter
@@ -326,8 +328,8 @@ class Session:
         tract._cache.clear()
         try:
             tract._session.close()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to close session for tract %s: %s", tract_id, e, exc_info=True)
 
     def list_tracts(self) -> list[dict]:
         """List all tracts in the session.
@@ -525,7 +527,6 @@ class Session:
             CurationError: If curation operations fail.
         """
         from datetime import timezone
-        from tract.models.annotations import Priority
         from tract.storage.sqlite import (
             SqliteAnnotationRepository,
             SqliteBlobRepository,
@@ -536,16 +537,12 @@ class Session:
             SqliteTagAnnotationRepository,
             SqliteTagRegistryRepository,
         )
-        from tract.engine.cache import CacheManager
         from tract.engine.commit import CommitEngine
         from tract.engine.compiler import DefaultContextCompiler
         from tract.engine.tokens import TiktokenCounter
         from tract.tract import Tract as _Tract
 
-        # 1. Record parent's current branch
-        original_branch = parent.current_branch
-
-        # 2. Create new branch from parent HEAD (without switching)
+        # 1. Create new branch from parent HEAD (without switching)
         parent.branch(branch_name, switch=False)
 
         # 3. Build a child Tract instance sharing the same tract_id + DB
@@ -627,6 +624,8 @@ class Session:
             display_name=branch_name,
             created_at=now,
         )
+        # Intentional: directly access private session to commit the spawn
+        # pointer outside any Tract's own session scope.
         self._spawn_repo._session.commit()
 
         # 6. Track child in session (use branch_name as key to avoid collision
@@ -765,17 +764,17 @@ class Session:
         self._closed = True
 
         # Close all tract sessions
-        for tract in self._tracts.values():
+        for tid, tract in self._tracts.items():
             try:
                 tract._session.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to close session for tract %s: %s", tid, e, exc_info=True)
 
         # Close spawn repo session
         try:
             self._spawn_session.close()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to close spawn repo session: %s", e, exc_info=True)
 
         # Dispose engine
         if self._engine is not None:

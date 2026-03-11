@@ -13,6 +13,8 @@ import types
 from dataclasses import dataclass, field, fields as dc_fields
 from typing import TYPE_CHECKING, Callable, Literal, Optional
 
+from pydantic import BaseModel
+
 if TYPE_CHECKING:
     from tract.llm.protocols import LLMClient
 
@@ -20,8 +22,6 @@ if TYPE_CHECKING:
 # "between" / "not between" take a 2-element [low, high] value for inclusive range.
 # "in" / "not in" take a list of values for set membership.
 Operator = Literal["=", "!=", ">", "<", ">=", "<=", "in", "not in", "between", "not between"]
-
-from pydantic import BaseModel
 
 
 class BudgetAction(str, enum.Enum):

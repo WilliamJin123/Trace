@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from tract.protocols import CompiledContext, Message
 
 
+# NOTE: unused but part of public API
 class CompileOptions(BaseModel):
     """Options for context compilation.
 

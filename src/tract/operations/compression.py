@@ -559,8 +559,6 @@ def compress_range(
     if head_hash is None:
         raise CompressionError("No commits to compress")
 
-    branch_name = ref_repo.get_current_branch(tract_id)
-
     # b. Resolve commit range
     range_commits = _resolve_commit_range(
         commit_repo, ref_repo, annotation_repo, tract_id, head_hash,
@@ -667,8 +665,7 @@ def compress_range(
             "Call configure_llm() first or pass content='...'."
         )
 
-    # g. Calculate token counts (both normal + important are "source" commits)
-    original_tokens = sum(c.token_count for c in compressible_commits)
+    # g. Calculate token counts
     estimated_tokens = sum(
         token_counter.count_text(s) for s in summaries if s is not None
     )
@@ -752,7 +749,6 @@ def sliding_window_compress(
         return None
 
     # 3. Split into window (last N, newest first -> keep order) and pre-window
-    window_commits = all_ancestors[:window_size]  # newest first
     pre_window_commits = all_ancestors[window_size:]  # older commits, newest first
 
     if not pre_window_commits:
@@ -854,7 +850,6 @@ def sliding_window_compress(
         )
 
     # 9. Calculate token counts
-    original_tokens = sum(c.token_count for c in compressible_commits)
     estimated_tokens = sum(
         token_counter.count_text(s) for s in summaries if s is not None
     )
@@ -944,7 +939,6 @@ def _commit_compression(
     # c. Create summary commits in chain order, interleaving with PINNED
     summary_commit_hashes: list[str] = []
     all_new_commit_hashes: list[str] = []
-    group_idx = 0
 
     # Walk the range in order. When we encounter a group boundary or PINNED,
     # handle appropriately.
@@ -976,7 +970,7 @@ def _commit_compression(
             info = commit_engine.create_commit(
                 content=content_model,
                 operation=row.operation,
-                message=row.message or f"Preserved pinned commit",
+                message=row.message or "Preserved pinned commit",
                 metadata=row.metadata_json,
                 generation_config=row.generation_config_json,
             )
@@ -1476,8 +1470,6 @@ async def acompress_range(
     if head_hash is None:
         raise CompressionError("No commits to compress")
 
-    branch_name = ref_repo.get_current_branch(tract_id)
-
     # b. Resolve commit range
     range_commits = _resolve_commit_range(
         commit_repo, ref_repo, annotation_repo, tract_id, head_hash,
@@ -1576,7 +1568,6 @@ async def acompress_range(
         )
 
     # g. Calculate token counts
-    original_tokens = sum(c.token_count for c in compressible_commits)
     estimated_tokens = sum(
         token_counter.count_text(s) for s in summaries if s is not None
     )

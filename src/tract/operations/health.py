@@ -12,6 +12,7 @@ if TYPE_CHECKING:
         CommitRepository,
         RefRepository,
     )
+    from tract.storage.schema import CommitRow
 
 
 @dataclass
@@ -74,7 +75,7 @@ def check_health(
 
     # Get all commits for this tract
     all_rows = commit_repo.get_all(tract_id)
-    all_commits: dict[str, object] = {}
+    all_commits: dict[str, CommitRow] = {}
     for row in all_rows:
         all_commits[row.commit_hash] = row
 
@@ -86,7 +87,7 @@ def check_health(
 
     # Check 1: Blob integrity -- every commit should reference an existing blob
     for commit_hash, commit in all_commits.items():
-        content_hash = commit.content_hash  # type: ignore[union-attr]
+        content_hash = commit.content_hash
         if content_hash:
             blob = blob_repo.get(content_hash)
             if blob is None:
@@ -95,7 +96,7 @@ def check_health(
 
     # Check 2: Parent integrity -- every parent_hash should point to an existing commit
     for commit_hash, commit in all_commits.items():
-        parent_hash = commit.parent_hash  # type: ignore[union-attr]
+        parent_hash = commit.parent_hash
         if parent_hash and parent_hash not in all_commits:
             report.missing_parents.append((commit_hash, parent_hash))
             report.healthy = False

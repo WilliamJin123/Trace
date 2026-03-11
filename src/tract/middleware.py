@@ -7,13 +7,19 @@ MiddlewareEvent Literal type, and the VALID_EVENTS set.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, get_args
+from typing import TYPE_CHECKING, Literal, get_args
 
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
     from tract.models.commit import CommitInfo
     from tract.tract import Tract
+
+__all__: list[str] = [
+    "MiddlewareEvent",
+    "VALID_EVENTS",
+    "MiddlewareContext",
+]
 
 # ---------------------------------------------------------------------------
 # Canonical middleware event type — single source of truth

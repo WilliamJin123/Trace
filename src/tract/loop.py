@@ -10,7 +10,7 @@ import json
 import logging
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
 from tract.exceptions import BlockedError
@@ -244,8 +244,8 @@ def run_loop(
                 try:
                     tract.compress(strategy="sliding_window", window_size=cfg.strategy_k)
                     last_compiled = tract.compile(strategy=strategy, strategy_k=strategy_k)
-                except Exception:
-                    logger.debug("Auto-compress failed, continuing with large context", exc_info=True)
+                except Exception as e:
+                    logger.warning("Auto-compress failed, continuing with large context: %s", e, exc_info=True)
 
         # Build messages
         messages = last_compiled.to_dicts()
@@ -355,8 +355,8 @@ def run_loop(
                 ))
                 try:
                     last_compiled = tract.compile(strategy=strategy, strategy_k=strategy_k)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("Re-compile after budget exhaustion failed, preserving prior context: %s", e, exc_info=True)
                 return LoopResult(
                     "completed",
                     f"Token budget exhausted ({total_used}/{cfg.step_budget})",
@@ -390,8 +390,8 @@ def run_loop(
                 # Re-compile to capture the final state (includes assistant commit)
                 try:
                     last_compiled = tract.compile(strategy=strategy, strategy_k=strategy_k)
-                except Exception:
-                    pass  # keep the pre-commit compiled if re-compile fails
+                except Exception as e:
+                    logger.warning("Re-compile after LLM completion failed, preserving prior context: %s", e, exc_info=True)
                 return LoopResult(
                     "completed",
                     "LLM finished (no tool calls)",
@@ -1008,8 +1008,8 @@ async def arun_loop(
                 try:
                     tract.compress(strategy="sliding_window", window_size=cfg.strategy_k)
                     last_compiled = tract.compile(strategy=strategy, strategy_k=strategy_k)
-                except Exception:
-                    logger.debug("Auto-compress failed, continuing with large context", exc_info=True)
+                except Exception as e:
+                    logger.warning("Auto-compress failed, continuing with large context: %s", e, exc_info=True)
 
         # Build messages
         messages = last_compiled.to_dicts()
@@ -1120,8 +1120,8 @@ async def arun_loop(
                 ))
                 try:
                     last_compiled = tract.compile(strategy=strategy, strategy_k=strategy_k)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("Re-compile after budget exhaustion failed, preserving prior context: %s", e, exc_info=True)
                 return LoopResult(
                     "completed",
                     f"Token budget exhausted ({total_used}/{cfg.step_budget})",
@@ -1153,8 +1153,8 @@ async def arun_loop(
                 ))
                 try:
                     last_compiled = tract.compile(strategy=strategy, strategy_k=strategy_k)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("Re-compile after LLM completion failed, preserving prior context: %s", e, exc_info=True)
                 return LoopResult(
                     "completed",
                     "LLM finished (no tool calls)",

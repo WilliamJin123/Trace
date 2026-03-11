@@ -10,6 +10,7 @@ Not thread-safe in v1.  Each thread should open its own ``Tract``.
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from contextlib import contextmanager
 from dataclasses import fields as dc_fields, replace
@@ -54,6 +55,7 @@ from tract.storage.sqlite import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
+    from pathlib import Path
     from typing import Any
 
     from sqlalchemy import Engine
@@ -71,12 +73,13 @@ if TYPE_CHECKING:
     from tract.operations.health import HealthReport
     from tract.operations.history import StatusInfo
     from tract.operations.config_index import ConfigIndex
-    from tract.storage.schema import CommitRow
     from tract.toolkit.executor import ToolExecutor
     from tract.toolkit.models import ToolName
     from tract.toolkit.profiles import ProfileName
     from tract.protocols import ToolTurn
     from tract.models.config import ToolSummarizationConfig
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Compile strategy type
@@ -176,6 +179,11 @@ def _retry_with_backoff(
                 )
                 if retry_config.jitter:
                     delay *= 0.5 + random.random()
+                logger.debug(
+                    "Retry attempt %d/%d after %s: %s (delay=%.2fs)",
+                    attempt + 1, retry_config.max_retries,
+                    type(e).__name__, e, delay,
+                )
                 time.sleep(delay)
     raise last_error  # type: ignore[misc]
 
@@ -213,6 +221,11 @@ async def _aretry_with_backoff(
                 )
                 if retry_config.jitter:
                     delay *= 0.5 + random.random()
+                logger.debug(
+                    "Async retry attempt %d/%d after %s: %s (delay=%.2fs)",
+                    attempt + 1, retry_config.max_retries,
+                    type(e).__name__, e, delay,
+                )
                 await asyncio.sleep(delay)
     raise last_error  # type: ignore[misc]
 
@@ -2524,7 +2537,7 @@ class Tract:
         Returns:
             LoopResult with status, reason, steps, and tool_calls.
         """
-        from tract.loop import LoopConfig, LoopResult, run_loop
+        from tract.loop import LoopConfig, run_loop
 
         # Resolve tools
         if tools is self._TOOLS_SENTINEL:
@@ -4307,6 +4320,12 @@ class Tract:
                 try:
                     blob_text = blob.payload_json
                 except Exception:
+                    # Blob payload unreadable (corrupt data or detached instance);
+                    # skip rather than failing the entire search.
+                    logger.debug(
+                        "Skipping blob %s: payload unreadable", row.content_hash,
+                        exc_info=True,
+                    )
                     continue
 
                 if content is not None and content not in blob_text:
@@ -5277,7 +5296,13 @@ class Tract:
                     custom_registry=self._custom_type_registry,
                 )
             except Exception:
-                continue  # skip unrecognized content types
+                # Content validation failed (unrecognized type, schema mismatch,
+                # or corrupt payload); skip this entry rather than aborting import.
+                logger.debug(
+                    "load_state: skipping entry with content_type=%r: validation failed",
+                    content_type, exc_info=True,
+                )
+                continue
 
             info = self.commit(
                 content,
@@ -5674,8 +5699,8 @@ class Tract:
         if resolver == "llm":
             if not self._has_llm_client(operation):
                 raise RuntimeError(
-                    f"resolver='llm' requires an LLM client.  "
-                    f"Pass api_key= to Tract.open() or call configure_llm()."
+                    "resolver='llm' requires an LLM client.  "
+                    "Pass api_key= to Tract.open() or call configure_llm()."
                 )
             from tract.llm.resolver import OpenAIResolver
 
@@ -5782,7 +5807,6 @@ class Tract:
         Returns:
             :class:`MergeResult`.
         """
-        from tract.models.merge import MergeResult
         from tract.operations.merge import merge_branches
 
         # Resolve delete_branch from config default
@@ -5960,7 +5984,6 @@ class Tract:
             ImportCommitError: If issues detected and no resolver, or
                 resolver aborts.
         """
-        from tract.models.merge import ImportResult
         from tract.operations.rebase import import_commit as _import_commit
 
         # Resolve commit hash (supports prefixes and branch names)
@@ -7055,8 +7078,6 @@ class Tract:
 
         Raises RuntimeError for in-memory databases.
         """
-        from pathlib import Path
-
         td = self.tract_dir
         if td is None:
             raise RuntimeError(

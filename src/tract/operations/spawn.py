@@ -11,6 +11,7 @@ Provides:
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -21,17 +22,13 @@ from tract.models.content import DialogueContent, InstructionContent
 from tract.models.session import CollapseResult, SpawnInfo
 from tract.prompts.summarize import DEFAULT_COLLAPSE_SYSTEM, build_collapse_prompt
 
+logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     from tract.engine.commit import CommitEngine
     from tract.protocols import CompiledContext, TokenCounter
+    from tract.storage.sqlite import SqliteSpawnPointerRepository
     from tract.tract import Tract
-    from tract.storage.sqlite import (
-        SqliteAnnotationRepository,
-        SqliteBlobRepository,
-        SqliteCommitRepository,
-        SqliteRefRepository,
-        SqliteSpawnPointerRepository,
-    )
 
 
 def spawn_tract(
@@ -104,7 +101,6 @@ def spawn_tract(
             )
 
     # Import here to avoid circular imports
-    from tract.engine.cache import CacheManager
     from tract.engine.commit import CommitEngine
     from tract.engine.compiler import DefaultContextCompiler
     from tract.engine.tokens import TiktokenCounter
@@ -116,7 +112,6 @@ def spawn_tract(
         SqliteCommitRepository,
         SqliteOperationEventRepository,
         SqliteRefRepository,
-        SqliteSpawnPointerRepository as _SpawnRepo,
     )
     from tract.tract import Tract
 
@@ -562,6 +557,8 @@ def collapse_tract(
             )
             summary_text = response.choices[0].message.content
         except Exception as e:
+            # Wrap any LLM/network error into SpawnError for uniform handling.
+            logger.warning("LLM collapse call failed: %s", e, exc_info=True)
             raise SpawnError(f"LLM call failed during collapse: {e}") from e
 
     # Count summary tokens
@@ -672,6 +669,8 @@ async def acollapse_tract(
             )
             summary_text = response["choices"][0]["message"]["content"]
         except Exception as e:
+            # Wrap any LLM/network error into SpawnError for uniform handling.
+            logger.warning("Async LLM collapse call failed: %s", e, exc_info=True)
             raise SpawnError(f"LLM call failed during collapse: {e}") from e
 
     # Count summary tokens

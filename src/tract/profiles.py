@@ -9,6 +9,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+__all__: list[str] = [
+    "WorkflowProfile",
+    "CODING",
+    "RESEARCH",
+    "ECOMMERCE",
+    "BUILT_IN_PROFILES",
+    "get_profile",
+    "list_profiles",
+    "register_profile",
+]
+
 
 @dataclass(frozen=True)
 class WorkflowProfile:

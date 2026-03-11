@@ -17,7 +17,6 @@ if TYPE_CHECKING:
     from tract.storage.schema import (
         AnnotationRow,
         BlobRow,
-        CommitParentRow,
         CommitRow,
         CompileEffectiveRow,
         CompileRecordRow,

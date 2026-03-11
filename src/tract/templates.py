@@ -5,6 +5,14 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+__all__: list[str] = [
+    "DirectiveTemplate",
+    "BUILT_IN_TEMPLATES",
+    "list_templates",
+    "get_template",
+    "register_template",
+]
+
 
 @dataclass(frozen=True)
 class DirectiveTemplate:
