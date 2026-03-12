@@ -246,10 +246,10 @@ def run_loop(
                     token_count, threshold,
                     cfg.auto_compress_threshold * 100, cfg.max_tokens,
                 )
-                compressed_this_step = True
                 try:
                     tract.compress(strategy="sliding_window", window_size=cfg.strategy_k)
                     last_compiled = tract.compile(strategy=strategy, strategy_k=strategy_k)
+                    compressed_this_step = True
                 except Exception as e:
                     logger.warning("Auto-compress failed, continuing with large context: %s", e, exc_info=True)
 
@@ -1080,10 +1080,10 @@ async def arun_loop(
                     token_count, threshold,
                     cfg.auto_compress_threshold * 100, cfg.max_tokens,
                 )
-                compressed_this_step = True
                 try:
                     tract.compress(strategy="sliding_window", window_size=cfg.strategy_k)
                     last_compiled = tract.compile(strategy=strategy, strategy_k=strategy_k)
+                    compressed_this_step = True
                 except Exception as e:
                     logger.warning("Auto-compress failed, continuing with large context: %s", e, exc_info=True)
 
