@@ -329,6 +329,9 @@ class Tract:
         # Workflow profile state
         self._active_profile: object | None = None  # WorkflowProfile when loaded
 
+        # Custom tools registered via @t.tool decorator
+        self._custom_tools: dict[str, Any] = {}  # name -> ToolDefinition
+
     @classmethod
     def open(
         cls,
@@ -2552,6 +2555,15 @@ class Tract:
         else:
             resolved_tools = tools  # type: ignore[assignment]  # user-supplied tools passthrough
 
+        # Merge custom tool handlers from @t.tool into tool_handlers
+        if self._custom_tools:
+            merged_handlers = {
+                name: td.handler for name, td in self._custom_tools.items()
+            }
+            if tool_handlers:
+                merged_handlers.update(tool_handlers)  # explicit overrides win
+            tool_handlers = merged_handlers
+
         config = LoopConfig(
             max_steps=max_steps,
             system_prompt=system_prompt,
@@ -2978,6 +2990,15 @@ class Tract:
             )
         else:
             resolved_tools = tools  # type: ignore[assignment]
+
+        # Merge custom tool handlers from @t.tool into tool_handlers
+        if self._custom_tools:
+            merged_handlers = {
+                name: td.handler for name, td in self._custom_tools.items()
+            }
+            if tool_handlers:
+                merged_handlers.update(tool_handlers)
+            tool_handlers = merged_handlers
 
         config = LoopConfig(
             max_steps=max_steps,
@@ -7043,6 +7064,16 @@ class Tract:
                 new_filtered.append(tool)
             filtered = new_filtered
 
+        # Append custom tools registered via @t.tool
+        if self._custom_tools:
+            existing_names = {t.name for t in filtered}
+            for ct in self._custom_tools.values():
+                if ct.name not in existing_names:
+                    # Apply tool_names filter if active
+                    if tool_names is not None and ct.name not in set(tool_names):
+                        continue
+                    filtered.append(ct)
+
         return filtered
 
     def as_tools(
@@ -7159,6 +7190,74 @@ class Tract:
             from tract.toolkit.executor import ToolExecutor
             self._tool_executor = ToolExecutor(self)
         self._tool_executor.lock_tool(tool_name)
+
+    def tool(
+        self,
+        fn: Any | None = None,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> Any:
+        """Register a custom tool from a typed Python function.
+
+        Works as a decorator (with or without arguments)::
+
+            @t.tool
+            def search(query: str) -> str:
+                \"\"\"Search the database.\"\"\"
+                ...
+
+            @t.tool(name="calc", description="Math evaluator")
+            def calculator(expression: str) -> str:
+                ...
+
+        Registered tools are automatically included in :meth:`run` and
+        :meth:`as_tools` alongside tract's built-in tools.
+
+        Args:
+            fn: The function to register (when used as ``@t.tool``
+                without parentheses).
+            name: Override the tool name (defaults to ``fn.__name__``).
+            description: Override the description (defaults to the first
+                line of the docstring).
+
+        Returns:
+            The original function (unmodified), or a decorator if called
+            with keyword arguments.
+        """
+        from tract.toolkit.callables import callable_to_tool
+
+        def _register(func: Any) -> Any:
+            tool_def = callable_to_tool(func, name=name, description=description)
+            self._custom_tools[tool_def.name] = tool_def
+            return func
+
+        if fn is not None:
+            # Used as @t.tool (no parentheses)
+            return _register(fn)
+        # Used as @t.tool(...) (with parentheses)
+        return _register
+
+    def remove_tool(self, tool_name: str) -> None:
+        """Unregister a custom tool previously added via :meth:`tool`.
+
+        Args:
+            tool_name: Name of the custom tool to remove.
+
+        Raises:
+            KeyError: If no custom tool with that name is registered.
+        """
+        if tool_name not in self._custom_tools:
+            available = ", ".join(sorted(self._custom_tools.keys())) or "(none)"
+            raise KeyError(
+                f"No custom tool '{tool_name}'. Registered: {available}"
+            )
+        del self._custom_tools[tool_name]
+
+    @property
+    def custom_tools(self) -> dict[str, Any]:
+        """Read-only view of registered custom tools (name -> ToolDefinition)."""
+        return dict(self._custom_tools)
 
     # ------------------------------------------------------------------
     # File-based persistence (.tract/ directory)
