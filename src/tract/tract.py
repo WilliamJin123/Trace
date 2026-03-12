@@ -5220,6 +5220,12 @@ class Tract:
         saved to a file and loaded into a different tract via
         :meth:`load_state`.
 
+        Note:
+            The exported dict contains full commit details, but
+            :meth:`load_state` only replays content payloads — it does not
+            reconstruct the original DAG. See :meth:`load_state` for the
+            list of what is and is not preserved on import.
+
         Args:
             include_blobs: If True (default), include full content payloads.
                 If False, include only commit metadata (smaller but not
@@ -5304,8 +5310,26 @@ class Tract:
     def load_state(self, state: dict) -> int:
         """Load commits from an exported state dict into this tract.
 
-        Replays the exported commits as new commits on the current branch,
-        preserving content and metadata. Does NOT overwrite existing commits.
+        Replays the exported commits as new APPEND commits on the current
+        branch. Does NOT overwrite existing commits.
+
+        This is a **content replay** tool, not a structural backup/restore.
+
+        Preserved on import:
+            - Content payloads (the actual data in each commit)
+            - ``content_type``
+            - ``metadata``
+            - ``message``
+            - ``priority`` annotations (non-normal values)
+
+        Not preserved on import:
+            - DAG structure and parent links (commits are re-appended linearly)
+            - Branches (all commits land on the current branch)
+            - Operation types (EDIT operations become APPENDs)
+            - Original timestamps (commits get new ``created_at`` values)
+            - Tags
+            - ``edit_target`` relationships
+            - Original commit hashes
 
         Args:
             state: A dict previously returned by :meth:`export_state`.
