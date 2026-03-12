@@ -3954,7 +3954,7 @@ class Tract:
             # Count immutable tags from commits (walk recent history)
             head = self.head
             if head is not None:
-                ancestors = self._commit_repo.get_ancestors(head, limit=500)
+                ancestors = self._get_merge_aware_ancestors(head, limit=500)
                 for ancestor in ancestors:
                     if ancestor.tags_json and row.tag_name in ancestor.tags_json:
                         count += 1
@@ -4003,7 +4003,7 @@ class Tract:
         # Source 2: Immutable tags from CommitRow (walk history)
         head = self.head
         if head is not None:
-            ancestors = self._commit_repo.get_ancestors(head, limit=500)
+            ancestors = self._get_merge_aware_ancestors(head, limit=500)
             for row in ancestors:
                 if row.tags_json:
                     commit_tags = set(row.tags_json)
@@ -4023,7 +4023,7 @@ class Tract:
         # Convert to CommitInfo, in reverse chronological order
         results: list[CommitInfo] = []
         if head is not None:
-            ancestors = self._commit_repo.get_ancestors(head, limit=500)
+            ancestors = self._get_merge_aware_ancestors(head, limit=500)
             for row in ancestors:
                 if row.commit_hash in candidate_hashes:
                     results.append(self._commit_engine._row_to_info(row))
@@ -4176,6 +4176,62 @@ class Tract:
             enriched.append(entry.model_copy(update={"effective_priority": priority.value}))
         return enriched
 
+    def _get_merge_aware_ancestors(
+        self,
+        start_hash: str,
+        limit: int | None = None,
+        *,
+        op_filter: object | None = None,
+    ) -> list:
+        """Walk ancestry from start_hash following ALL parents (primary + merge).
+
+        Returns commits in reverse chronological order (newest first).
+        Falls back to get_ancestors() when no parent_repo is available.
+        """
+        from collections import deque
+
+        if self._parent_repo is None:
+            return list(
+                self._commit_repo.get_ancestors(
+                    start_hash, limit=limit, op_filter=op_filter,
+                )
+            )
+
+        # BFS collecting all reachable commits
+        visited: set[str] = set()
+        queue: deque[str] = deque([start_hash])
+        all_rows = []
+
+        while queue:
+            current = queue.popleft()
+            if current in visited:
+                continue
+            visited.add(current)
+            row = self._commit_repo.get(current)
+            if row is None:
+                continue
+            all_rows.append(row)
+            # Follow primary parent
+            if row.parent_hash:
+                queue.append(row.parent_hash)
+            # Follow merge parents
+            for extra in self._parent_repo.get_parents(current):
+                if extra not in visited:
+                    queue.append(extra)
+
+        # Sort newest-first by created_at
+        all_rows.sort(key=lambda r: r.created_at, reverse=True)
+
+        # Apply op_filter
+        if op_filter is not None:
+            all_rows = [r for r in all_rows if r.operation == op_filter]
+
+        # Apply limit
+        if limit is not None:
+            all_rows = all_rows[:limit]
+
+        return all_rows
+
     def log(
         self,
         limit: int = 20,
@@ -4207,14 +4263,14 @@ class Tract:
 
         if tags is None:
             # No tag filter -- use fast path
-            ancestors = self._commit_repo.get_ancestors(
+            ancestors = self._get_merge_aware_ancestors(
                 current_head, limit=limit, op_filter=op_filter,
             )
             entries = [self._commit_engine._row_to_info(row) for row in ancestors]
             return self._enrich_with_priorities(entries)
 
         # Tag filtering: walk more commits and filter
-        ancestors = self._commit_repo.get_ancestors(
+        ancestors = self._get_merge_aware_ancestors(
             current_head, limit=500, op_filter=op_filter,
         )
         results: list[CommitInfo] = []
@@ -4287,7 +4343,7 @@ class Tract:
 
         # Walk a generous window of ancestors for filtering
         scan_limit = max(limit * 10, 500)
-        ancestors = self._commit_repo.get_ancestors(start_hash, limit=scan_limit)
+        ancestors = self._get_merge_aware_ancestors(start_hash, limit=scan_limit)
 
         results: list[CommitInfo] = []
         for row in ancestors:
