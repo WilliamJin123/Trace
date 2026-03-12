@@ -100,6 +100,8 @@ class AnthropicClient:
             response = self._client.messages.create(**create_kwargs)
         except anthropic.AuthenticationError as e:
             raise LLMAuthError(f"Authentication failed: {e}") from e
+        except anthropic.PermissionDeniedError as e:
+            raise LLMAuthError(f"Permission denied: {e}") from e
         except anthropic.RateLimitError as e:
             raise LLMRateLimitError(f"Rate limited: {e}") from e
         except anthropic.APIStatusError as e:
@@ -210,6 +212,8 @@ class AnthropicClient:
 
         except anthropic.AuthenticationError as e:
             raise LLMAuthError(f"Authentication failed: {e}") from e
+        except anthropic.PermissionDeniedError as e:
+            raise LLMAuthError(f"Permission denied: {e}") from e
         except anthropic.RateLimitError as e:
             raise LLMRateLimitError(f"Rate limited: {e}") from e
         except anthropic.APIStatusError as e:
@@ -282,6 +286,8 @@ class AnthropicClient:
             response = await client.messages.create(**create_kwargs)
         except anthropic.AuthenticationError as e:
             raise LLMAuthError(f"Authentication failed: {e}") from e
+        except anthropic.PermissionDeniedError as e:
+            raise LLMAuthError(f"Permission denied: {e}") from e
         except anthropic.RateLimitError as e:
             raise LLMRateLimitError(f"Rate limited: {e}") from e
         except anthropic.APIStatusError as e:
@@ -323,6 +329,8 @@ class AnthropicClient:
 
         except anthropic.AuthenticationError as e:
             raise LLMAuthError(f"Authentication failed: {e}") from e
+        except anthropic.PermissionDeniedError as e:
+            raise LLMAuthError(f"Permission denied: {e}") from e
         except anthropic.RateLimitError as e:
             raise LLMRateLimitError(f"Rate limited: {e}") from e
         except anthropic.APIStatusError as e:

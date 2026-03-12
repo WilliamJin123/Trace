@@ -2946,8 +2946,8 @@ class Tract:
         max_steps: int = 50,
         max_tokens: int | None = None,
         system_prompt: str | None = None,
-        tools: list[dict] | None | object = None,
-        profile: str | None = None,
+        tools: list[dict] | None | object = _TOOLS_SENTINEL,
+        profile: str | ToolProfile | object = _PROFILE_SENTINEL,
         tool_names: list[str] | None = None,
         tool_handlers: dict[str, Callable] | None = None,
         llm_client: LLMClient | None = None,
@@ -2955,33 +2955,38 @@ class Tract:
         on_token: Callable | None = None,
         on_tool_result: Callable | None = None,
         stream: bool = False,
+        step_budget: int | None = None,
+        tool_validator: Callable | None = None,
+        auto_compress_threshold: float | None = None,
     ) -> LoopResult:
         """Async version of :meth:`run`.
 
         Runs the agent loop with async LLM calls and non-blocking tool execution.
+        See :meth:`run` for full parameter documentation.
         """
         from tract.loop import LoopConfig, arun_loop
 
         # Resolve tools (same logic as sync run)
-        _SENTINEL = self._TOOLS_SENTINEL
-        _P_SENTINEL = self._PROFILE_SENTINEL
-        if tools is None or tools is _SENTINEL:
+        if tools is self._TOOLS_SENTINEL:
             effective_profile = (
                 self._tool_profile or "compact"
-            ) if profile is None or profile is _P_SENTINEL else profile
+            ) if profile is self._PROFILE_SENTINEL else profile
             resolved_tools = self.as_tools(
                 profile=effective_profile,
                 tool_names=tool_names,
                 format="openai",
             )
         else:
-            resolved_tools = tools
+            resolved_tools = tools  # type: ignore[assignment]
 
         config = LoopConfig(
             max_steps=max_steps,
             system_prompt=system_prompt,
             stream=stream,
             max_tokens=max_tokens,
+            step_budget=step_budget,
+            tool_validator=tool_validator,
+            auto_compress_threshold=auto_compress_threshold,
         )
         return await arun_loop(
             self,

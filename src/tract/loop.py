@@ -859,18 +859,22 @@ def _extract_tool_calls(response: Any, client: LLMClient | None = None) -> list[
     if hasattr(response, "choices"):
         msg = response.choices[0].message
         if hasattr(msg, "tool_calls") and msg.tool_calls:
-            return [
-                {
+            calls = []
+            for tc in msg.tool_calls:
+                raw_args = tc.function.arguments
+                if isinstance(raw_args, str):
+                    try:
+                        parsed = json.loads(raw_args)
+                    except (json.JSONDecodeError, ValueError):
+                        parsed = {"_raw": raw_args}
+                else:
+                    parsed = raw_args
+                calls.append({
                     "id": tc.id,
                     "name": tc.function.name,
-                    "arguments": (
-                        json.loads(tc.function.arguments)
-                        if isinstance(tc.function.arguments, str)
-                        else tc.function.arguments
-                    ),
-                }
-                for tc in msg.tool_calls
-            ]
+                    "arguments": parsed,
+                })
+            return calls
 
     # Dict format (OpenAI-style)
     if isinstance(response, dict):
@@ -882,7 +886,10 @@ def _extract_tool_calls(response: Any, client: LLMClient | None = None) -> list[
                 for tc in tcs:
                     args = tc.get("function", {}).get("arguments", {})
                     if isinstance(args, str):
-                        args = json.loads(args)
+                        try:
+                            args = json.loads(args)
+                        except (json.JSONDecodeError, ValueError):
+                            args = {"_raw": args}
                     result.append(
                         {
                             "id": tc.get("id", ""),

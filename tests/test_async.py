@@ -329,6 +329,103 @@ class TestArun:
         assert result.status == "completed"
 
 
+class TestArunNewParams:
+    """Test arun() with step_budget, tool_validator, auto_compress_threshold."""
+
+    @pytest.mark.asyncio
+    async def test_arun_step_budget_accepts_param(self):
+        """arun(step_budget=100) should not raise TypeError."""
+        client = MockLLMClient([_make_response("Done!")])
+        t = Tract.open()
+        t.configure_llm(client)
+        t.system("You are helpful.")
+        result = await t.arun(task="Do something", step_budget=100)
+        assert result.status == "completed"
+        assert result.steps == 1
+
+    @pytest.mark.asyncio
+    async def test_arun_step_budget_limits_loop(self):
+        """arun with step_budget should stop when budget is exhausted."""
+        # Each response has usage.total_tokens = 15. A budget of 20 means the
+        # loop should stop after a couple of steps (the tool-calling response
+        # plus the budget check) rather than running to max_steps.
+        tool_response = _make_response("", tool_calls=[{
+            "id": "call_1",
+            "type": "function",
+            "function": {"name": "ping", "arguments": "{}"},
+        }])
+        client = MockLLMClient([tool_response])
+        t = Tract.open()
+        t.configure_llm(client)
+        t.system("You manage context.")
+
+        result = await t.arun(
+            task="Keep going",
+            max_steps=50,
+            step_budget=20,
+            tools=[{
+                "type": "function",
+                "function": {
+                    "name": "ping",
+                    "description": "Ping",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }],
+            tool_handlers={"ping": lambda: "pong"},
+        )
+        # The loop should have stopped well before max_steps=50
+        assert result.steps < 50
+        assert result.budget_exhausted
+
+    @pytest.mark.asyncio
+    async def test_arun_tool_validator(self):
+        """arun with tool_validator should reject invalid tool calls."""
+        tool_response = _make_response("", tool_calls=[{
+            "id": "call_1",
+            "type": "function",
+            "function": {"name": "danger", "arguments": "{}"},
+        }])
+        final_response = _make_response("Ok, done.")
+        client = MockLLMClient([tool_response, final_response])
+        t = Tract.open()
+        t.configure_llm(client)
+        t.system("You manage context.")
+
+        def validator(tool_name, args):
+            if tool_name == "danger":
+                return (False, "tool blocked by validator")
+            return (True, None)
+
+        result = await t.arun(
+            task="Do something",
+            tool_validator=validator,
+            tools=[{
+                "type": "function",
+                "function": {
+                    "name": "danger",
+                    "description": "Dangerous tool",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }],
+            tool_handlers={"danger": lambda: "should not run"},
+        )
+        # Loop should complete (LLM sends final response on second call)
+        assert result.status == "completed"
+
+    @pytest.mark.asyncio
+    async def test_arun_auto_compress_threshold_accepts_param(self):
+        """arun(auto_compress_threshold=0.8) should not raise TypeError."""
+        client = MockLLMClient([_make_response("Done!")])
+        t = Tract.open()
+        t.configure_llm(client)
+        t.system("You are helpful.")
+        result = await t.arun(
+            task="Do something",
+            auto_compress_threshold=0.8,
+        )
+        assert result.status == "completed"
+
+
 class TestAcompress:
     """Test Tract.acompress()."""
 
