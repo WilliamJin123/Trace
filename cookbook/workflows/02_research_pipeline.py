@@ -93,17 +93,12 @@ def main():
         t.system(
             "You are a research assistant working through a structured pipeline.\n\n"
             "PIPELINE STAGES:\n"
-            "1. INGEST -- Gather and record information about the topic.\n"
-            "   Commit facts, summaries, and key points as user messages.\n"
-            "   Tag commits with 'source', 'primary', or 'secondary'.\n"
-            "2. ORGANIZE -- Classify and structure the information.\n"
-            "   Use create_metadata to store structured taxonomies.\n"
-            "   Use tag/register_tag to create a tagging system.\n"
-            "3. SYNTHESIZE -- Produce a final synthesis of findings.\n"
-            "   Use compile to review all context, then write a synthesis.\n\n"
-            "Tools available: commit, compile, status, log, tag, register_tag,\n"
-            "query_by_tags, create_metadata, get_config, transition.\n\n"
-            "Use get_config to check current stage. Use transition to advance.\n"
+            "1. INGEST -- Commit research facts using the commit tool. "
+            "Include tags=['source'] in your commit calls to tag them.\n"
+            "2. ORGANIZE -- Use create_metadata to store structured taxonomies.\n"
+            "3. SYNTHESIZE -- Produce a final comparative summary via commit.\n\n"
+            "IMPORTANT: The primary tool is commit(). Use it to save each fact.\n"
+            "Use transition to advance between stages.\n"
             "Complete all three stages."
         )
 
@@ -123,18 +118,18 @@ def main():
         log = StepLogger()
 
         result = t.run(
-            "Research database indexing strategies. Start by ingesting key facts:\n"
-            "- B-trees: balanced, O(log n) lookups, good for range queries\n"
-            "- Hash indexes: O(1) point lookups, no range support\n"
-            "- LSM trees: write-optimized, compaction-based, used in RocksDB\n\n"
-            "Commit each as a separate fact. Tag each with 'source' and the "
-            "relevant strategy name (register new tags as needed).\n\n"
-            "When you have enough content, transition to 'organize'. Create "
-            "metadata entries to classify the strategies. Then transition to "
-            "'synthesize' and produce a comparative summary.",
+            "Research database indexing strategies. Use commit() to save each fact:\n"
+            "1. commit(content={content_type:'dialogue', role:'assistant', "
+            "text:'B-trees: balanced, O(log n) lookups, good for range queries'}, "
+            "tags=['source'])\n"
+            "2. Same pattern for hash indexes: O(1) point lookups, no range support\n"
+            "3. Same pattern for LSM trees: write-optimized, compaction-based\n\n"
+            "After committing 3+ facts, call transition(target='organize').\n"
+            "In organize, use create_metadata to classify strategies.\n"
+            "Then transition(target='synthesize') and commit a comparative summary.",
             max_steps=20,
             profile="full",
-            tool_names=["commit", "tag", "register_tag", "transition",
+            tool_names=["commit", "transition",
                         "create_metadata", "get_config", "status"],
             on_step=log.on_step,
             on_tool_result=log.on_tool_result,

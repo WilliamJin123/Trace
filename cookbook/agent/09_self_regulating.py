@@ -22,15 +22,15 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 from tract import Tract, BlockedError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _providers import cerebras as llm
+from _providers import groq as llm
 from _logging import StepLogger
 
-MODEL_ID = llm.large
+MODEL_ID = llm.xlarge
 
 
 def main():
     if not llm.api_key:
-        print("SKIPPED (no API key -- set CEREBRAS_API_KEY)")
+        print("SKIPPED (no API key -- set GROQ_API_KEY)")
         return
 
     print("=" * 70)
@@ -90,11 +90,13 @@ def main():
         print("=== Phase 1: Marketing copy ===\n")
         result = t.run(
             "Write short marketing copy for 'Nexus' API framework. "
-            "Selling points: 1M req/sec, built-in auth, auto OpenAPI docs. "
-            "Make it compelling for the landing page.",
+            "Selling points: 1M req/sec, built-in auth, auto OpenAPI docs.\n\n"
+            "STEPS: 1) configure(mode='advocate') 2) Then IMMEDIATELY commit "
+            "your marketing copy using commit(). Do NOT call configure or "
+            "directive more than once — set mode, then write.",
             profile="full",
             tool_names=_tool_names,
-            max_steps=6, max_tokens=1024,
+            max_steps=8, max_tokens=1024,
             on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()
@@ -106,10 +108,12 @@ def main():
         result = t.run(
             "Now write a security audit of Nexus as a penetration tester. "
             "Be ruthlessly critical — find gaps in the auth claims, "
-            "question the performance numbers, flag what was left out.",
+            "question the performance numbers, flag what was left out.\n\n"
+            "STEPS: 1) configure(mode='critic') 2) Then IMMEDIATELY commit "
+            "your security audit using commit(). One configure call, then write.",
             profile="full",
             tool_names=_tool_names,
-            max_steps=8, max_tokens=1024,
+            max_steps=8, max_tokens=2048,
             on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()

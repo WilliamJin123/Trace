@@ -89,8 +89,8 @@ def get_all_tools(tract: Tract) -> list[ToolDefinition]:
                 },
                 "required": ["content"],
             },
-            handler=lambda content, operation="append", message=None, edit_target=None, metadata=None, generation_config=None, tags=None: _handle_commit(
-                tract, content, operation, message, edit_target, metadata, generation_config, tags
+            handler=lambda content=None, operation="append", message=None, edit_target=None, metadata=None, generation_config=None, tags=None, **extra: _handle_commit(
+                tract, content, operation, message, edit_target, metadata, generation_config, tags, extra
             ),
         ),
         # 2. compile
@@ -815,15 +815,36 @@ def _parse_str_to_obj(value: str) -> Any:
 
 def _handle_commit(
     tract: Tract,
-    content: dict | str,
+    content: dict | str | None,
     operation: str,
     message: str | None,
     edit_target: str | None,
     metadata: dict | None,
     generation_config: dict | None,
     tags: list[str] | None = None,
+    extra: dict | None = None,
 ) -> str:
     from tract.models.commit import CommitOperation
+
+    # LLMs sometimes pass content fields as flat top-level args instead of nesting
+    # in a content dict (e.g. content_type="artifact", text="..." instead of
+    # content={"content_type": "artifact", "text": "..."}).  Reconstruct.
+    _CONTENT_KEYS = {"content_type", "text", "role", "payload", "artifact_type",
+                     "tool_name", "direction", "status", "format", "language",
+                     "name", "content"}
+    if content is None and extra:
+        flat = {k: v for k, v in extra.items() if k in _CONTENT_KEYS}
+        if "content_type" in flat:
+            # "content" inside a flat arg set means the text body of an artifact
+            if "content" in flat and flat.get("content_type") == "artifact":
+                flat.setdefault("text", flat.pop("content"))
+            content = flat
+
+    if content is None:
+        raise ValueError(
+            "Missing 'content' parameter. Pass a dict with at least "
+            "'content_type' and the relevant fields (text, role, payload, etc.)."
+        )
 
     # LLMs sometimes pass content as a JSON string instead of a dict — parse it.
     # Small models (e.g. llama-3.1-8b) may use Python repr (single quotes) instead
