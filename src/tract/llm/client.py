@@ -149,6 +149,35 @@ class OpenAIClient:
             **kwargs,
         )
 
+    @staticmethod
+    def _parse_retry_after(response: httpx.Response) -> float | None:
+        """Extract Retry-After header as a float, or None if absent/invalid."""
+        raw = response.headers.get("Retry-After")
+        if raw is not None:
+            try:
+                return float(raw)
+            except (ValueError, TypeError):
+                pass
+        return None
+
+    @staticmethod
+    def _extract_tool_use_error(response: httpx.Response) -> LLMToolUseError | None:
+        """Check for tool_use_failed in a 400 response body.
+
+        Returns an LLMToolUseError if detected, otherwise None.
+        """
+        try:
+            err_body = response.json()
+        except Exception:
+            err_body = {}
+        err_info = err_body.get("error") if isinstance(err_body, dict) else None
+        if isinstance(err_info, dict) and err_info.get("code") == "tool_use_failed":
+            return LLMToolUseError(
+                f"Tool call truncated (max_tokens too low?): "
+                f"{err_info.get('message', response.text)}"
+            )
+        return None
+
     def _do_chat(
         self,
         messages: list[dict[str, str]],
@@ -183,31 +212,17 @@ class OpenAIClient:
 
         # Check for rate limiting
         if response.status_code == 429:
-            retry_after_raw = response.headers.get("Retry-After")
-            retry_after: float | None = None
-            if retry_after_raw is not None:
-                try:
-                    retry_after = float(retry_after_raw)
-                except (ValueError, TypeError):
-                    pass
             raise LLMRateLimitError(
                 f"Rate limited: HTTP 429 - {response.text}",
-                retry_after=retry_after,
+                retry_after=self._parse_retry_after(response),
             )
 
         # Detect tool_use_failed (e.g. Groq returns 400 when the model's
         # tool-call JSON was truncated by max_tokens).  This is retryable.
         if response.status_code == 400:
-            try:
-                err_body = response.json()
-            except Exception:
-                err_body = {}
-            err_info = err_body.get("error") if isinstance(err_body, dict) else None
-            if isinstance(err_info, dict) and err_info.get("code") == "tool_use_failed":
-                raise LLMToolUseError(
-                    f"Tool call truncated (max_tokens too low?): "
-                    f"{err_info.get('message', response.text)}"
-                )
+            tool_err = self._extract_tool_use_error(response)
+            if tool_err is not None:
+                raise tool_err
 
         response.raise_for_status()
 
@@ -568,30 +583,16 @@ class OpenAIClient:
                 f"{response.text}"
             )
         if response.status_code == 429:
-            retry_after_raw = response.headers.get("Retry-After")
-            retry_after: float | None = None
-            if retry_after_raw is not None:
-                try:
-                    retry_after = float(retry_after_raw)
-                except (ValueError, TypeError):
-                    pass
             raise LLMRateLimitError(
                 f"Rate limited: HTTP 429 - {response.text}",
-                retry_after=retry_after,
+                retry_after=self._parse_retry_after(response),
             )
 
         # Detect tool_use_failed (e.g. Groq 400 when tool-call JSON truncated)
         if response.status_code == 400:
-            try:
-                err_body = response.json()
-            except Exception:
-                err_body = {}
-            err_info = err_body.get("error") if isinstance(err_body, dict) else None
-            if isinstance(err_info, dict) and err_info.get("code") == "tool_use_failed":
-                raise LLMToolUseError(
-                    f"Tool call truncated (max_tokens too low?): "
-                    f"{err_info.get('message', response.text)}"
-                )
+            tool_err = self._extract_tool_use_error(response)
+            if tool_err is not None:
+                raise tool_err
 
         response.raise_for_status()
 

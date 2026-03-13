@@ -1936,8 +1936,6 @@ class Tract:
         entries = self.log(limit=10000)
         entries.reverse()  # oldest-first
 
-        from tract.protocols import ToolCall as _ToolCall
-
         results = []
         for ci in entries:
             meta = ci.metadata or {}
@@ -1945,9 +1943,8 @@ class Tract:
             if not tool_calls:
                 continue
             if name is not None:
-                # Check if any tool call matches the name
-                names = [_ToolCall.from_dict(tc).name for tc in tool_calls]
-                if name not in names:
+                # Direct dict access avoids ToolCall.from_dict overhead
+                if not any(tc.get("name") == name for tc in tool_calls):
                     continue
             results.append(ci)
 
@@ -1972,7 +1969,7 @@ class Tract:
             List of :class:`ToolTurn` in chronological order.
         """
 
-        from tract.protocols import ToolCall as _ToolCall, ToolTurn
+        from tract.protocols import ToolTurn
 
         entries = self.log(limit=10000)
         entries.reverse()  # oldest-first
@@ -1993,13 +1990,12 @@ class Tract:
             if not tool_calls_data:
                 continue
 
-            # Gather results for this tool call commit
+            # Direct dict access avoids ToolCall.from_dict overhead per item
             all_results = []
             turn_names = []
             for tc_raw in tool_calls_data:
-                tc_obj = _ToolCall.from_dict(tc_raw)
-                turn_names.append(tc_obj.name)
-                all_results.extend(result_index.get(tc_obj.id, []))
+                turn_names.append(tc_raw["name"])
+                all_results.extend(result_index.get(tc_raw.get("id", ""), []))
 
             if name is not None and name not in turn_names:
                 continue
@@ -4347,6 +4343,11 @@ class Tract:
 
         Returns commits in reverse chronological order (newest first).
         Falls back to get_ancestors() when no parent_repo is available.
+
+        Performance: when *limit* is provided and no *op_filter*, BFS stops
+        after visiting ``limit * 3`` nodes (heuristic overshoot to ensure
+        correct chronological ordering after sort+truncate).  This avoids
+        materialising the entire DAG for common bounded queries.
         """
         from collections import deque
 
@@ -4357,12 +4358,21 @@ class Tract:
                 )
             )
 
-        # BFS collecting all reachable commits
+        # Early-exit cap: when limit is set and there is no op_filter that
+        # could discard most rows, we stop BFS after collecting enough nodes
+        # to guarantee the top-limit results by created_at.  The 3x
+        # multiplier accounts for BFS visiting nodes in graph order (not
+        # chronological order).
+        visit_cap = (limit * 3) if (limit is not None and op_filter is None) else None
+
+        # BFS collecting reachable commits
         visited: set[str] = set()
         queue: deque[str] = deque([start_hash])
         all_rows = []
 
         while queue:
+            if visit_cap is not None and len(all_rows) >= visit_cap:
+                break
             current = queue.popleft()
             if current in visited:
                 continue

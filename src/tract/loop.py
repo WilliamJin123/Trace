@@ -211,6 +211,20 @@ def run_loop(
     executor = ToolExecutor(tract)
     ephemeral_messages: list[dict[str, Any]] = []
 
+    def _make_loop_result(
+        status: Literal["completed", "blocked", "max_steps", "error"],
+        reason: str | None,
+        *,
+        usage: TokenUsage | None = None,
+    ) -> LoopResult:
+        return LoopResult(
+            status, reason, steps, total_tool_calls, last_response,
+            compiled=last_compiled, usage=usage,
+            step_usages=tuple(step_usages),
+            config=effective_config,
+            step_metrics=tuple(step_metrics_list),
+        )
+
     # Build Layer 2 presenter if presentation is enabled
     presenter = None
     if cfg.presentation is not None and cfg.presentation is not False:
@@ -235,19 +249,9 @@ def run_loop(
         try:
             last_compiled = tract.compile(strategy=strategy, strategy_k=strategy_k)
         except BlockedError as e:
-            return LoopResult(
-                "blocked", str(e), steps, total_tool_calls, last_response,
-                compiled=last_compiled, step_usages=tuple(step_usages),
-                config=effective_config,
-                step_metrics=tuple(step_metrics_list),
-            )
+            return _make_loop_result("blocked", str(e))
         except Exception as e:
-            return LoopResult(
-                "error", f"Compile failed: {e}", steps, total_tool_calls,
-                compiled=last_compiled, step_usages=tuple(step_usages),
-                config=effective_config,
-                step_metrics=tuple(step_metrics_list),
-            )
+            return _make_loop_result("error", f"Compile failed: {e}")
 
         context_tokens = last_compiled.token_count if last_compiled else 0
 
@@ -293,12 +297,7 @@ def run_loop(
                 pending={"messages": messages, "config": llm_kwargs},
             )
         except BlockedError as e:
-            return LoopResult(
-                "blocked", str(e), steps, total_tool_calls, last_response,
-                compiled=last_compiled, step_usages=tuple(step_usages),
-                config=effective_config,
-                step_metrics=tuple(step_metrics_list),
-            )
+            return _make_loop_result("blocked", str(e))
 
         retry_cfg: RetryConfig | None = tract.retry_config
         llm_start = time.monotonic()
@@ -314,12 +313,7 @@ def run_loop(
                     messages=messages, tools=tools, **llm_kwargs,
                 )
         except Exception as e:
-            return LoopResult(
-                "error", f"LLM call failed: {e}", steps, total_tool_calls,
-                compiled=last_compiled, step_usages=tuple(step_usages),
-                config=effective_config,
-                step_metrics=tuple(step_metrics_list),
-            )
+            return _make_loop_result("error", f"LLM call failed: {e}")
         llm_duration = time.monotonic() - llm_start
 
         content = _extract_content(response, client)
@@ -401,17 +395,10 @@ def run_loop(
                     last_compiled = tract.compile(strategy=strategy, strategy_k=strategy_k)
                 except Exception as e:
                     logger.warning("Re-compile after budget exhaustion failed, preserving prior context: %s", e, exc_info=True)
-                return LoopResult(
+                return _make_loop_result(
                     "completed",
                     f"Token budget exhausted ({total_used}/{cfg.step_budget})",
-                    steps,
-                    total_tool_calls,
-                    last_response,
-                    compiled=last_compiled,
                     usage=step_usage,
-                    step_usages=tuple(step_usages),
-                    config=effective_config,
-                    step_metrics=tuple(step_metrics_list),
                 )
 
         # Callback
@@ -436,17 +423,10 @@ def run_loop(
                     last_compiled = tract.compile(strategy=strategy, strategy_k=strategy_k)
                 except Exception as e:
                     logger.warning("Re-compile after LLM completion failed, preserving prior context: %s", e, exc_info=True)
-                return LoopResult(
+                return _make_loop_result(
                     "completed",
                     "LLM finished (no tool calls)",
-                    steps,
-                    total_tool_calls,
-                    last_response,
-                    compiled=last_compiled,
                     usage=step_usage,
-                    step_usages=tuple(step_usages),
-                    config=effective_config,
-                    step_metrics=tuple(step_metrics_list),
                 )
             # Not stopping — record metrics for this step and continue
             step_end = time.monotonic()
@@ -562,17 +542,7 @@ def run_loop(
             compressed=compressed_this_step,
         ))
 
-    return LoopResult(
-        "max_steps",
-        f"Reached max steps ({cfg.max_steps})",
-        steps,
-        total_tool_calls,
-        last_response,
-        compiled=last_compiled,
-        step_usages=tuple(step_usages),
-        config=effective_config,
-        step_metrics=tuple(step_metrics_list),
-    )
+    return _make_loop_result("max_steps", f"Reached max steps ({cfg.max_steps})")
 
 
 # ---------------------------------------------------------------------------
@@ -1058,6 +1028,20 @@ async def arun_loop(
     executor = ToolExecutor(tract)
     ephemeral_messages: list[dict[str, Any]] = []
 
+    def _make_loop_result(
+        status: Literal["completed", "blocked", "max_steps", "error"],
+        reason: str | None,
+        *,
+        usage: TokenUsage | None = None,
+    ) -> LoopResult:
+        return LoopResult(
+            status, reason, steps, total_tool_calls, last_response,
+            compiled=last_compiled, usage=usage,
+            step_usages=tuple(step_usages),
+            config=effective_config,
+            step_metrics=tuple(step_metrics_list),
+        )
+
     # Build Layer 2 presenter if presentation is enabled
     presenter = None
     if cfg.presentation is not None and cfg.presentation is not False:
@@ -1081,19 +1065,9 @@ async def arun_loop(
         try:
             last_compiled = tract.compile(strategy=strategy, strategy_k=strategy_k)
         except BlockedError as e:
-            return LoopResult(
-                "blocked", str(e), steps, total_tool_calls, last_response,
-                compiled=last_compiled, step_usages=tuple(step_usages),
-                config=effective_config,
-                step_metrics=tuple(step_metrics_list),
-            )
+            return _make_loop_result("blocked", str(e))
         except Exception as e:
-            return LoopResult(
-                "error", f"Compile failed: {e}", steps, total_tool_calls,
-                compiled=last_compiled, step_usages=tuple(step_usages),
-                config=effective_config,
-                step_metrics=tuple(step_metrics_list),
-            )
+            return _make_loop_result("error", f"Compile failed: {e}")
 
         context_tokens = last_compiled.token_count if last_compiled else 0
 
@@ -1138,12 +1112,7 @@ async def arun_loop(
                 pending={"messages": messages, "config": llm_kwargs},
             )
         except BlockedError as e:
-            return LoopResult(
-                "blocked", str(e), steps, total_tool_calls, last_response,
-                compiled=last_compiled, step_usages=tuple(step_usages),
-                config=effective_config,
-                step_metrics=tuple(step_metrics_list),
-            )
+            return _make_loop_result("blocked", str(e))
 
         retry_cfg: RetryConfig | None = tract.retry_config
         llm_start = time.monotonic()
@@ -1161,12 +1130,7 @@ async def arun_loop(
                     )
                 response = await _aretry_with_backoff(_do_llm, retry_cfg)
         except Exception as e:
-            return LoopResult(
-                "error", f"LLM call failed: {e}", steps, total_tool_calls,
-                compiled=last_compiled, step_usages=tuple(step_usages),
-                config=effective_config,
-                step_metrics=tuple(step_metrics_list),
-            )
+            return _make_loop_result("error", f"LLM call failed: {e}")
         llm_duration = time.monotonic() - llm_start
 
         content = _extract_content(response, client)
@@ -1242,17 +1206,10 @@ async def arun_loop(
                     last_compiled = tract.compile(strategy=strategy, strategy_k=strategy_k)
                 except Exception as e:
                     logger.warning("Re-compile after budget exhaustion failed, preserving prior context: %s", e, exc_info=True)
-                return LoopResult(
+                return _make_loop_result(
                     "completed",
                     f"Token budget exhausted ({total_used}/{cfg.step_budget})",
-                    steps,
-                    total_tool_calls,
-                    last_response,
-                    compiled=last_compiled,
                     usage=step_usage,
-                    step_usages=tuple(step_usages),
-                    config=effective_config,
-                    step_metrics=tuple(step_metrics_list),
                 )
 
         if on_step:
@@ -1275,17 +1232,10 @@ async def arun_loop(
                     last_compiled = tract.compile(strategy=strategy, strategy_k=strategy_k)
                 except Exception as e:
                     logger.warning("Re-compile after LLM completion failed, preserving prior context: %s", e, exc_info=True)
-                return LoopResult(
+                return _make_loop_result(
                     "completed",
                     "LLM finished (no tool calls)",
-                    steps,
-                    total_tool_calls,
-                    last_response,
-                    compiled=last_compiled,
                     usage=step_usage,
-                    step_usages=tuple(step_usages),
-                    config=effective_config,
-                    step_metrics=tuple(step_metrics_list),
                 )
             # Not stopping — record metrics for this step and continue
             step_end = time.monotonic()
@@ -1401,17 +1351,7 @@ async def arun_loop(
             compressed=compressed_this_step,
         ))
 
-    return LoopResult(
-        "max_steps",
-        f"Reached max steps ({cfg.max_steps})",
-        steps,
-        total_tool_calls,
-        last_response,
-        compiled=last_compiled,
-        step_usages=tuple(step_usages),
-        config=effective_config,
-        step_metrics=tuple(step_metrics_list),
-    )
+    return _make_loop_result("max_steps", f"Reached max steps ({cfg.max_steps})")
 
 
 async def _astream_to_response(

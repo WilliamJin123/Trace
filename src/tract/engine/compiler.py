@@ -180,7 +180,7 @@ class DefaultContextCompiler:
         priority_map = self._build_priority_map(commits, at_time=at_time, include_reasoning=include_reasoning)
 
         # Step 4: Build effective commit list
-        effective_commits = self._build_effective_commits(commits, edit_map, priority_map)
+        effective_commits, parsed_blob_cache = self._build_effective_commits(commits, edit_map, priority_map)
 
         # Step 4b: Extract commit hashes for effective commits (parallel to messages)
         effective_commit_hashes = [c.commit_hash for c in effective_commits]
@@ -207,6 +207,7 @@ class DefaultContextCompiler:
         messages = self._build_messages(
             effective_commits, edit_map, include_edit_annotations,
             strategy=strategy, strategy_k=strategy_k,
+            parsed_blob_cache=parsed_blob_cache,
         )
 
         # Step 7: Count tokens on compiled output
@@ -413,7 +414,7 @@ class DefaultContextCompiler:
         commits: list[CommitRow],
         edit_map: dict[str, CommitRow],
         priority_map: dict[str, Priority],
-    ) -> list[CommitRow]:
+    ) -> tuple[list[CommitRow], dict[str, dict]]:
         """Build the effective commit list after edit resolution and priority filtering.
 
         Also filters out commits whose content type has ``compilable=False``
@@ -421,6 +422,14 @@ class DefaultContextCompiler:
 
         Deduplicates named InstructionContent (directive override-by-name):
         same name -> closest to HEAD wins.
+
+        Returns:
+            Tuple of (effective_commits, parsed_blob_cache) where
+            *parsed_blob_cache* maps ``content_hash -> parsed dict`` for
+            blobs that were already fetched and JSON-parsed during the
+            instruction dedup step.  Downstream consumers (e.g.
+            ``_build_messages``) can use this to avoid redundant blob
+            fetches and JSON parses.
         """
         import json as _json
 
@@ -452,6 +461,13 @@ class DefaultContextCompiler:
 
         blob_cache = self._blob_repo.batch_get(instruction_hashes) if instruction_hashes else {}
 
+        # Build a parsed-blob cache: content_hash -> parsed JSON dict.
+        # This avoids re-fetching and re-parsing the same blobs in
+        # _build_messages() / build_message_for_commit().
+        parsed_blob_cache: dict[str, dict] = {}
+        for content_hash, blob in blob_cache.items():
+            parsed_blob_cache[content_hash] = _json.loads(blob.payload_json)
+
         seen_names: dict[str, int] = {}
         remove_indices: set[int] = set()
         for i in range(len(effective) - 1, -1, -1):  # walk HEAD -> root
@@ -459,10 +475,9 @@ class DefaultContextCompiler:
                 continue
             # Resolve blob (use edit_map if available)
             row = edit_map.get(effective[i].commit_hash, effective[i])
-            blob = blob_cache.get(row.content_hash)
-            if blob is None:
+            payload = parsed_blob_cache.get(row.content_hash)
+            if payload is None:
                 continue
-            payload = _json.loads(blob.payload_json)
             name = payload.get("name")
             if name:
                 if name in seen_names:
@@ -472,7 +487,7 @@ class DefaultContextCompiler:
         if remove_indices:
             effective = [c for i, c in enumerate(effective) if i not in remove_indices]
 
-        return effective
+        return effective, parsed_blob_cache
 
     def build_message_for_commit(self, commit_row: CommitRow) -> Message:
         """Build a single Message from a commit's blob content.
@@ -519,6 +534,41 @@ class DefaultContextCompiler:
             content_type=content_type,
         )
 
+    def _build_message_from_parsed(
+        self,
+        commit_row: CommitRow,
+        content_data: dict,
+    ) -> Message:
+        """Build a Message from a commit using an already-parsed blob dict.
+
+        This is the cache-friendly variant of :meth:`build_message_for_commit`.
+        It skips the blob fetch and JSON parse since *content_data* was
+        already loaded during the instruction dedup step.
+        """
+        from tract.protocols import ToolCall as _ToolCall
+
+        content_type = content_data.get("content_type", "unknown")
+        role = self._map_role(content_type, content_data)
+        text = self._extract_message_text(content_type, content_data)
+        name = content_data.get("name") if content_type == "dialogue" else None
+
+        meta = commit_row.metadata_json or {}
+        tool_calls = None
+        tool_call_id = None
+
+        if "tool_calls" in meta:
+            tool_calls = [_ToolCall.from_dict(tc) for tc in meta["tool_calls"]]
+        if "tool_call_id" in meta:
+            tool_call_id = meta["tool_call_id"]
+        if role == "tool" and "name" in meta:
+            name = meta["name"]
+
+        return Message(
+            role=role, content=text, name=name,
+            tool_calls=tool_calls, tool_call_id=tool_call_id,
+            content_type=content_type,
+        )
+
     def _build_messages(
         self,
         effective_commits: list[CommitRow],
@@ -527,6 +577,7 @@ class DefaultContextCompiler:
         *,
         strategy: str = "full",
         strategy_k: int = 5,
+        parsed_blob_cache: dict[str, dict] | None = None,
     ) -> list[Message]:
         """Convert effective commits to Message objects.
 
@@ -537,7 +588,17 @@ class DefaultContextCompiler:
         When *strategy* is ``"adaptive"``, the last *strategy_k* commits
         keep full content and earlier commits get the messages-only
         treatment.
+
+        Args:
+            parsed_blob_cache: Optional mapping of ``content_hash`` to
+                already-parsed JSON dicts (populated by
+                ``_build_effective_commits`` during instruction dedup).
+                Avoids redundant blob fetches and JSON parses for blobs
+                that were already loaded.
         """
+        if parsed_blob_cache is None:
+            parsed_blob_cache = {}
+
         messages: list[Message] = []
 
         # For adaptive strategy, determine the index where full detail starts
@@ -546,7 +607,8 @@ class DefaultContextCompiler:
         else:
             full_start = 0
 
-        # Batch-fetch blobs needed for messages-only commits (role resolution)
+        # Batch-fetch blobs needed for messages-only commits (role resolution),
+        # but skip any already present in parsed_blob_cache.
         messages_only_hashes: list[str] = []
         for i, c in enumerate(effective_commits):
             is_messages_only = (
@@ -555,7 +617,8 @@ class DefaultContextCompiler:
             )
             if is_messages_only:
                 source_commit = edit_map.get(c.commit_hash, c)
-                messages_only_hashes.append(source_commit.content_hash)
+                if source_commit.content_hash not in parsed_blob_cache:
+                    messages_only_hashes.append(source_commit.content_hash)
 
         messages_blob_cache = (
             self._blob_repo.batch_get(messages_only_hashes)
@@ -575,17 +638,27 @@ class DefaultContextCompiler:
                 summary = c.message or f"[{c.content_type}] commit"
                 # Still need to resolve the role from the source commit
                 source_commit = edit_map.get(c.commit_hash, c)
-                blob = messages_blob_cache.get(source_commit.content_hash)
-                if blob is not None:
-                    content_data = json.loads(blob.payload_json)
+                # Check parsed_blob_cache first, then raw blob cache
+                if source_commit.content_hash in parsed_blob_cache:
+                    content_data = parsed_blob_cache[source_commit.content_hash]
                     role = self._map_role(source_commit.content_type, content_data)
                 else:
-                    role = "assistant"
+                    blob = messages_blob_cache.get(source_commit.content_hash)
+                    if blob is not None:
+                        content_data = json.loads(blob.payload_json)
+                        role = self._map_role(source_commit.content_type, content_data)
+                    else:
+                        role = "assistant"
                 msg = Message(role=role, content=summary, content_type=c.content_type)
             else:
-                # Full content (existing logic)
+                # Full content -- use parsed_blob_cache when available
                 source_commit = edit_map.get(c.commit_hash, c)
-                msg = self.build_message_for_commit(source_commit)
+                if source_commit.content_hash in parsed_blob_cache:
+                    msg = self._build_message_from_parsed(
+                        source_commit, parsed_blob_cache[source_commit.content_hash],
+                    )
+                else:
+                    msg = self.build_message_for_commit(source_commit)
 
             # Add edit annotation if requested
             if include_edit_annotations and c.commit_hash in edit_map:
