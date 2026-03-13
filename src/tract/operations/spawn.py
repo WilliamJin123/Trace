@@ -128,7 +128,17 @@ def spawn_tract(
             parent_tract._commit_repo.get_all(parent_tract.tract_id)
         )
 
-    # Create spawn pointer
+    # Create spawn commit in parent BEFORE saving the spawn pointer.
+    # If the parent commit fails, we avoid leaving an orphaned pointer.
+    parent_tract.commit(
+        DialogueContent(
+            role="system",
+            text=f"Spawned subagent for: {purpose}",
+        ),
+        message=f"spawn: {purpose}",
+    )
+
+    # Now persist the spawn pointer (parent commit succeeded)
     now = datetime.now(timezone.utc)
     spawn_repo.save(
         parent_tract_id=parent_tract.tract_id,
@@ -140,17 +150,7 @@ def spawn_tract(
         created_at=now,
     )
     # Commit the spawn pointer session to release the write lock
-    # before the parent tract's session tries to write
     spawn_repo._session.commit()
-
-    # Create spawn commit in parent
-    parent_tract.commit(
-        DialogueContent(
-            role="system",
-            text=f"Spawned subagent for: {purpose}",
-        ),
-        message=f"spawn: {purpose}",
-    )
 
     # Build child Tract with shared engine
     child_session = session_factory()
@@ -329,15 +329,32 @@ def _full_clone(
     # Cloned commits get new hashes, so old edit_target values become invalid.
     # A hash remapping could be added here if edit_target fidelity is needed.
     last_hash = None
+    skipped = 0
     for commit_row in all_commits:
         # Read blob content
         blob = parent_tract._blob_repo.get(commit_row.content_hash)
         if blob is None:
+            logger.warning(
+                "Skipping commit %s: blob %s not found",
+                commit_row.commit_hash,
+                commit_row.content_hash,
+            )
+            skipped += 1
             continue
 
         # Parse content from blob
-        content_dict = json.loads(blob.payload_json)
-        content = validate_content(content_dict)
+        try:
+            content_dict = json.loads(blob.payload_json)
+            content = validate_content(content_dict)
+        except (json.JSONDecodeError, ValueError, TypeError) as exc:
+            logger.warning(
+                "Skipping commit %s: failed to parse/validate blob %s: %s",
+                commit_row.commit_hash,
+                commit_row.content_hash,
+                exc,
+            )
+            skipped += 1
+            continue
 
         # Create commit in child (new hashes, new timestamps)
         info = child_commit_engine.create_commit(
@@ -357,6 +374,9 @@ def _full_clone(
             child_commit_engine.annotate(
                 info.commit_hash, ann.priority, ann.reason
             )
+
+    if skipped:
+        logger.warning("full_clone: skipped %d of %d commits", skipped, len(all_commits))
 
     return last_hash
 
@@ -441,6 +461,7 @@ def _selective_clone(
 
     # Third pass: replay included commits in order (oldest first)
     last_hash = None
+    skipped = 0
     for commit_row in all_commits:
         if commit_row.commit_hash not in final_included:
             continue
@@ -448,11 +469,27 @@ def _selective_clone(
         # Read blob content
         blob = parent_tract._blob_repo.get(commit_row.content_hash)
         if blob is None:
+            logger.warning(
+                "Skipping commit %s: blob %s not found",
+                commit_row.commit_hash,
+                commit_row.content_hash,
+            )
+            skipped += 1
             continue
 
         # Parse content from blob
-        content_dict = json.loads(blob.payload_json)
-        content = validate_content(content_dict)
+        try:
+            content_dict = json.loads(blob.payload_json)
+            content = validate_content(content_dict)
+        except (json.JSONDecodeError, ValueError, TypeError) as exc:
+            logger.warning(
+                "Skipping commit %s: failed to parse/validate blob %s: %s",
+                commit_row.commit_hash,
+                commit_row.content_hash,
+                exc,
+            )
+            skipped += 1
+            continue
 
         # Create commit in child (new hashes, new timestamps)
         info = child_commit_engine.create_commit(
@@ -472,6 +509,9 @@ def _selective_clone(
             child_commit_engine.annotate(
                 info.commit_hash, ann.priority, ann.reason
             )
+
+    if skipped:
+        logger.warning("selective_clone: skipped %d commits", skipped)
 
     return last_hash
 

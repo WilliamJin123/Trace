@@ -126,7 +126,7 @@ class TestBuiltInTemplates:
         # All placeholders should be resolved
         import re
 
-        assert not re.findall(r"\{(\w+)\}", rendered)
+        assert not re.findall(r"\{([^}]+)\}", rendered)
 
     @pytest.mark.parametrize("name", sorted(BUILT_IN_TEMPLATES.keys()))
     def test_builtin_missing_params_raises(self, name: str):

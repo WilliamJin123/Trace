@@ -60,7 +60,7 @@ def _load_content_text(blob_repo: BlobRepository, content_hash: str) -> str:
 def _detect_skip_vs_edit(
     edits: dict[str, tuple[CommitRow, CommitInfo]],
     common_edit_targets: set[str],
-    annotation_repo: AnnotationRepository,
+    annotations_map: dict[str, Any],
     blob_repo: BlobRepository,
     commit_repo: CommitRepository,
     a_infos: list[CommitInfo],
@@ -72,6 +72,9 @@ def _detect_skip_vs_edit(
 
     When ``editor_is_a=True``, *edits* come from branch A and the SKIP
     annotation is on the other side (B).  When ``False``, it's reversed.
+
+    ``annotations_map`` is a pre-fetched dict from
+    ``annotation_repo.batch_get_latest()`` — avoids N+1 queries.
     """
     from tract.models.annotations import Priority
 
@@ -79,7 +82,7 @@ def _detect_skip_vs_edit(
     for target, (row, info) in edits.items():
         if target in common_edit_targets:
             continue
-        annotation = annotation_repo.get_latest(target)
+        annotation = annotations_map.get(target)
         if annotation is None or annotation.priority != Priority.SKIP:
             continue
         target_row = commit_repo.get(target)
@@ -168,12 +171,20 @@ def detect_conflicts(
         )
 
     # --- 2. SKIP vs EDIT (both directions) ---
+    # Batch-fetch annotations for all edit targets to avoid N+1 queries
+    all_edit_targets = list(set(a_edits.keys()) | set(b_edits.keys()))
+    annotations_map = (
+        annotation_repo.batch_get_latest(all_edit_targets)
+        if all_edit_targets
+        else {}
+    )
+
     conflicts.extend(_detect_skip_vs_edit(
-        b_edits, common_edit_targets, annotation_repo, blob_repo, commit_repo,
+        b_edits, common_edit_targets, annotations_map, blob_repo, commit_repo,
         a_infos, b_infos, editor_is_a=False,
     ))
     conflicts.extend(_detect_skip_vs_edit(
-        a_edits, common_edit_targets, annotation_repo, blob_repo, commit_repo,
+        a_edits, common_edit_targets, annotations_map, blob_repo, commit_repo,
         a_infos, b_infos, editor_is_a=True,
     ))
 
@@ -188,24 +199,31 @@ def detect_conflicts(
         r.operation == CommitOperation.APPEND for r in branch_b_commits
     )
 
+    # Cache first-append CommitInfo for each branch once, outside the loops.
+    # Previously these were recomputed via next() on every iteration (O(n^2)).
+    first_b_append = next(
+        (info for r, info in zip(branch_b_commits, b_infos) if r.operation == CommitOperation.APPEND),
+        b_infos[0] if b_infos else None,
+    )
+    first_a_append = next(
+        (info for r, info in zip(branch_a_commits, a_infos) if r.operation == CommitOperation.APPEND),
+        a_infos[0] if a_infos else None,
+    )
+
     # Check branch A edits targeting pre-merge-base commits while branch B has appends
     for target, (row_a, info_a) in a_edits.items():
         if target in common_edit_targets:
             continue
         # Only flag if the EDIT targets a pre-merge-base commit (shared history)
         if target not in post_merge_base_hashes and b_has_appends:
-            # Find the first append in branch B for the conflict pair
-            first_b_append = next(
-                (info for r, info in zip(branch_b_commits, b_infos) if r.operation == CommitOperation.APPEND),
-                b_infos[0] if b_infos else info_a,
-            )
+            append_info = first_b_append if first_b_append is not None else info_a
             conflicts.append(
                 ConflictInfo(
                     conflict_type=ConflictType.EDIT_PLUS_APPEND,
                     commit_a=info_a,
-                    commit_b=first_b_append,
+                    commit_b=append_info,
                     content_a_text=_load_content_text(blob_repo, row_a.content_hash),
-                    content_b_text=_load_content_text(blob_repo, first_b_append.content_hash),
+                    content_b_text=_load_content_text(blob_repo, append_info.content_hash),
                     target_hash=target,
                     branch_a_commits=a_infos,
                     branch_b_commits=b_infos,
@@ -217,16 +235,13 @@ def detect_conflicts(
         if target in common_edit_targets:
             continue
         if target not in post_merge_base_hashes and a_has_appends:
-            first_a_append = next(
-                (info for r, info in zip(branch_a_commits, a_infos) if r.operation == CommitOperation.APPEND),
-                a_infos[0] if a_infos else info_b,
-            )
+            append_info = first_a_append if first_a_append is not None else info_b
             conflicts.append(
                 ConflictInfo(
                     conflict_type=ConflictType.EDIT_PLUS_APPEND,
-                    commit_a=first_a_append,
+                    commit_a=append_info,
                     commit_b=info_b,
-                    content_a_text=_load_content_text(blob_repo, first_a_append.content_hash),
+                    content_a_text=_load_content_text(blob_repo, append_info.content_hash),
                     content_b_text=_load_content_text(blob_repo, row_b.content_hash),
                     target_hash=target,
                     branch_a_commits=a_infos,

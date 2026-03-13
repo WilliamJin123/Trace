@@ -33,7 +33,7 @@ class DirectiveTemplate:
         for key, value in kwargs.items():
             content = content.replace(f"{{{key}}}", str(value))
         # Check for unresolved placeholders
-        unresolved = re.findall(r"\{(\w+)\}", content)
+        unresolved = re.findall(r"\{([^}]+)\}", content)
         remaining = [u for u in unresolved if u not in kwargs]
         if remaining:
             raise ValueError(f"Unresolved template parameters: {remaining}")
