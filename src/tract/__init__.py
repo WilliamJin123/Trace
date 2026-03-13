@@ -165,6 +165,7 @@ from tract.exceptions import (
     CurationError,
     BlockedError,
     ClosedError,
+    ThreadSafetyError,
     RetryExhaustedError,
 )
 
@@ -276,6 +277,7 @@ __all__ = [
     "CurationError",
     "BlockedError",
     "ClosedError",
+    "ThreadSafetyError",
     "RetryExhaustedError",
     # Formatting utilities
     "StreamPrinter",

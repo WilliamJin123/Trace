@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import uuid
 from contextlib import contextmanager
 from dataclasses import fields as dc_fields, replace
@@ -357,6 +358,7 @@ class Tract:
         self._verify_cache: bool = verify_cache
         self._in_batch: bool = False
         self._closed = False
+        self._creating_thread = threading.current_thread().ident
         self._owns_llm_client: bool = False
         self._llm_client: LLMClient | None = None  # type: ignore[assignment]
         self._default_config: LLMConfig | None = None
@@ -396,9 +398,15 @@ class Tract:
         self._prompt_dir: str | Path | None = None
 
     def _check_open(self) -> None:
-        """Raise :class:`ClosedError` if this tract has been closed."""
+        """Raise :class:`ClosedError` if closed, or :class:`ThreadSafetyError` if wrong thread."""
         if self._closed:
             raise ClosedError()
+        current = threading.current_thread().ident
+        if current != self._creating_thread:
+            from tract.exceptions import ThreadSafetyError
+            creating_name = str(self._creating_thread)
+            current_name = str(current)
+            raise ThreadSafetyError(creating_name, current_name)
 
     @classmethod
     def open(
@@ -1093,7 +1101,7 @@ class Tract:
             from tract.operations.branch import create_branch
 
             create_branch(target, self._tract_id, self._ref_repo, self._commit_repo)
-            self._session.commit()
+            self._commit_session()
         self.switch(target)
 
         result = None
@@ -1382,7 +1390,7 @@ class Tract:
             self._store_and_link_tools(info.commit_hash, effective_tools)
 
         # Persist to database
-        self._session.commit()
+        self._commit_session()
 
         # Update compile cache: incremental extend for APPEND,
         # in-memory patching for EDIT, otherwise next compile() rebuilds.
@@ -2339,7 +2347,7 @@ class Tract:
                     self._commit_repo.update_metadata(
                         response.commit_info.commit_hash, merged
                     )
-                    self._session.commit()
+                    self._commit_session()
                     updated_info = response.commit_info.model_copy(
                         update={"metadata": merged}
                     )
@@ -3000,7 +3008,7 @@ class Tract:
                     self._commit_repo.update_metadata(
                         response.commit_info.commit_hash, merged
                     )
-                    self._session.commit()
+                    self._commit_session()
                     updated_info = response.commit_info.model_copy(
                         update={"metadata": merged}
                     )
@@ -3362,7 +3370,7 @@ class Tract:
             nested.rollback()
             raise
 
-        self._session.commit()
+        self._commit_session()
         self._cache.clear()
 
         if llm_kwargs:
@@ -3918,7 +3926,7 @@ class Tract:
         annotation = self._commit_engine.annotate(
             target_hash, priority, reason, retention=retention
         )
-        self._session.commit()
+        self._commit_session()
 
         # Annotations affect ALL cached snapshots that include the target commit.
         # Strategy: clear everything, then optionally re-add a patched current HEAD.
@@ -4019,7 +4027,7 @@ class Tract:
             self._tag_annotation_repo.add_tag(
                 self._tract_id, target_hash, tag_name, now,
             )
-            self._session.commit()
+            self._commit_session()
 
     def untag(self, target_hash: str, tag_name: str) -> bool:
         """Remove a mutable tag annotation from a commit.
@@ -4036,7 +4044,7 @@ class Tract:
         result = self._tag_annotation_repo.remove_tag(
             self._tract_id, target_hash, tag_name,
         )
-        self._session.commit()
+        self._commit_session()
         return result
 
     def get_tags(self, target_hash: str) -> list[str]:
@@ -4076,7 +4084,7 @@ class Tract:
         self._tag_registry_repo.register(
             self._tract_id, name, description, auto_created=False, created_at=now,
         )
-        self._session.commit()
+        self._commit_session()
 
     def list_tags(self) -> list[dict]:
         """List all registered tags with descriptions and usage counts.
@@ -4200,7 +4208,7 @@ class Tract:
                 self._tract_id, tag_name, description,
                 auto_created=True, created_at=now,
             )
-        self._session.commit()
+        self._commit_session()
 
     def _validate_tags(self, tags: list[str]) -> None:
         """Validate tags against registry in strict mode.
@@ -5078,7 +5086,7 @@ class Tract:
 
         resolved = self.resolve_commit(target)
         result = _reset(resolved, mode, self._tract_id, self._ref_repo)  # type: ignore[arg-type]  # resolve_commit narrows str
-        self._session.commit()
+        self._commit_session()
         return result
 
     def checkout(self, target: str) -> str:
@@ -5106,7 +5114,7 @@ class Tract:
         commit_hash, _is_detached = _checkout(
             target, self._tract_id, self._commit_repo, self._ref_repo
         )
-        self._session.commit()
+        self._commit_session()
         if self._config_index is not None:
             self._config_index.invalidate()
         return commit_hash
@@ -5144,7 +5152,7 @@ class Tract:
             source=source,
             switch=switch,
         )
-        self._session.commit()
+        self._commit_session()
         return result
 
     def switch(self, target: str) -> str:
@@ -5174,7 +5182,7 @@ class Tract:
         commit_hash, _is_detached = _checkout(
             target, self._tract_id, self._commit_repo, self._ref_repo
         )
-        self._session.commit()
+        self._commit_session()
         if self._config_index is not None:
             self._config_index.invalidate()
         return commit_hash
@@ -5228,7 +5236,7 @@ class Tract:
             self._parent_repo,
             force=force,
         )
-        self._session.commit()
+        self._commit_session()
 
     # ------------------------------------------------------------------
     # Snapshot system
@@ -5778,7 +5786,7 @@ class Tract:
             created_at=datetime.now(timezone.utc),
         )
         repo.save_config_change(entry)
-        self._session.commit()
+        self._commit_session()
 
     def _serialize_operation_configs(self) -> str | None:
         """Serialize current operation configs to JSON string."""
@@ -6100,7 +6108,7 @@ class Tract:
             no_ff=no_ff,
         )
 
-        self._session.commit()
+        self._commit_session()
 
         # Auto-commit conflict merges with full resolutions
         if (
@@ -6121,7 +6129,7 @@ class Tract:
                 self._parent_repo,
                 force=True,
             )
-            self._session.commit()
+            self._commit_session()
 
         self._cache.clear()
         if self._config_index is not None:
@@ -6196,7 +6204,7 @@ class Tract:
             generation_config=gen_config,
         )
 
-        self._session.commit()
+        self._commit_session()
 
         result.committed = True
         result.merge_commit_hash = merge_info.commit_hash
@@ -6253,7 +6261,7 @@ class Tract:
             event_repo=self._event_repo,
         )
 
-        self._session.commit()
+        self._commit_session()
 
         # Clear compile cache (import changes HEAD)
         self._cache.clear()
@@ -6322,7 +6330,7 @@ class Tract:
             event_repo=self._event_repo,
             warnings=warnings,
         )
-        self._session.commit()
+        self._commit_session()
         self._cache.clear()
         if self._config_index is not None:
             self._config_index.invalidate()
@@ -6551,7 +6559,7 @@ class Tract:
             nested.rollback()
             raise
 
-        self._session.commit()
+        self._commit_session()
         self._cache.clear()
 
         # Attach resolved config to result for display
@@ -6693,7 +6701,7 @@ class Tract:
             nested.rollback()
             raise
 
-        self._session.commit()
+        self._commit_session()
         self._cache.clear()
 
         if llm_kwargs:
@@ -6945,7 +6953,7 @@ class Tract:
             event_repo=self._event_repo,
         )
         self._cache.clear()
-        self._session.commit()
+        self._commit_session()
         return result
 
     def record_usage(
@@ -7051,7 +7059,7 @@ class Tract:
         )
         for pos, ch in enumerate(commit_hashes):
             self._compile_record_repo.add_effective(record_id, ch, pos)
-        self._session.commit()
+        self._commit_session()
 
     def _normalize_usage_dict(self, usage_dict: dict) -> TokenUsage:
         """Normalise provider-specific usage dicts to :class:`TokenUsage`.
@@ -7080,12 +7088,22 @@ class Tract:
                 f"Got keys: {list(usage_dict.keys())}"
             )
 
+    def _commit_session(self) -> None:
+        """Commit the underlying session, unless inside a :meth:`batch`.
+
+        All ``self._session.commit()`` calls in the class should go
+        through this method so that batch mode can defer the commit
+        without monkey-patching the session object.
+        """
+        if not self._in_batch:
+            self._session.commit()
+
     @contextmanager
     def batch(self) -> Iterator[None]:
         """Context manager for atomic multi-commit batches.
 
-        Defers the session ``commit()`` until the batch exits successfully.
-        Rolls back on exception.
+        Defers all session commits until the batch exits successfully.
+        On exception, all pending changes are rolled back.
 
         Example::
 
@@ -7094,31 +7112,18 @@ class Tract:
                 t.commit(DialogueContent(role="user", text="Hi"))
         """
         # Invalidate compile cache on batch entry and set _in_batch flag
-        # so commit() skips cache updates for intermediate states.
+        # so _commit_session() defers and commit() skips cache updates.
         self._cache.clear()
         self._in_batch = True
-
-        # Stash the real session.commit and replace with a no-op so that
-        # individual commit() calls inside the batch don't flush to the database.
-        # NOTE: We intentionally monkey-patch instead of using
-        # session.begin_nested() (SAVEPOINT) because SAVEPOINTs still flush
-        # intermediate state, while we want the entire batch committed atomically.
-        _real_commit = self._session.commit
-
-        def _noop_commit() -> None:
-            pass
-
-        self._session.commit = _noop_commit  # type: ignore[assignment]  # intentional monkey-patch for batch atomicity
         try:
             yield
-            # Success: flush pending and commit once
-            _real_commit()
+            # Success: single commit for the entire batch
+            self._session.commit()
         except Exception:
             self._session.rollback()
             raise
         finally:
             self._in_batch = False
-            self._session.commit = _real_commit  # type: ignore[assignment]  # restore original
 
 
     def register_content_type(self, name: str, model: type[BaseModel]) -> None:

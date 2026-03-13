@@ -33,6 +33,7 @@ __all__: list[str] = [
     "CurationError",
     "BlockedError",
     "ClosedError",
+    "ThreadSafetyError",
 ]
 
 
@@ -281,6 +282,23 @@ class BlockedError(TraceError):
         reason_str = "; ".join(self.reasons) if self.reasons else "Blocked"
         super().__init__(f"{event} blocked: {reason_str}")
         self.hint = "Check middleware configuration. Use t.list_middleware() or review t.status() for active blocks."
+
+
+class ThreadSafetyError(TraceError):
+    """Raised when a Tract is used from a different thread than the one that created it.
+
+    SQLAlchemy sessions and SQLite connections are not thread-safe.
+    Each thread must open its own Tract instance.
+    """
+
+    def __init__(self, creating_thread: str, current_thread: str) -> None:
+        self.creating_thread = creating_thread
+        self.current_thread = current_thread
+        super().__init__(
+            f"Tract created on thread '{creating_thread}' but accessed from "
+            f"thread '{current_thread}'. Each thread must open its own Tract."
+        )
+        self.hint = "Open a separate Tract per thread, or use a Session to manage per-thread tracts."
 
 
 class ClosedError(TraceError):
