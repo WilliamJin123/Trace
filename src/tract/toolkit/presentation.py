@@ -166,8 +166,3 @@ def _format_bytes(n: int) -> str:
     return f"{n / (1024 * 1024):.1f}MB"
 
 
-def _format_tokens(n: int) -> str:
-    """Format token count with k suffix for large numbers."""
-    if n < 1000:
-        return f"{n} tokens"
-    return f"{n / 1000:.1f}k tokens"

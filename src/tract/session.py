@@ -1008,18 +1008,15 @@ def _curate_compact_before(child: Tract, marker_hash: str) -> None:
     if marker_idx == 0:
         return  # Nothing before the marker
 
-    # Collect non-SKIPPED commits before the marker
+    # Collect non-SKIPPED commits before the marker (batch query)
     before_commits = chain_reversed[:marker_idx]
-    non_skipped = []
-    for row in before_commits:
-        annotations = child._annotation_repo.get_history(row.commit_hash)
-        is_skipped = False
-        if annotations:
-            # Last annotation is the effective one
-            if annotations[-1].priority == Priority.SKIP:
-                is_skipped = True
-        if not is_skipped:
-            non_skipped.append(row)
+    before_hashes = [row.commit_hash for row in before_commits]
+    latest_annotations = child._annotation_repo.batch_get_latest(before_hashes)
+    non_skipped = [
+        row for row in before_commits
+        if row.commit_hash not in latest_annotations
+        or latest_annotations[row.commit_hash].priority != Priority.SKIP
+    ]
 
     if not non_skipped:
         return  # All commits before marker are already skipped
@@ -1027,8 +1024,7 @@ def _curate_compact_before(child: Tract, marker_hash: str) -> None:
     non_skipped_hashes = [row.commit_hash for row in non_skipped]
 
     # Try to use compress_range if an LLM client is available
-    # Check if LLM is available (via child which shares parent's config)
-    has_llm = getattr(child, "_has_llm_client", lambda op: False)("compress")
+    has_llm = child._has_llm_client("compress")
 
     if has_llm:
         # Use the Tract.compress() API which handles all wiring
@@ -1141,12 +1137,12 @@ def _curate_reorder(child: Tract, order: list[str]) -> None:
     if reset_parent is not None:
         if branch_name:
             child._ref_repo.set_branch(child.tract_id, branch_name, reset_parent)
-        child._session.commit()
+        child._commit_session()
     else:
         # Reset to no commits -- clear the branch ref
         if branch_name:
             child._ref_repo.delete_ref(child.tract_id, f"refs/heads/{branch_name}")
-        child._session.commit()
+        child._commit_session()
 
     # Replay in the specified order
     for h in order:
@@ -1157,7 +1153,7 @@ def _curate_reorder(child: Tract, order: list[str]) -> None:
             child._commit_engine,
             child._blob_repo,
         )
-        child._session.commit()
+        child._commit_session()
 
     # Replay remaining commits not in the order list
     for row in remaining_after:
@@ -1167,4 +1163,4 @@ def _curate_reorder(child: Tract, order: list[str]) -> None:
             child._commit_engine,
             child._blob_repo,
         )
-        child._session.commit()
+        child._commit_session()

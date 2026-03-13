@@ -56,7 +56,7 @@ def _render_tool_io(
     """
     if direction == "result":
         # Single-key shortcut: just emit the value string directly
-        keys = list(payload.keys())
+        keys = list(payload)
         if len(keys) == 1 and keys[0] in ("result", "error", "text"):
             value = str(payload[keys[0]])
             if status == "error":

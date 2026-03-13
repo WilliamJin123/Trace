@@ -45,6 +45,16 @@ _SCHEMA_TYPE_MAP: dict[str, type] = {
 # Python type -> JSON Schema type string (reverse of above)
 _TYPE_SCHEMA_MAP: dict[type, str] = {v: k for k, v in _SCHEMA_TYPE_MAP.items()}
 
+# String annotation -> JSON Schema type (for `from __future__ import annotations`)
+_STR_ANNOTATION_MAP: dict[str, str] = {
+    "str": "string",
+    "int": "integer",
+    "float": "number",
+    "bool": "boolean",
+    "dict": "object",
+    "list": "array",
+}
+
 
 def tool_to_callable(tool_def: ToolDefinition) -> Any:
     """Convert a single ToolDefinition into a typed Python callable.
@@ -265,15 +275,7 @@ def _type_to_schema(annotation: Any) -> str:
 
     # String annotation (from __future__ import annotations)
     if isinstance(annotation, str):
-        _STR_TYPE_MAP = {
-            "str": "string",
-            "int": "integer",
-            "float": "number",
-            "bool": "boolean",
-            "dict": "object",
-            "list": "array",
-        }
-        return _STR_TYPE_MAP.get(annotation, "string")
+        return _STR_ANNOTATION_MAP.get(annotation, "string")
 
     return "string"
 

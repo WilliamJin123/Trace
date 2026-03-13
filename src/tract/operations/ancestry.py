@@ -1,4 +1,4 @@
-"""Shared DAG ancestry walk for the rule engine."""
+"""Shared DAG ancestry walk for config index and other DAG consumers."""
 
 from __future__ import annotations
 

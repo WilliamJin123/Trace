@@ -205,7 +205,7 @@ class SqliteCommitRepository(CommitRepository):
         stmt = select(CommitRow).where(and_(*conditions))
         results = list(self._session.execute(stmt).scalars().all())
 
-        if len(results) == 0:
+        if not results:
             return None
         if len(results) == 1:
             return results[0]

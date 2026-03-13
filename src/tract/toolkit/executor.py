@@ -77,10 +77,8 @@ class ToolExecutor:
 
         # Apply overrides: unlock/lock specific tools
         if self._tool_overrides:
-            from tract.toolkit.definitions import get_all_tools as _get_all
-
             # Get unfiltered tools for unlock lookups
-            full_tools = {t.name: t for t in _get_all(self._tract)}
+            full_tools = {t.name: t for t in get_all_tools(self._tract)}
             for name, enabled in self._tool_overrides.items():
                 if enabled and name not in self._tools and name in full_tools:
                     self._tools[name] = full_tools[name]

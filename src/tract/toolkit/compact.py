@@ -12,6 +12,7 @@ upfront.
 
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 from typing import TYPE_CHECKING
@@ -166,15 +167,13 @@ def _build_domain_tool(
         if tool is None:
             return f"Tool '{action}' not found."
         # Check for missing required params and provide schema-aware hint
-        import inspect as _inspect
-
-        sig = _inspect.signature(tool.handler)
+        sig = inspect.signature(tool.handler)
         missing = [
             pname
             for pname, p in sig.parameters.items()
-            if p.default is _inspect.Parameter.empty
+            if p.default is inspect.Parameter.empty
             and p.kind
-            in (_inspect.Parameter.POSITIONAL_OR_KEYWORD, _inspect.Parameter.KEYWORD_ONLY)
+            in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
             and pname not in params
         ]
         if missing:
