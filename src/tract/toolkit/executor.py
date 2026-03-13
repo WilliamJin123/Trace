@@ -114,6 +114,30 @@ class ToolExecutor:
             valid_params = set(sig.parameters.keys())
             arguments = {k: v for k, v in arguments.items() if k in valid_params}
 
+        # Pre-check: detect missing required parameters and provide schema-aware errors
+        missing = []
+        for pname, param in sig.parameters.items():
+            if (
+                param.default is inspect.Parameter.empty
+                and param.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+                and pname not in arguments
+            ):
+                missing.append(pname)
+        if missing:
+            schema = tool.parameters or {}
+            props = schema.get("properties", {})
+            param_help = []
+            for m in missing:
+                desc = props.get(m, {}).get("description", "")
+                ptype = props.get(m, {}).get("type", "")
+                param_help.append(f"  {m} ({ptype}): {desc}" if desc else f"  {m} ({ptype})")
+            return ToolResult(
+                tool_name=tool_name,
+                success=False,
+                error=f"Missing required parameter(s): {', '.join(missing)}",
+                hint="Required parameters:\n" + "\n".join(param_help),
+            )
+
         start = time.perf_counter()
         try:
             result = tool.handler(**arguments)

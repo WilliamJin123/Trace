@@ -146,6 +146,48 @@ def main():
         else:
             print("\n  Agent did not create any tags.")
 
+        # Check if tags were actually applied to commits (not just registered)
+        tagged_commits = 0
+        for tag_info in (all_tags or []):
+            results = t.query_by_tags([tag_info["name"]])
+            tagged_commits += len(results)
+
+        if all_tags and tagged_commits == 0:
+            # Fallback: agent registered tags but never applied them
+            print("\n  Agent registered tags but never applied them to commits.")
+            print("  Demonstrating programmatic tag application...")
+            disciplines = {
+                "biology": ["photosynthesis", "DNA", "CRISPR"],
+                "physics": ["gravity", "entanglement", "photoelectric"],
+                "chemistry": ["covalent", "catalysis", "electrochemistry"],
+                "cs": ["cryptography", "hash table", "CAP theorem"],
+            }
+            # Register tags if not already done
+            existing_names = {tag["name"] for tag in (all_tags or [])}
+            for disc in disciplines:
+                if disc not in existing_names:
+                    t.register_tag(disc)
+            # Apply tags by matching content
+            applied = 0
+            for entry in t.log(limit=50):
+                if not entry.message:
+                    continue
+                msg_lower = entry.message.lower()
+                for disc, keywords in disciplines.items():
+                    if any(kw.lower() in msg_lower for kw in keywords):
+                        try:
+                            t.tag(entry.commit_hash, disc)
+                            applied += 1
+                        except Exception:
+                            pass
+            print(f"  Applied {applied} tags across {len(disciplines)} disciplines.")
+            # Show cross-cutting query works
+            for disc in disciplines:
+                results = t.query_by_tags([disc])
+                print(f"  {disc}: {len(results)} commits")
+        elif tagged_commits > 0:
+            print(f"  Tags applied to {tagged_commits} commits total.")
+
 
 if __name__ == "__main__":
     main()

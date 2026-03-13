@@ -122,7 +122,14 @@ def main():
         if used:
             print(f"  Context management tools used: {', '.join(sorted(used))}")
         else:
-            print("  No context management tools were used autonomously.")
+            # Fallback: agent failed to compress — demonstrate it programmatically
+            print("  Agent did not compress autonomously. Forcing programmatic compress...")
+            before = t.status().token_count
+            t.compress(strategy="sliding_window", window_size=3)
+            after = t.status().token_count
+            print(f"  Programmatic compress: {before} -> {after} tokens ({before - after} freed)")
+            print("\n  AFTER FALLBACK COMPRESS:")
+            t.compile().pprint(style="compact")
 
 
 if __name__ == "__main__":

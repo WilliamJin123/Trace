@@ -59,15 +59,15 @@ class StepLogger:
             text = content.replace("\n", "\n" + self.indent + "  ")
             if len(content) > self.max_text:
                 text = content[:self.max_text].replace("\n", "\n" + self.indent + "  ") + "..."
-            print(f"{self.indent}  Assistant: {text}")
+            _safe_print(f"{self.indent}  Assistant: {text}")
 
         if tool_calls:
             for tc in tool_calls:
                 if self.show_args:
                     args = _format_args(tc.get("arguments", {}))
-                    print(f"{self.indent}  >> tool call: {tc['name']}({args})")
+                    _safe_print(f"{self.indent}  >> tool call: {tc['name']}({args})")
                 else:
-                    print(f"{self.indent}  >> tool call: {tc['name']}")
+                    _safe_print(f"{self.indent}  >> tool call: {tc['name']}")
         elif not content:
             print(f"{self.indent}  (empty response)")
 
@@ -81,7 +81,15 @@ class StepLogger:
         if len(text) > self.max_result:
             text = text[:self.max_result] + "..."
         text = text.replace("\n", "\n" + self.indent + "     ")
-        print(f"{self.indent}{icon} {tool_name}: {text}")
+        _safe_print(f"{self.indent}{icon} {tool_name}: {text}")
+
+
+def _safe_print(text: str) -> None:
+    """Print text, replacing unencodable characters for the current console."""
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        print(text.encode("ascii", errors="replace").decode("ascii"))
 
 
 def _extract_content(response: Any) -> str | None:

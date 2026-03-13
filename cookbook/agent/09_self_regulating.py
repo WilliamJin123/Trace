@@ -22,15 +22,15 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 from tract import Tract, BlockedError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _providers import groq as llm
+from _providers import cerebras as llm
 from _logging import StepLogger
 
-MODEL_ID = llm.xlarge
+MODEL_ID = llm.large
 
 
 def main():
     if not llm.api_key:
-        print("SKIPPED (no API key -- set GROQ_API_KEY)")
+        print("SKIPPED (no API key -- set CEREBRAS_API_KEY)")
         return
 
     print("=" * 70)
@@ -60,14 +60,14 @@ def main():
 
         # Gate: require mode config before agent content commits
         def mode_gate(ctx):
-            from tract.models.content import ConfigContent, InstructionContent
+            from tract.models.content import ConfigContent, InstructionContent, ReasoningContent
             pending = ctx.pending
             if pending is not None:
-                # Allow system/user messages, config changes, and directives through
+                # Allow system/user messages, config changes, directives, and reasoning through
                 role = getattr(pending, "role", None)
                 if role in ("system", "user"):
                     return
-                if isinstance(pending, (ConfigContent, InstructionContent)):
+                if isinstance(pending, (ConfigContent, InstructionContent, ReasoningContent)):
                     return
             mode = ctx.tract.get_config("mode")
             if not mode:

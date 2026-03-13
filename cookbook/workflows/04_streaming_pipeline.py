@@ -11,7 +11,7 @@ Stages:
 Demonstrates: StreamPrinter per-stage, live Rich markdown panels,
               streaming + middleware gates, stage transitions
 
-Requires: LLM API key (uses Groq provider)
+Requires: LLM API key (uses Cerebras provider)
 """
 
 import sys
@@ -21,14 +21,14 @@ from tract import Tract, BlockedError
 from tract.formatting import StreamPrinter
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _providers import groq as llm
+from _providers import cerebras as llm
 
-MODEL_ID = llm.small
+MODEL_ID = llm.large
 
 
 def main():
     if not llm.api_key:
-        print("SKIPPED (no API key -- set GROQ_API_KEY)")
+        print("SKIPPED (no API key -- set CEREBRAS_API_KEY)")
         return
 
     with Tract.open(

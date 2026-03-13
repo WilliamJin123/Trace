@@ -165,6 +165,30 @@ def _build_domain_tool(
         tool = tool_lookup.get(action)
         if tool is None:
             return f"Tool '{action}' not found."
+        # Check for missing required params and provide schema-aware hint
+        import inspect as _inspect
+
+        sig = _inspect.signature(tool.handler)
+        missing = [
+            pname
+            for pname, p in sig.parameters.items()
+            if p.default is _inspect.Parameter.empty
+            and p.kind
+            in (_inspect.Parameter.POSITIONAL_OR_KEYWORD, _inspect.Parameter.KEYWORD_ONLY)
+            and pname not in params
+        ]
+        if missing:
+            props = (tool.parameters or {}).get("properties", {})
+            schema_lines = [
+                f"  {m}: {props.get(m, {}).get('description', '')}" for m in missing
+            ]
+            return (
+                f"Missing required parameter(s): {', '.join(missing)}\n"
+                + "\n".join(schema_lines)
+                + f"\nUse tract_discover(domain='{domain}', action='{action}') "
+                "to see full schema."
+            )
+
         try:
             result = tool.handler(**params)
             return str(result)

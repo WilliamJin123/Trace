@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import cerebras as llm
 from _logging import StepLogger
 
-MODEL_ID = llm.small
+MODEL_ID = llm.large
 
 
 def main():
