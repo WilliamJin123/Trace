@@ -30,6 +30,7 @@ from tract.models.content import validate_content
 from tract.exceptions import (
     BlockedError,
     BranchNotFoundError,
+    ClosedError,
     CommitNotFoundError,
     ContentValidationError,
     DetachedHeadError,
@@ -183,6 +184,43 @@ def _detect_provider(
 # ------------------------------------------------------------------
 
 
+def _calculate_backoff(attempt: int, retry_config: RetryConfig) -> float:
+    """Calculate backoff delay for a given retry attempt.
+
+    Args:
+        attempt: Zero-based attempt index (0 = first retry).
+        retry_config: Retry configuration with delay/factor/jitter settings.
+
+    Returns:
+        Delay in seconds (with optional jitter applied).
+    """
+    import random
+
+    delay = min(
+        retry_config.initial_delay * (retry_config.backoff_factor ** attempt),
+        retry_config.max_delay,
+    )
+    if retry_config.jitter:
+        delay *= 0.5 + random.random()
+    return delay
+
+
+def _is_retryable(e: Exception, retry_config: RetryConfig) -> bool:
+    """Check whether *e* should be retried per *retry_config*.
+
+    :class:`ContentValidationError` and :class:`BlockedError` are never
+    retried.  When ``retry_config.retryable_errors`` is non-empty, only
+    those exception types are retried.
+    """
+    if isinstance(e, (ContentValidationError, BlockedError)):
+        return False
+    if retry_config.retryable_errors and not isinstance(
+        e, retry_config.retryable_errors
+    ):
+        return False
+    return True
+
+
 def _retry_with_backoff(
     func: Callable,
     retry_config: RetryConfig | None,
@@ -196,7 +234,6 @@ def _retry_with_backoff(
     ``retry_config.retryable_errors`` is non-empty, only those exception
     types are retried; all others propagate immediately.
     """
-    import random
     import time
 
     if not retry_config or retry_config.max_retries <= 0:
@@ -206,22 +243,12 @@ def _retry_with_backoff(
     for attempt in range(retry_config.max_retries + 1):
         try:
             return func(*args, **kwargs)
-        except (ContentValidationError, BlockedError):
-            raise
         except Exception as e:
-            if retry_config.retryable_errors and not isinstance(
-                e, retry_config.retryable_errors
-            ):
+            if not _is_retryable(e, retry_config):
                 raise
             last_error = e
             if attempt < retry_config.max_retries:
-                delay = min(
-                    retry_config.initial_delay
-                    * (retry_config.backoff_factor ** attempt),
-                    retry_config.max_delay,
-                )
-                if retry_config.jitter:
-                    delay *= 0.5 + random.random()
+                delay = _calculate_backoff(attempt, retry_config)
                 logger.debug(
                     "Retry attempt %d/%d after %s: %s (delay=%.2fs)",
                     attempt + 1, retry_config.max_retries,
@@ -239,7 +266,6 @@ async def _aretry_with_backoff(
 ) -> Any:
     """Async version of :func:`_retry_with_backoff`."""
     import asyncio
-    import random
 
     if not retry_config or retry_config.max_retries <= 0:
         return await func(*args, **kwargs)
@@ -248,22 +274,12 @@ async def _aretry_with_backoff(
     for attempt in range(retry_config.max_retries + 1):
         try:
             return await func(*args, **kwargs)
-        except (ContentValidationError, BlockedError):
-            raise
         except Exception as e:
-            if retry_config.retryable_errors and not isinstance(
-                e, retry_config.retryable_errors
-            ):
+            if not _is_retryable(e, retry_config):
                 raise
             last_error = e
             if attempt < retry_config.max_retries:
-                delay = min(
-                    retry_config.initial_delay
-                    * (retry_config.backoff_factor ** attempt),
-                    retry_config.max_delay,
-                )
-                if retry_config.jitter:
-                    delay *= 0.5 + random.random()
+                delay = _calculate_backoff(attempt, retry_config)
                 logger.debug(
                     "Async retry attempt %d/%d after %s: %s (delay=%.2fs)",
                     attempt + 1, retry_config.max_retries,
@@ -377,6 +393,11 @@ class Tract:
 
         # Prompt file directory (auto-discovered or explicit)
         self._prompt_dir: str | Path | None = None
+
+    def _check_open(self) -> None:
+        """Raise :class:`ClosedError` if this tract has been closed."""
+        if self._closed:
+            raise ClosedError()
 
     @classmethod
     def open(
@@ -841,6 +862,7 @@ class Tract:
         Unknown keys pass through without validation.
         None values are valid (unset semantics).
         """
+        self._check_open()
         from tract.models.content import ConfigContent
 
         for key, value in settings.items():
@@ -873,6 +895,7 @@ class Tract:
 
         Pass *text* inline or load from *path* (mutually exclusive).
         """
+        self._check_open()
         from tract.models.annotations import Priority as _Priority
         from tract.models.content import InstructionContent
 
@@ -1288,6 +1311,7 @@ class Tract:
         Returns:
             :class:`CommitInfo` for the new commit.
         """
+        self._check_open()
         # Guard: detached HEAD blocks commits
         if self._ref_repo.is_detached(self._tract_id):
             raise DetachedHeadError()
@@ -1421,6 +1445,66 @@ class Tract:
             tags=tags,
         )
 
+    def _commit_dialogue(
+        self,
+        role: str,
+        text: str | None,
+        *,
+        path: str | Path | None,
+        edit: str | None,
+        message: str | None,
+        name: str | None,
+        metadata: dict | None,
+        generation_config: dict | None,
+        priority: Priority | None,
+        retain: str | None,
+        retain_match: list[str] | None,
+        improve: bool,
+        tags: list[str] | None,
+    ) -> CommitInfo:
+        """Shared implementation for :meth:`system`, :meth:`user`, and :meth:`assistant`.
+
+        Handles text resolution, content construction, commit, priority
+        annotation, and optional LLM improvement.  Role-specific
+        differences (content class, extra kwargs) are parameterised.
+        """
+        from tract.models.content import DialogueContent, InstructionContent
+
+        text = _resolve_text(text, path, label="text", prompt_dir=self._prompt_dir)
+
+        if role == "system":
+            content = InstructionContent(text=text)
+        else:
+            content = DialogueContent(role=role, text=text, name=name)
+
+        commit_kwargs: dict[str, Any] = dict(
+            operation=CommitOperation.EDIT if edit else CommitOperation.APPEND,
+            edit_target=edit,
+            message=message,
+            metadata=metadata,
+            tags=tags,
+        )
+        if generation_config is not None:
+            commit_kwargs["generation_config"] = generation_config
+
+        info = self.commit(content, **commit_kwargs)
+
+        if priority is not None:
+            self.annotate(
+                info.commit_hash, priority,
+                retain=retain, retain_match=retain_match,
+            )
+        if improve:
+            if not self._has_llm_client("improve"):
+                raise ValueError(
+                    "improve=True requires an LLM client. "
+                    "Call configure_llm() or pass api_key to Tract.open()."
+                )
+            improved = self._improve_commit(info, text, role)
+            if improved is not None:
+                info = improved
+        return info
+
     def system(
         self,
         text: str | None = None,
@@ -1464,32 +1548,14 @@ class Tract:
         Returns:
             :class:`CommitInfo` for the new commit.
         """
-        from tract.models.content import InstructionContent
-
-        text = _resolve_text(text, path, label="text", prompt_dir=self._prompt_dir)
-        info = self.commit(
-            InstructionContent(text=text),
-            operation=CommitOperation.EDIT if edit else CommitOperation.APPEND,
-            edit_target=edit,
-            message=message,
-            metadata=metadata,
+        self._check_open()
+        return self._commit_dialogue(
+            "system", text,
+            path=path, edit=edit, message=message, name=None,
+            metadata=metadata, generation_config=None, priority=priority,
+            retain=retain, retain_match=retain_match, improve=improve,
             tags=tags,
         )
-        if priority is not None:
-            self.annotate(
-                info.commit_hash, priority,
-                retain=retain, retain_match=retain_match,
-            )
-        if improve:
-            if not self._has_llm_client("improve"):
-                raise ValueError(
-                    "improve=True requires an LLM client. "
-                    "Call configure_llm() or pass api_key to Tract.open()."
-                )
-            improved = self._improve_commit(info, text, "system")
-            if improved is not None:
-                info = improved
-        return info
 
     def user(
         self,
@@ -1531,32 +1597,14 @@ class Tract:
         Returns:
             :class:`CommitInfo` for the new commit.
         """
-        from tract.models.content import DialogueContent
-
-        text = _resolve_text(text, path, label="text", prompt_dir=self._prompt_dir)
-        info = self.commit(
-            DialogueContent(role="user", text=text, name=name),
-            operation=CommitOperation.EDIT if edit else CommitOperation.APPEND,
-            edit_target=edit,
-            message=message,
-            metadata=metadata,
+        self._check_open()
+        return self._commit_dialogue(
+            "user", text,
+            path=path, edit=edit, message=message, name=name,
+            metadata=metadata, generation_config=None, priority=priority,
+            retain=retain, retain_match=retain_match, improve=improve,
             tags=tags,
         )
-        if priority is not None:
-            self.annotate(
-                info.commit_hash, priority,
-                retain=retain, retain_match=retain_match,
-            )
-        if improve:
-            if not self._has_llm_client("improve"):
-                raise ValueError(
-                    "improve=True requires an LLM client. "
-                    "Call configure_llm() or pass api_key to Tract.open()."
-                )
-            improved = self._improve_commit(info, text, "user")
-            if improved is not None:
-                info = improved
-        return info
 
     def assistant(
         self,
@@ -1600,33 +1648,14 @@ class Tract:
         Returns:
             :class:`CommitInfo` for the new commit.
         """
-        from tract.models.content import DialogueContent
-
-        text = _resolve_text(text, path, label="text", prompt_dir=self._prompt_dir)
-        info = self.commit(
-            DialogueContent(role="assistant", text=text, name=name),
-            operation=CommitOperation.EDIT if edit else CommitOperation.APPEND,
-            edit_target=edit,
-            message=message,
-            metadata=metadata,
-            generation_config=generation_config,
-            tags=tags,
+        self._check_open()
+        return self._commit_dialogue(
+            "assistant", text,
+            path=path, edit=edit, message=message, name=name,
+            metadata=metadata, generation_config=generation_config,
+            priority=priority, retain=retain, retain_match=retain_match,
+            improve=improve, tags=tags,
         )
-        if priority is not None:
-            self.annotate(
-                info.commit_hash, priority,
-                retain=retain, retain_match=retain_match,
-            )
-        if improve:
-            if not self._has_llm_client("improve"):
-                raise ValueError(
-                    "improve=True requires an LLM client. "
-                    "Call configure_llm() or pass api_key to Tract.open()."
-                )
-            improved = self._improve_commit(info, text, "assistant")
-            if improved is not None:
-                info = improved
-        return info
 
     def _improve_commit(
         self,
@@ -2259,6 +2288,7 @@ class Tract:
             TraceError: If called inside batch().
             RetryExhaustedError: If all retry attempts fail validation.
         """
+        self._check_open()
         if not self._has_llm_client("chat"):
             from tract.llm.errors import LLMConfigError
 
@@ -3586,6 +3616,7 @@ class Tract:
             :class:`CompiledContext` when ``order`` is None (default).
             ``(CompiledContext, list[ReorderWarning])`` when ``order`` is provided.
         """
+        self._check_open()
         current_head = self.head
         if current_head is None:
             empty = CompiledContext(messages=[], token_count=0, commit_count=0, token_source="")
@@ -3875,6 +3906,7 @@ class Tract:
         Returns:
             :class:`PriorityAnnotation` model.
         """
+        self._check_open()
         retention = None
         if retain is not None or retain_match is not None:
             retention = RetentionCriteria(
@@ -3973,6 +4005,7 @@ class Tract:
             CommitNotFoundError: If the commit doesn't exist.
             TagNotRegisteredError: If strict mode is on and tag is not registered.
         """
+        self._check_open()
         commit = self._commit_repo.get(target_hash)
         if commit is None:
             raise CommitNotFoundError(target_hash)
@@ -5039,6 +5072,7 @@ class Tract:
         Raises:
             CommitNotFoundError: If target cannot be resolved.
         """
+        self._check_open()
         from tract.operations.navigation import reset as _reset
 
         resolved = self.resolve_commit(target)
@@ -5065,6 +5099,7 @@ class Tract:
             CommitNotFoundError: If the target cannot be resolved.
             TraceError: If ``"-"`` is used but no PREV_HEAD exists.
         """
+        self._check_open()
         from tract.operations.navigation import checkout as _checkout
 
         commit_hash, _is_detached = _checkout(
@@ -5097,6 +5132,7 @@ class Tract:
             InvalidBranchNameError: If branch name is invalid.
             TraceError: If no commits exist and no source specified.
         """
+        self._check_open()
         from tract.operations.branch import create_branch
 
         result = create_branch(
@@ -5126,6 +5162,7 @@ class Tract:
         Raises:
             BranchNotFoundError: If target is not a valid branch name.
         """
+        self._check_open()
         # Validate that target is a branch
         branch_hash = self._ref_repo.get_branch(self._tract_id, target)
         if branch_hash is None:
@@ -5179,6 +5216,7 @@ class Tract:
             TraceError: If trying to delete the current branch.
             UnmergedBranchError: If branch has unmerged commits (without force).
         """
+        self._check_open()
         from tract.operations.branch import delete_branch
 
         delete_branch(
@@ -6000,6 +6038,7 @@ class Tract:
         Returns:
             :class:`MergeResult`.
         """
+        self._check_open()
         from tract.operations.merge import merge_branches
 
         # Resolve delete_branch from config default
@@ -6228,6 +6267,7 @@ class Tract:
             RebaseError: On merge commits in range, resolver abort, etc.
             SemanticSafetyError: If safety warnings and no resolver.
         """
+        self._check_open()
         from tract.models.merge import RebaseResult
         from tract.operations.rebase import execute_rebase, plan_rebase
 
@@ -6347,6 +6387,7 @@ class Tract:
             CompressionError: On various error conditions.
             LLMConfigError: If explicit LLM params given without client.
         """
+        self._check_open()
         from tract.operations.compression import (
             _classify_by_priority,
             _commit_compression,
@@ -6853,6 +6894,7 @@ class Tract:
         Raises:
             CompressionError: If compression repository is not available.
         """
+        self._check_open()
         from tract.exceptions import CompressionError
         from tract.operations.compression import execute_gc, plan_gc
 
@@ -7443,10 +7485,19 @@ class Tract:
         self._closed = True
         # Close internally-created LLM client (not externally-provided ones)
         if self._owns_llm_client and hasattr(self, "_llm_client"):
-            self._llm_client.close()
-        self._session.close()
+            try:
+                self._llm_client.close()
+            except Exception:
+                logger.debug("Failed to close LLM client", exc_info=True)
+        try:
+            self._session.close()
+        except Exception:
+            logger.debug("Failed to close SQLAlchemy session", exc_info=True)
         if self._engine is not None:
-            self._engine.dispose()
+            try:
+                self._engine.dispose()
+            except Exception:
+                logger.debug("Failed to dispose engine", exc_info=True)
 
     # ------------------------------------------------------------------
     # Context manager

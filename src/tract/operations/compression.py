@@ -151,22 +151,23 @@ def _resolve_commit_range(
 
     if from_commit is not None or to_commit is not None:
         # Range: filter chain to from_commit..to_commit (inclusive)
-        chain_hashes = [r.commit_hash for r in chain]
+        # Build hash->index dict for O(1) lookups instead of O(n) list.index()
+        hash_to_idx = {r.commit_hash: i for i, r in enumerate(chain)}
 
         start_idx = 0
         end_idx = len(chain) - 1
 
         if from_commit is not None:
-            try:
-                start_idx = chain_hashes.index(from_commit)
-            except ValueError:
+            idx = hash_to_idx.get(from_commit)
+            if idx is None:
                 raise CompressionError(f"from_commit not found in chain: {from_commit}")
+            start_idx = idx
 
         if to_commit is not None:
-            try:
-                end_idx = chain_hashes.index(to_commit)
-            except ValueError:
+            idx = hash_to_idx.get(to_commit)
+            if idx is None:
                 raise CompressionError(f"to_commit not found in chain: {to_commit}")
+            end_idx = idx
 
         if start_idx > end_idx:
             raise CompressionError(

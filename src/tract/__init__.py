@@ -164,6 +164,7 @@ from tract.exceptions import (
     TagNotRegisteredError,
     CurationError,
     BlockedError,
+    ClosedError,
     RetryExhaustedError,
 )
 
@@ -274,6 +275,7 @@ __all__ = [
     "TagNotRegisteredError",
     "CurationError",
     "BlockedError",
+    "ClosedError",
     "RetryExhaustedError",
     # Formatting utilities
     "StreamPrinter",

@@ -32,6 +32,7 @@ __all__: list[str] = [
     "TagNotRegisteredError",
     "CurationError",
     "BlockedError",
+    "ClosedError",
 ]
 
 
@@ -280,3 +281,18 @@ class BlockedError(TraceError):
         reason_str = "; ".join(self.reasons) if self.reasons else "Blocked"
         super().__init__(f"{event} blocked: {reason_str}")
         self.hint = "Check middleware configuration. Use t.list_middleware() or review t.status() for active blocks."
+
+
+class ClosedError(TraceError):
+    """Raised when an operation is attempted on a closed Tract.
+
+    Once :meth:`Tract.close` has been called (or the context manager exits),
+    the underlying database session is gone and no further operations are valid.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            "This Tract has been closed. "
+            "Open a new one with Tract.open() or use a context manager."
+        )
+        self.hint = "Create a new Tract instance with Tract.open()."

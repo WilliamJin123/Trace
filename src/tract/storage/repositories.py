@@ -110,6 +110,15 @@ class CommitRepository(ABC):
         ...
 
     @abstractmethod
+    def sum_ancestor_tokens(self, commit_hash: str) -> int:
+        """Sum token_count for all ancestors in the parent chain (inclusive).
+
+        Uses a single SQL query instead of loading all ancestor rows.
+        Returns 0 if commit_hash is not found.
+        """
+        ...
+
+    @abstractmethod
     def get_by_prefix(self, prefix: str, tract_id: str | None = None) -> CommitRow | None:
         """Find commit by hash prefix (min 4 chars).
 

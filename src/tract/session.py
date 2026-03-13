@@ -297,17 +297,19 @@ class Session:
         from tract.storage.schema import CommitRow
 
         session = self._session_factory()
-        stmt = select(CommitRow).where(CommitRow.tract_id == tract_id).limit(1)
-        result = session.execute(stmt).first()
+        try:
+            stmt = select(CommitRow).where(CommitRow.tract_id == tract_id).limit(1)
+            result = session.execute(stmt).first()
 
-        if result is None:
-            # Also check if it's a known child tract with no commits yet
-            pointer = self._spawn_repo.get_by_child(tract_id)
-            if pointer is None:
-                raise SessionError(f"Tract not found: {tract_id}")
+            if result is None:
+                # Also check if it's a known child tract with no commits yet
+                pointer = self._spawn_repo.get_by_child(tract_id)
+                if pointer is None:
+                    raise SessionError(f"Tract not found: {tract_id}")
+        finally:
+            session.close()  # Always close the probe session
 
         # Reconstruct the tract
-        session.close()  # Close the probe session
         tract = self.create_tract(tract_id=tract_id)
         return tract
 
@@ -440,6 +442,41 @@ class Session:
 
         return child
 
+    def _resolve_auto_commit(self, auto_commit: bool | None) -> bool:
+        """Resolve *auto_commit* from the session's autonomy level.
+
+        Args:
+            auto_commit: Explicit caller value, or ``None`` to derive.
+
+        Returns:
+            Resolved boolean.
+        """
+        if auto_commit is not None:
+            return auto_commit
+        if self._autonomy == "autonomous":
+            return True
+        if self._autonomy == "manual":
+            return True  # Manual mode expects content to be provided
+        return False  # Collaborative: review before commit
+
+    @staticmethod
+    def _attach_collapse_config(
+        result: CollapseResult,
+        into: Tract,
+        content: str | None,
+    ) -> CollapseResult:
+        """Attach effective LLM config to *result* when an LLM was used.
+
+        Returns *result* unchanged when no config attachment is needed.
+        """
+        llm_client = getattr(into, "_llm_client", None)
+        if llm_client is not None and content is None:
+            import dataclasses as _dc
+            effective_config = getattr(into, "_default_config", None)
+            if effective_config is not None:
+                result = _dc.replace(result, config=effective_config)
+        return result
+
     def collapse(
         self,
         child: Tract,
@@ -463,14 +500,7 @@ class Session:
         Returns:
             CollapseResult with summary details.
         """
-        # Determine auto_commit from autonomy if not specified
-        if auto_commit is None:
-            if self._autonomy == "autonomous":
-                auto_commit = True
-            elif self._autonomy == "manual":
-                auto_commit = True  # Manual mode expects content to be provided
-            else:
-                auto_commit = False  # Collaborative: review before commit
+        auto_commit = self._resolve_auto_commit(auto_commit)
 
         llm_client = getattr(into, "_llm_client", None)
 
@@ -485,12 +515,7 @@ class Session:
             llm_client=llm_client,
         )
 
-        # Attach effective config for display
-        if llm_client is not None and content is None:
-            import dataclasses as _dc
-            effective_config = getattr(into, "_default_config", None)
-            if effective_config is not None:
-                result = _dc.replace(result, config=effective_config)
+        result = self._attach_collapse_config(result, into, content)
 
         return result
 
@@ -510,13 +535,7 @@ class Session:
         """
         from tract.operations.spawn import acollapse_tract
 
-        if auto_commit is None:
-            if self._autonomy == "autonomous":
-                auto_commit = True
-            elif self._autonomy == "manual":
-                auto_commit = True
-            else:
-                auto_commit = False
+        auto_commit = self._resolve_auto_commit(auto_commit)
 
         llm_client = getattr(into, "_llm_client", None)
 
@@ -531,11 +550,7 @@ class Session:
             llm_client=llm_client,
         )
 
-        if llm_client is not None and content is None:
-            import dataclasses as _dc
-            effective_config = getattr(into, "_default_config", None)
-            if effective_config is not None:
-                result = _dc.replace(result, config=effective_config)
+        result = self._attach_collapse_config(result, into, content)
 
         return result
 

@@ -129,29 +129,17 @@ class SqliteCommitRepository(CommitRepository):
 
         Returns commits in reverse chronological order (newest first).
 
-        Implementation note: instead of issuing one SQL query per ancestor
-        (N+1 pattern), we fetch the starting commit to learn its tract_id,
-        then batch-load all commits for that tract into an in-memory dict
-        and walk the parent chain there.  This trades 2 queries for N+1.
+        Implementation: walks the parent chain one commit at a time via
+        primary-key lookups (O(1) each). Only fetches chain-length rows
+        instead of all commits in the tract.
         """
-        # 1. Fetch starting commit to learn its tract_id
-        start_commit = self.get(commit_hash)
-        if start_commit is None:
-            return []
-
-        # 2. Batch-load all commits for this tract into a dict
-        stmt = select(CommitRow).where(CommitRow.tract_id == start_commit.tract_id)
-        all_commits = self._session.execute(stmt).scalars().all()
-        commits_by_hash: dict[str, CommitRow] = {c.commit_hash: c for c in all_commits}
-
-        # 3. Walk parent chain in-memory
         ancestors: list[CommitRow] = []
         current_hash: str | None = commit_hash
 
         while current_hash is not None:
             if limit is not None and len(ancestors) >= limit:
                 break
-            commit = commits_by_hash.get(current_hash)
+            commit = self.get(current_hash)
             if commit is None:
                 break
             if op_filter is None or commit.operation == op_filter:
@@ -159,6 +147,25 @@ class SqliteCommitRepository(CommitRepository):
             current_hash = commit.parent_hash
 
         return ancestors
+
+    def sum_ancestor_tokens(self, commit_hash: str) -> int:
+        """Sum token_count for the ancestor chain using a recursive CTE."""
+        from sqlalchemy import text
+
+        result = self._session.execute(
+            text(
+                "WITH RECURSIVE ancestors(commit_hash, parent_hash, token_count) AS ("
+                "  SELECT commit_hash, parent_hash, token_count"
+                "  FROM commits WHERE commit_hash = :start_hash"
+                "  UNION ALL"
+                "  SELECT c.commit_hash, c.parent_hash, c.token_count"
+                "  FROM commits c"
+                "  JOIN ancestors a ON c.commit_hash = a.parent_hash"
+                ") SELECT COALESCE(SUM(token_count), 0) FROM ancestors"
+            ),
+            {"start_hash": commit_hash},
+        ).scalar()
+        return int(result)  # type: ignore[arg-type]
 
     def get_by_type(self, content_type: str, tract_id: str) -> Sequence[CommitRow]:
         stmt = (

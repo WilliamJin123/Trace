@@ -143,9 +143,7 @@ class CommitEngine:
         if self._token_budget and self._token_budget.max_tokens is not None:
             total_tokens = token_count
             if parent_hash is not None:
-                ancestors = self._commit_repo.get_ancestors(parent_hash)
-                for ancestor in ancestors:
-                    total_tokens += ancestor.token_count
+                total_tokens += self._commit_repo.sum_ancestor_tokens(parent_hash)
 
             if total_tokens > self._token_budget.max_tokens:
                 if self._token_budget.action == BudgetAction.REJECT:

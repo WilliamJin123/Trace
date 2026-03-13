@@ -324,10 +324,10 @@ class CacheManager:
         if target_hash is None:
             return None
 
-        # Find position of the target commit in the snapshot
-        try:
-            target_idx = list(parent_snapshot.commit_hashes).index(target_hash)
-        except ValueError:
+        # Find position of the target commit in the snapshot (O(n) -> O(1) via dict)
+        hash_to_idx = {h: i for i, h in enumerate(parent_snapshot.commit_hashes)}
+        target_idx = hash_to_idx.get(target_hash)
+        if target_idx is None:
             return None  # Target not in snapshot
 
         # Cache requires DefaultContextCompiler for incremental message building
