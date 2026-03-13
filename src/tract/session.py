@@ -31,6 +31,7 @@ from tract.storage.engine import create_session_factory, create_trace_engine, in
 from tract.storage.sqlite import SqliteSpawnPointerRepository
 
 if TYPE_CHECKING:
+    from pathlib import Path
     from sqlalchemy import Engine
     from sqlalchemy.orm import sessionmaker
 
@@ -361,7 +362,7 @@ class Session:
         # Spawn-with-persona parameters
         profile: str | None = None,
         stage: str | None = None,
-        directives: dict[str, str] | None = None,
+        directives: dict[str, str | Path] | None = None,
         configure: dict[str, object] | None = None,
     ) -> Tract:
         """Spawn a child tract from a parent.
@@ -382,9 +383,11 @@ class Session:
                 ``"research"``).  Calls ``child.load_profile(profile)``.
             stage: Optional stage name to apply from the loaded profile.
                 Requires ``profile`` to be set.  Calls ``child.apply_stage(stage)``.
-            directives: Optional ``{name: text}`` dict of named directives to
-                commit on the child.  Applied **after** profile directives, so
-                they override any same-named directive from the profile.
+            directives: Optional ``{name: text_or_path}`` dict of named
+                directives to commit on the child.  Values may be inline
+                strings or ``Path`` objects (which are read as UTF-8 files).
+                Applied **after** profile directives, so they override any
+                same-named directive from the profile.
             configure: Optional ``{key: value}`` dict passed to
                 ``child.configure(**configure)``.  Applied last, so explicit
                 config wins over profile/stage defaults.
@@ -422,8 +425,12 @@ class Session:
         if stage is not None:
             child.apply_stage(stage)
         if directives:
-            for dir_name, dir_text in directives.items():
-                child.directive(dir_name, dir_text)
+            from pathlib import Path as _Path
+            for dir_name, dir_value in directives.items():
+                if isinstance(dir_value, _Path):
+                    child.directive(dir_name, path=dir_value)
+                else:
+                    child.directive(dir_name, dir_value)
         if configure:
             child.configure(**configure)
 

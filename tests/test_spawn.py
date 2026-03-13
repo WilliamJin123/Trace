@@ -346,6 +346,26 @@ class TestSpawn:
 
         session.close()
 
+    def test_spawn_directives_from_path(self, tmp_path):
+        """Spawn with Path directive values reads text from files."""
+        from pathlib import Path
+
+        md = tmp_path / "analyst.md"
+        md.write_text("You are a performance engineer.", encoding="utf-8")
+
+        session, parent = _create_session_with_parent(tmp_path)
+        child = session.spawn(
+            parent,
+            purpose="file-based persona",
+            directives={"role": Path(md)},
+        )
+
+        compiled = child.compile()
+        text = " ".join(m.content for m in compiled.messages)
+        assert "performance engineer" in text
+
+        session.close()
+
 
 # ---------------------------------------------------------------------------
 # Collapse tests

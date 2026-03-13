@@ -81,6 +81,39 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
+def _resolve_text(
+    text: str | None = None,
+    path: str | Path | None = None,
+    *,
+    label: str = "text",
+) -> str:
+    """Return *text* directly or read it from *path*.
+
+    Exactly one of *text* or *path* must be provided.
+
+    Args:
+        text: Inline text content.
+        path: Path to a file whose contents will be read (UTF-8).
+        label: Name used in error messages (e.g. ``"text"``, ``"directive"``).
+
+    Raises:
+        ValueError: If both or neither argument is supplied, or file is missing.
+    """
+    from pathlib import Path as _Path
+
+    if text is not None and path is not None:
+        raise ValueError(f"Pass either {label} or path=, not both.")
+    if text is None and path is None:
+        raise ValueError(f"Either {label} or path= is required.")
+    if path is not None:
+        p = _Path(path)
+        if not p.is_file():
+            raise ValueError(f"File not found: {p}")
+        return p.read_text(encoding="utf-8")
+    return text  # type: ignore[return-value]
+
+
 # ---------------------------------------------------------------------------
 # Compile strategy type
 # ---------------------------------------------------------------------------
@@ -792,8 +825,9 @@ class Tract:
     def directive(
         self,
         name: str,
-        text: str,
+        text: str | None = None,
         *,
+        path: str | Path | None = None,
         priority: Priority | None = None,
         message: str | None = None,
         tags: list[str] | None = None,
@@ -802,11 +836,14 @@ class Tract:
 
         Default priority is PINNED. The compiler deduplicates by name:
         same name -> closest to HEAD wins.
+
+        Pass *text* inline or load from *path* (mutually exclusive).
         """
         from tract.models.annotations import Priority as _Priority
         from tract.models.content import InstructionContent
 
-        content = InstructionContent(text=text, name=name)
+        resolved = _resolve_text(text, path, label="text")
+        content = InstructionContent(text=resolved, name=name)
         info = self.commit(
             content,
             message=message or f"directive: {name}",
@@ -1352,8 +1389,9 @@ class Tract:
 
     def system(
         self,
-        text: str,
+        text: str | None = None,
         *,
+        path: str | Path | None = None,
         edit: str | None = None,
         message: str | None = None,
         metadata: dict | None = None,
@@ -1371,8 +1409,11 @@ class Tract:
         compression unchanged.  Pass ``priority=`` to override (e.g.
         ``Priority.NORMAL`` to allow compression).
 
+        Pass *text* inline or load from *path* (mutually exclusive).
+
         Args:
             text: The instruction text.
+            path: Path to a file whose contents will be used as text.
             edit: If provided, the hash of the commit to replace (EDIT
                 operation).  Omit for a normal APPEND.
             message: Optional commit message.
@@ -1391,6 +1432,7 @@ class Tract:
         """
         from tract.models.content import InstructionContent
 
+        text = _resolve_text(text, path, label="text")
         info = self.commit(
             InstructionContent(text=text),
             operation=CommitOperation.EDIT if edit else CommitOperation.APPEND,
@@ -1417,8 +1459,9 @@ class Tract:
 
     def user(
         self,
-        text: str,
+        text: str | None = None,
         *,
+        path: str | Path | None = None,
         edit: str | None = None,
         message: str | None = None,
         name: str | None = None,
@@ -1433,8 +1476,11 @@ class Tract:
 
         Shorthand for ``commit(DialogueContent(role='user', text=text))``.
 
+        Pass *text* inline or load from *path* (mutually exclusive).
+
         Args:
             text: The message text.
+            path: Path to a file whose contents will be used as text.
             edit: If provided, the hash of the commit to replace (EDIT
                 operation).  Omit for a normal APPEND.
             message: Optional commit message.
@@ -1453,6 +1499,7 @@ class Tract:
         """
         from tract.models.content import DialogueContent
 
+        text = _resolve_text(text, path, label="text")
         info = self.commit(
             DialogueContent(role="user", text=text, name=name),
             operation=CommitOperation.EDIT if edit else CommitOperation.APPEND,
@@ -1479,8 +1526,9 @@ class Tract:
 
     def assistant(
         self,
-        text: str,
+        text: str | None = None,
         *,
+        path: str | Path | None = None,
         edit: str | None = None,
         message: str | None = None,
         name: str | None = None,
@@ -1496,8 +1544,11 @@ class Tract:
 
         Shorthand for ``commit(DialogueContent(role='assistant', text=text))``.
 
+        Pass *text* inline or load from *path* (mutually exclusive).
+
         Args:
             text: The response text.
+            path: Path to a file whose contents will be used as text.
             edit: If provided, the hash of the commit to replace (EDIT
                 operation).  Omit for a normal APPEND.
             message: Optional commit message.
@@ -1517,6 +1568,7 @@ class Tract:
         """
         from tract.models.content import DialogueContent
 
+        text = _resolve_text(text, path, label="text")
         info = self.commit(
             DialogueContent(role="assistant", text=text, name=name),
             operation=CommitOperation.EDIT if edit else CommitOperation.APPEND,

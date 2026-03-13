@@ -271,3 +271,90 @@ class TestDirectiveBranchOverride:
             texts = [m.content for m in compiled.messages]
             assert any("Main protocol" in txt for txt in texts)
             assert not any("Feature protocol" in txt for txt in texts)
+
+
+# ---------------------------------------------------------------------------
+# File-loading (path= parameter)
+# ---------------------------------------------------------------------------
+
+
+class TestFileLoading:
+    """Tests for loading text from markdown files via path= parameter."""
+
+    def test_directive_from_file(self, tmp_path):
+        """directive(name, path=...) reads text from a file."""
+        md = tmp_path / "safety.md"
+        md.write_text("Never write to production DB.", encoding="utf-8")
+
+        with Tract.open() as t:
+            info = t.directive("safety", path=str(md))
+            compiled = t.compile()
+            assert any("production DB" in m.content for m in compiled.messages)
+
+    def test_system_from_file(self, tmp_path):
+        """system(path=...) reads text from a file."""
+        md = tmp_path / "system.md"
+        md.write_text("You are a security analyst.", encoding="utf-8")
+
+        with Tract.open() as t:
+            t.system(path=str(md))
+            compiled = t.compile()
+            assert any("security analyst" in m.content for m in compiled.messages)
+
+    def test_user_from_file(self, tmp_path):
+        """user(path=...) reads text from a file."""
+        md = tmp_path / "task.md"
+        md.write_text("Audit the auth module.", encoding="utf-8")
+
+        with Tract.open() as t:
+            t.user(path=str(md))
+            compiled = t.compile()
+            assert any("auth module" in m.content for m in compiled.messages)
+
+    def test_assistant_from_file(self, tmp_path):
+        """assistant(path=...) reads text from a file."""
+        md = tmp_path / "response.md"
+        md.write_text("The auth module is secure.", encoding="utf-8")
+
+        with Tract.open() as t:
+            t.assistant(path=str(md))
+            compiled = t.compile()
+            assert any("auth module is secure" in m.content for m in compiled.messages)
+
+    def test_text_and_path_raises(self, tmp_path):
+        """Passing both text and path raises ValueError."""
+        md = tmp_path / "x.md"
+        md.write_text("content", encoding="utf-8")
+
+        with Tract.open() as t:
+            with pytest.raises(ValueError, match="not both"):
+                t.directive("test", "inline text", path=str(md))
+
+    def test_neither_text_nor_path_raises(self):
+        """Passing neither text nor path raises ValueError."""
+        with Tract.open() as t:
+            with pytest.raises(ValueError, match="required"):
+                t.directive("test")
+
+    def test_path_file_not_found_raises(self):
+        """Non-existent path raises ValueError."""
+        with Tract.open() as t:
+            with pytest.raises(ValueError, match="File not found"):
+                t.directive("test", path="/nonexistent/file.md")
+
+    def test_directive_path_with_unicode(self, tmp_path):
+        """File with unicode content is read correctly."""
+        md = tmp_path / "unicode.md"
+        md.write_text("Priorit\u00e4t: Sicherheit \u00fcber alles.", encoding="utf-8")
+
+        with Tract.open() as t:
+            t.directive("priority", path=str(md))
+            compiled = t.compile()
+            assert any("Sicherheit" in m.content for m in compiled.messages)
+
+    def test_system_inline_still_works(self):
+        """system(text) still works after path= was added."""
+        with Tract.open() as t:
+            t.system("You are helpful.")
+            compiled = t.compile()
+            assert any("helpful" in m.content for m in compiled.messages)
