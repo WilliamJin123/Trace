@@ -419,6 +419,10 @@ class Session:
         self._tracts[child.tract_id] = child
         child._seed_base_tags()
 
+        # Inherit prompt_dir from parent
+        if parent._prompt_dir is not None:
+            child._prompt_dir = parent._prompt_dir
+
         # Apply persona: profile → stage → directives → configure
         if profile is not None:
             child.load_profile(profile)

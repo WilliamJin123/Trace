@@ -358,3 +358,80 @@ class TestFileLoading:
             t.system("You are helpful.")
             compiled = t.compile()
             assert any("helpful" in m.content for m in compiled.messages)
+
+    def test_prompt_dir_explicit(self, tmp_path):
+        """Tract.open(prompt_dir=...) resolves relative paths from that dir."""
+        prompts = tmp_path / "prompts"
+        prompts.mkdir()
+        (prompts / "role.md").write_text("You are a DBA.", encoding="utf-8")
+
+        with Tract.open(prompt_dir=str(prompts)) as t:
+            t.directive("role", path="role.md")
+            compiled = t.compile()
+            assert any("DBA" in m.content for m in compiled.messages)
+
+    def test_prompt_dir_auto_discovery(self, tmp_path, monkeypatch):
+        """.tract/prompts/ is auto-discovered when prompt_dir is not set."""
+        prompts = tmp_path / ".tract" / "prompts"
+        prompts.mkdir(parents=True)
+        (prompts / "safety.md").write_text("No eval().", encoding="utf-8")
+
+        monkeypatch.chdir(tmp_path)
+        with Tract.open() as t:
+            assert t._prompt_dir is not None
+            t.directive("safety", path="safety.md")
+            compiled = t.compile()
+            assert any("eval" in m.content for m in compiled.messages)
+
+    def test_prompt_dir_no_auto_discovery_without_dir(self, tmp_path, monkeypatch):
+        """No auto-discovery when .tract/prompts/ doesn't exist."""
+        monkeypatch.chdir(tmp_path)
+        with Tract.open() as t:
+            assert t._prompt_dir is None
+
+    def test_prompt_dir_fallback_to_cwd(self, tmp_path):
+        """When prompt_dir is set but file is only at CWD, still resolves."""
+        prompts = tmp_path / "prompts"
+        prompts.mkdir()
+        # File is NOT in prompts dir, but exists at the given relative path
+        (tmp_path / "local.md").write_text("Local file.", encoding="utf-8")
+
+        with Tract.open(prompt_dir=str(prompts)) as t:
+            # Absolute path bypasses prompt_dir
+            t.directive("local", path=str(tmp_path / "local.md"))
+            compiled = t.compile()
+            assert any("Local file" in m.content for m in compiled.messages)
+
+    def test_prompt_dir_inherited_by_spawn(self, tmp_path):
+        """Spawned child inherits prompt_dir from parent."""
+        from tract import Session
+
+        prompts = tmp_path / "prompts"
+        prompts.mkdir()
+        (prompts / "child-role.md").write_text("You are a worker.", encoding="utf-8")
+
+        db = str(tmp_path / "test.db")
+        session = Session.open(db)
+        parent = session.create_tract(display_name="parent")
+        parent._prompt_dir = str(prompts)
+        parent.system("Hello")
+
+        child = session.spawn(
+            parent,
+            purpose="work",
+            directives={"role": "child-role.md"},
+        )
+        # Child should have inherited prompt_dir but directive was passed as
+        # string, not Path, so it won't auto-resolve via prompt_dir.
+        # Use path= explicitly via the Path type:
+        from pathlib import Path
+        child2 = session.spawn(
+            parent,
+            purpose="work2",
+            directives={"role": Path("child-role.md")},
+        )
+        compiled = child2.compile()
+        text = " ".join(m.content for m in compiled.messages)
+        assert "worker" in text
+
+        session.close()

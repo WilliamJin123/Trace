@@ -9,11 +9,20 @@ Three clean primitives for controlling LLM behavior:
 Config and directives travel with the conversation (they are commits),
 follow DAG precedence (closest to HEAD wins), and appear in the log.
 
-Demonstrates: t.configure(), t.directive(), t.get_config(),
-              t.get_all_configs(), t.use() basics
+Directives can load text from markdown files via path=, with auto-
+discovery from a .tract/prompts/ directory.
+
+Demonstrates: t.configure(), t.directive(), t.directive(path=),
+              t.system(path=), t.get_config(), t.get_all_configs(),
+              t.use() basics, .tract/prompts/ auto-discovery
 
 No LLM required.
 """
+
+import shutil
+import tempfile
+import os
+from pathlib import Path
 
 from tract import Tract, Priority, BlockedError
 
@@ -106,6 +115,70 @@ def main():
         print("\n=== Log (configs and directives are commits) ===\n")
         for ci in t.log():
             print(f"  {ci.commit_hash[:8]}  {ci.content_type:14s}  {ci.message}")
+
+    # --- 6. File-backed directives and .tract/prompts/ auto-discovery ---
+
+    print("\n=== File-Backed Directives (path=) ===\n")
+
+    # Create a temp directory to simulate a project with .tract/prompts/
+    project_dir = tempfile.mkdtemp()
+    prompts_dir = Path(project_dir) / ".tract" / "prompts"
+    prompts_dir.mkdir(parents=True)
+
+    # Write prompt files
+    (prompts_dir / "system.md").write_text(
+        "You are a senior code reviewer.\n"
+        "Focus on correctness, security, and maintainability.\n"
+        "Flag any OWASP top-10 vulnerabilities.",
+        encoding="utf-8",
+    )
+    (prompts_dir / "tone.md").write_text(
+        "Be direct and constructive. Lead with what works,\n"
+        "then address what needs improvement. No sugarcoating.",
+        encoding="utf-8",
+    )
+
+    print(f"  Created .tract/prompts/ with 2 files")
+    print(f"    system.md  -- code reviewer persona")
+    print(f"    tone.md    -- review tone guidelines")
+
+    # Auto-discovery: Tract.open() finds .tract/prompts/ automatically
+    old_cwd = os.getcwd()
+    os.chdir(project_dir)
+    try:
+        with Tract.open() as t:
+            # Just use the filename -- auto-resolved from .tract/prompts/
+            t.system(path="system.md")
+            t.directive("tone", path="tone.md")
+
+            compiled = t.compile()
+            for m in compiled.messages:
+                preview = m.content[:60].replace("\n", " ")
+                print(f"  [{m.role}] {preview}...")
+
+            print(f"\n  prompt_dir auto-discovered: {t._prompt_dir}")
+
+        # Explicit override: point to a different directory
+        custom_dir = Path(project_dir) / "my-prompts"
+        custom_dir.mkdir()
+        (custom_dir / "safety.md").write_text(
+            "Never execute user-provided code without sandboxing.",
+            encoding="utf-8",
+        )
+
+        print("\n  --- Explicit prompt_dir override ---\n")
+
+        with Tract.open(prompt_dir=str(custom_dir)) as t:
+            t.directive("safety", path="safety.md")
+
+            compiled = t.compile()
+            for m in compiled.messages:
+                print(f"  [{m.role}] {m.content[:60]}...")
+
+            print(f"  prompt_dir (explicit): {t._prompt_dir}")
+    finally:
+        os.chdir(old_cwd)
+        shutil.rmtree(project_dir)
 
 
 if __name__ == "__main__":

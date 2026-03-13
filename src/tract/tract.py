@@ -87,6 +87,7 @@ def _resolve_text(
     path: str | Path | None = None,
     *,
     label: str = "text",
+    prompt_dir: str | Path | None = None,
 ) -> str:
     """Return *text* directly or read it from *path*.
 
@@ -96,6 +97,10 @@ def _resolve_text(
         text: Inline text content.
         path: Path to a file whose contents will be read (UTF-8).
         label: Name used in error messages (e.g. ``"text"``, ``"directive"``).
+        prompt_dir: Base directory for resolving relative *path* values.
+            When set and *path* is relative, ``prompt_dir / path`` is tried
+            first.  Falls back to *path* as-is if the resolved file does
+            not exist.
 
     Raises:
         ValueError: If both or neither argument is supplied, or file is missing.
@@ -108,6 +113,11 @@ def _resolve_text(
         raise ValueError(f"Either {label} or path= is required.")
     if path is not None:
         p = _Path(path)
+        # Resolve relative paths against prompt_dir when available
+        if not p.is_absolute() and prompt_dir is not None:
+            candidate = _Path(prompt_dir) / p
+            if candidate.is_file():
+                return candidate.read_text(encoding="utf-8")
         if not p.is_file():
             raise ValueError(f"File not found: {p}")
         return p.read_text(encoding="utf-8")
@@ -365,6 +375,9 @@ class Tract:
         # Custom tools registered via @t.tool decorator
         self._custom_tools: dict[str, Any] = {}  # name -> ToolDefinition
 
+        # Prompt file directory (auto-discovered or explicit)
+        self._prompt_dir: str | Path | None = None
+
     @classmethod
     def open(
         cls,
@@ -391,6 +404,7 @@ class Tract:
         tool_profile: str | ToolProfile | None = None,
         tool_result_format: Literal["minimal", "json", "verbose"] | None = None,
         retry: RetryConfig | None = None,
+        prompt_dir: str | Path | None = None,
     ) -> Tract:
         """Open (or create) a Trace repository.
 
@@ -463,6 +477,10 @@ class Tract:
                 are retried with exponential backoff.  Per-call overrides
                 are accepted by :meth:`generate`, :meth:`chat`, and their
                 async counterparts.
+            prompt_dir: Base directory for resolving relative ``path=``
+                arguments in :meth:`system`, :meth:`user`, :meth:`directive`,
+                and :meth:`assistant`.  When ``None`` (default), the
+                ``.tract/prompts/`` directory is used if it exists.
 
         Returns:
             A ready-to-use ``Tract`` instance.
@@ -666,6 +684,15 @@ class Tract:
         if retry is not None:
             tract._retry_config = retry
 
+        # Prompt directory: explicit > auto-discover .tract/prompts/
+        if prompt_dir is not None:
+            tract._prompt_dir = prompt_dir
+        else:
+            from pathlib import Path as _Path
+            auto = _Path(".tract") / "prompts"
+            if auto.is_dir():
+                tract._prompt_dir = auto
+
         return tract
 
     @classmethod
@@ -842,7 +869,7 @@ class Tract:
         from tract.models.annotations import Priority as _Priority
         from tract.models.content import InstructionContent
 
-        resolved = _resolve_text(text, path, label="text")
+        resolved = _resolve_text(text, path, label="text", prompt_dir=self._prompt_dir)
         content = InstructionContent(text=resolved, name=name)
         info = self.commit(
             content,
@@ -1432,7 +1459,7 @@ class Tract:
         """
         from tract.models.content import InstructionContent
 
-        text = _resolve_text(text, path, label="text")
+        text = _resolve_text(text, path, label="text", prompt_dir=self._prompt_dir)
         info = self.commit(
             InstructionContent(text=text),
             operation=CommitOperation.EDIT if edit else CommitOperation.APPEND,
@@ -1499,7 +1526,7 @@ class Tract:
         """
         from tract.models.content import DialogueContent
 
-        text = _resolve_text(text, path, label="text")
+        text = _resolve_text(text, path, label="text", prompt_dir=self._prompt_dir)
         info = self.commit(
             DialogueContent(role="user", text=text, name=name),
             operation=CommitOperation.EDIT if edit else CommitOperation.APPEND,
@@ -1568,7 +1595,7 @@ class Tract:
         """
         from tract.models.content import DialogueContent
 
-        text = _resolve_text(text, path, label="text")
+        text = _resolve_text(text, path, label="text", prompt_dir=self._prompt_dir)
         info = self.commit(
             DialogueContent(role="assistant", text=text, name=name),
             operation=CommitOperation.EDIT if edit else CommitOperation.APPEND,
