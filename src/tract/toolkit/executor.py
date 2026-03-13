@@ -109,7 +109,7 @@ class ToolExecutor:
         # Small LLMs often invent extra parameters not in the tool schema.
         sig = inspect.signature(tool.handler)
         if not any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
-            valid_params = set(sig.parameters.keys())
+            valid_params = sig.parameters.keys()
             arguments = {k: v for k, v in arguments.items() if k in valid_params}
 
         # Pre-check: detect missing required parameters and provide schema-aware errors
@@ -164,7 +164,7 @@ class ToolExecutor:
         Returns:
             List of tool name strings.
         """
-        return list(self._tools.keys())
+        return list(self._tools)
 
     def set_profile(self, profile: str | ToolProfile) -> None:
         """Change the active tool profile.

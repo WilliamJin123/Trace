@@ -64,7 +64,7 @@ _ACTION_TO_DOMAIN: dict[str, str] = {
 }
 
 # All known action names
-_ALL_ACTIONS: list[str] = list(_ACTION_TO_DOMAIN.keys())
+_ALL_ACTIONS: list[str] = list(_ACTION_TO_DOMAIN)
 
 
 def get_discovery_tools(tract: Tract) -> list[ToolDefinition]:

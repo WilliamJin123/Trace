@@ -120,7 +120,7 @@ def check_health(
                 head, commit_repo, parent_repo, stop_at=reachable
             )
 
-    orphans = set(all_commits.keys()) - reachable
+    orphans = all_commits.keys() - reachable
     report.orphan_count = len(orphans)
     report.unreachable_commits = sorted(orphans)
     if orphans:

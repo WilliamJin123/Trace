@@ -207,7 +207,7 @@ def _compute_generation_config_changes(
         return {}
 
     # Find all keys across both configs
-    all_keys = set(config_a.keys()) | set(config_b.keys())
+    all_keys = config_a.keys() | config_b.keys()
     changes: dict[str, tuple[Any, Any]] = {}
 
     for key in all_keys:

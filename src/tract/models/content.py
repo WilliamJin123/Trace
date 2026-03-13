@@ -250,7 +250,7 @@ def _all_valid_types(
     """Return sorted list of all valid content_type values."""
     types = sorted(BUILTIN_CONTENT_TYPES)
     if custom_registry:
-        types = sorted(set(types) | set(custom_registry.keys()))
+        types = sorted(set(types) | custom_registry.keys())
     return types
 
 

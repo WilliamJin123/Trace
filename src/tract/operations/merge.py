@@ -153,7 +153,7 @@ def detect_conflicts(
     b_commit_hashes = {r.commit_hash for r in branch_b_commits}
 
     # --- 1. Both EDIT same target ---
-    common_edit_targets = set(a_edits.keys()) & set(b_edits.keys())
+    common_edit_targets = a_edits.keys() & b_edits.keys()
     for target in common_edit_targets:
         row_a, info_a = a_edits[target]
         row_b, info_b = b_edits[target]
@@ -172,7 +172,7 @@ def detect_conflicts(
 
     # --- 2. SKIP vs EDIT (both directions) ---
     # Batch-fetch annotations for all edit targets to avoid N+1 queries
-    all_edit_targets = list(set(a_edits.keys()) | set(b_edits.keys()))
+    all_edit_targets = list(a_edits.keys() | b_edits.keys())
     annotations_map = (
         annotation_repo.batch_get_latest(all_edit_targets)
         if all_edit_targets

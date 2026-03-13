@@ -242,7 +242,7 @@ def _build_discover_tool(
 ) -> ToolDefinition:
     """Create the discover meta-tool that returns schemas on demand."""
 
-    domain_names = list(COMPACT_DOMAINS.keys())
+    domain_names = list(COMPACT_DOMAINS)
 
     def handler(domain: str, action: str | None = None) -> str:
         if domain not in COMPACT_DOMAINS:
