@@ -52,21 +52,32 @@ def main():
         ]})
 
         # Verbose result (imagine 500 lines of file listing)
-        orig = t.tool_result("c1", "find_files",
+        verbose_result = (
             "src/main.py\nsrc/utils.py\nsrc/config.py\nsrc/models.py\n"
             "src/routes.py\nsrc/auth.py\nsrc/cache.py\nsrc/logging.py\n"
-            "tests/test_main.py\ntests/test_utils.py\ntests/conftest.py")
+            "tests/test_main.py\ntests/test_utils.py\ntests/conftest.py"
+        )
+        orig = t.tool_result("c1", "find_files", verbose_result)
 
         before = t.compile().token_count
+        print(f"  Original tool result ({orig.token_count} tokens):")
+        print(f"    {verbose_result[:70]}...")
 
         # Edit: keep only the summary
-        edited = t.tool_result("c1", "find_files",
-            "Found 11 Python files (8 in src/, 3 in tests/)",
+        summary = "Found 11 Python files (8 in src/, 3 in tests/)"
+        edited = t.tool_result("c1", "find_files", summary,
             edit=orig.commit_hash)
 
         after = t.compile().token_count
-        print(f"  Before edit: {before} tokens")
-        print(f"  After edit:  {after} tokens ({before - after} saved)")
+        print(f"  Edited to:")
+        print(f'    "{summary}"')
+        print(f"  Tokens: {before} -> {after} ({before - after} saved)")
+
+        # Show what compilation looks like after the edit
+        print(f"\n  Compiled context:")
+        for m in t.compile().messages:
+            preview = (m.content or "")[:65].replace("\n", " ")
+            print(f"    [{m.role:9s}] {preview}")
 
     # =================================================================
     # 2. Drop failed tool turns
@@ -85,12 +96,14 @@ def main():
             {"id": "c1", "name": "deploy", "arguments": {"env": "prod"}},
         ]})
         t.tool_result("c1", "deploy", "Error: Connection refused", is_error=True)
+        print('  deploy(env=prod) -> "Error: Connection refused" [FAIL]')
 
         # Another failure
         t.assistant("Retrying...", metadata={"tool_calls": [
             {"id": "c2", "name": "deploy", "arguments": {"env": "prod"}},
         ]})
         t.tool_result("c2", "deploy", "Error: Timeout after 30s", is_error=True)
+        print('  deploy(env=prod) -> "Error: Timeout after 30s" [FAIL]')
 
         # Success
         t.assistant("Third attempt...", metadata={"tool_calls": [
@@ -98,14 +111,22 @@ def main():
         ]})
         t.tool_result("c3", "deploy", "Deployed build #1847 to prod.")
         t.assistant("Deployment complete.")
+        print('  deploy(env=prod) -> "Deployed build #1847 to prod." [OK]')
 
         before = t.compile().token_count
+        print(f"\n  Before dropping failed turns: {before} tokens")
+        print(f"  Context includes {len(t.find_tool_turns())} tool turns (2 failed, 1 success)")
+
         drop = t.drop_failed_tool_turns()
         after = t.compile().token_count
 
-        print(f"  Before drop: {before} tokens")
-        print(f"  Dropped:     {drop.turns_dropped} failed turn(s) ({drop.commits_skipped} commits)")
-        print(f"  After drop:  {after} tokens ({before - after} saved)")
+        print(f"  After drop: {after} tokens ({before - after} saved)")
+        print(f"  Dropped {drop.turns_dropped} failed turn(s) ({drop.commits_skipped} commits)")
+
+        print(f"\n  Compiled context (failed turns removed):")
+        for m in t.compile().messages:
+            preview = (m.content or "")[:65].replace("\n", " ")
+            print(f"    [{m.role:9s}] {preview}")
 
     # =================================================================
     # 3. Batch compaction with compress_tool_calls()
@@ -176,22 +197,29 @@ def main():
                      "arguments": {"path": fname}},
                 ]})
                 t.tool_result(f"read_{fname}", "read_file", content)
+                lines = content.count("\n") + 1
+                print(f"  read_file({fname}) -> {lines} lines of code")
 
             before = t.compile().token_count
             turns_before = len(t.find_tool_turns())
+            print(f"\n  Before compaction: {turns_before} tool turns, {before} tokens")
 
             # Compact all tool results at once
+            print("  Calling compress_tool_calls()...")
             result = t.compress_tool_calls(
                 instructions="Summarize each file's purpose, key classes/functions, "
                              "and any security concerns. Keep it concise.",
             )
 
             after = t.compile().token_count
-            print(f"  Tool turns:    {turns_before}")
-            print(f"  Before:        {before} tokens")
-            print(f"  After:         {after} tokens")
-            print(f"  Ratio:         {result.compression_ratio:.1%}")
-            print(f"  EDIT commits:  {len(result.edit_commits)}")
+            print(f"  After compaction:  {after} tokens ({result.compression_ratio:.1%} ratio)")
+            print(f"  EDIT commits created: {len(result.edit_commits)}")
+
+            # Show what the compacted context looks like
+            print(f"\n  Compiled context after compaction:")
+            for m in t.compile().messages:
+                preview = (m.content or "")[:70].replace("\n", " ")
+                print(f"    [{m.role:9s}] {preview}")
 
     # =================================================================
     # 4. Auto-compact middleware pattern
@@ -229,12 +257,13 @@ def main():
             t.assistant(f"Searching {i}...", metadata={"tool_calls": [
                 {"id": f"s{i}", "name": "search", "arguments": {"q": f"topic {i}"}},
             ]})
-            t.tool_result(f"s{i}", "search",
-                f"Found {i*3+1} results for topic {i}. "
+            result_text = (f"Found {i*3+1} results for topic {i}. "
                 f"Key finding: {'detailed analysis ' * 5}conclusion #{i}.")
+            t.tool_result(f"s{i}", "search", result_text)
+            print(f"  search(topic {i}) -> {result_text[:55]}...")
 
-        print(f"  Total compaction triggers: {compact_state['compactions']}")
-        print(f"  Remaining tool tokens:     {compact_state['result_tokens']}")
+        print(f"\n  Compaction triggers: {compact_state['compactions']}")
+        print(f"  (In production, compress_tool_calls() runs at each trigger)")
 
     # =================================================================
     # Putting it together

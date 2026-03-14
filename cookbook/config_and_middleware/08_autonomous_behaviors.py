@@ -55,9 +55,16 @@ def main():
         compiled = t.compile()
         total = len(t.log())
         skipped = len(t.skipped())
-        print(f"  Total commits: {total}")
-        print(f"  Auto-skipped:  {skipped} (config + reasoning)")
-        print(f"  In compiled:   {compiled.commit_count}")
+        print(f"  Commits made:")
+        for ci in t.log():
+            skip = " [SKIPPED]" if ci.effective_priority == "skip" else ""
+            print(f"    {ci.content_type:12s} {(ci.message or '')[:45]}{skip}")
+        print()
+        print(f"  Compiled context ({compiled.commit_count} of {total} commits):")
+        for m in compiled.messages:
+            print(f"    [{m.role:9s}] {(m.content or '')[:60]}")
+        print()
+        print(f"  Auto-skipped: {skipped} (config + reasoning)")
         assert skipped == 2, f"Expected 2 skipped, got {skipped}"
 
     # =================================================================
@@ -90,7 +97,9 @@ def main():
             t.user(f"Finding #{i}: data point about topic {i}")
             t.assistant(f"Noted finding #{i}.")
 
+        print(f"  Built up {len(t.log())} commits (7 user + 7 assistant + 1 system)")
         print(f"  Trigger fired: {compress_state['triggered']}")
+        print(f"  (In production, compress() would summarize older commits)")
         assert compress_state["triggered"], "Should have triggered"
 
     # =================================================================
@@ -132,24 +141,31 @@ def main():
 
         t.configure(stage="research")
         t.system("You are a software engineer.")
+
+        print("  [research stage]")
         t.user("Research stack data structures.")
+        print('    user:      "Research stack data structures."')
         t.assistant("A stack is a LIFO structure...")
+        print('    assistant: "A stack is a LIFO structure..."')
 
         # This commit contains "implement" -- triggers routing
         t.user("Now implement a Stack class with push and pop.")
+        print('    user:      "Now implement a Stack class with push and pop."')
+        print(f"    >> routed: {route_state['transitions'][-1]}")
 
         stage = t.get_config("stage")
-        print(f"  Current stage: {stage}")
-        print(f"  Transitions:   {route_state['transitions']}")
-        assert stage == "implementation"
+        print(f"\n  [implementation stage]")
+        t.assistant("Here's the implementation.")
+        print('    assistant: "Here\'s the implementation."')
 
         # This commit contains "test" -- triggers routing again
-        t.assistant("Here's the implementation.")
         t.user("Now write tests to verify the Stack works.")
+        print('    user:      "Now write tests to verify the Stack works."')
+        print(f"    >> routed: {route_state['transitions'][-1]}")
 
         stage = t.get_config("stage")
-        print(f"  Current stage: {stage}")
-        print(f"  Transitions:   {route_state['transitions']}")
+        print(f"\n  [validation stage]")
+        print(f"  All transitions: {route_state['transitions']}")
         assert stage == "validation"
 
     # =================================================================
@@ -188,19 +204,24 @@ def main():
         t.configure(temperature=0.7)
 
         t.system("You are a deployment agent.")
+
         t.assistant("Deploying...", metadata={"tool_calls": [
             {"id": "c1", "name": "deploy", "arguments": {}},
         ]})
         t.tool_result("c1", "deploy", "Connection refused", is_error=True)
+        print('  deploy() -> "Connection refused" [ERROR]')
+        print(f"    consecutive errors: {error_state['consecutive_errors']}")
 
         t.assistant("Retrying...", metadata={"tool_calls": [
             {"id": "c2", "name": "deploy", "arguments": {}},
         ]})
         t.tool_result("c2", "deploy", "Timeout", is_error=True)
+        print('  deploy() -> "Timeout" [ERROR]')
+        print(f"    consecutive errors: {error_state['consecutive_errors']}")
 
         # After 2 errors, temperature should have dropped
         temp = t.get_config("temperature")
-        print(f"  After 2 errors: temperature = {temp}")
+        print(f"    >> temperature adapted: 0.7 -> {temp}")
         assert temp == 0.1, f"Expected 0.1, got {temp}"
 
         # Successful deploy restores temperature
@@ -208,10 +229,10 @@ def main():
             {"id": "c3", "name": "deploy", "arguments": {}},
         ]})
         t.tool_result("c3", "deploy", "Deployed successfully.")
+        print('  deploy() -> "Deployed successfully." [OK]')
 
         temp = t.get_config("temperature")
-        print(f"  After success:  temperature = {temp}")
-        print(f"  Adjustments:    {error_state['adjustments']}")
+        print(f"    >> temperature restored: 0.1 -> {temp}")
         assert temp == 0.7, f"Expected 0.7, got {temp}"
 
     # =================================================================
@@ -248,12 +269,11 @@ def main():
             t.assistant(f"Searching batch {i}...", metadata={"tool_calls": [
                 {"id": f"c{i}", "name": "search", "arguments": {"q": f"topic_{i}"}},
             ]})
-            t.tool_result(
-                f"c{i}", "search",
-                f"Result {i}: " + "x" * 100,  # verbose result
-            )
+            result_text = f"Result {i}: " + "x" * 100  # verbose result
+            t.tool_result(f"c{i}", "search", result_text)
+            print(f"  search(topic_{i}) -> {result_text[:50]}...")
 
-        print(f"  Tool tokens accumulated: {tool_state['result_tokens']}")
+        print(f"\n  Tool tokens accumulated: {tool_state['result_tokens']}")
         print(f"  Compaction flagged:      {tool_state['compaction_needed']}")
 
     # =================================================================
