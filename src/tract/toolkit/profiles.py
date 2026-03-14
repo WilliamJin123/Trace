@@ -10,12 +10,9 @@ Five profiles:
 
 from __future__ import annotations
 
-import logging
 from typing import Literal, get_args
 
 from tract.toolkit.models import ToolConfig, ToolName, ToolProfile
-
-logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Profile name type

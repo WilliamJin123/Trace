@@ -5,14 +5,11 @@ Frozen dataclasses for tool definitions, profiles, configs, and results.
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-
-logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Canonical tool name type — single source of truth for autocomplete & validation

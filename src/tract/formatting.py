@@ -349,13 +349,7 @@ def _inline_markdown(text: str) -> str:
     return text
 
 
-_ROLE_COLORS: dict[str, str] = {
-    "system": "yellow",
-    "user": "blue",
-    "assistant": "green",
-    "tool": "magenta",
-    "reasoning": "dark_orange",
-}
+_ROLE_COLORS: dict[str, str] = {role: color for role, (_, color) in _ROLE_STYLES.items()}
 
 
 def _style_key(msg: Message) -> str:

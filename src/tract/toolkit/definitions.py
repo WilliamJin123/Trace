@@ -9,7 +9,6 @@ Tract instance.  Handler lambdas use explicit parameter whitelisting
 from __future__ import annotations
 
 import json
-import logging
 from typing import TYPE_CHECKING, Any
 
 from tract.middleware import VALID_EVENTS
@@ -17,8 +16,6 @@ from tract.toolkit.models import ToolDefinition
 
 if TYPE_CHECKING:
     from tract.tract import Tract
-
-logger = logging.getLogger(__name__)
 
 
 def get_all_tools(tract: Tract) -> list[ToolDefinition]:
