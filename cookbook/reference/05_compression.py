@@ -7,7 +7,7 @@ gc() with retention policies, compile(order=), compress_tool_calls().
 from tract import Priority, Tract
 
 
-def main():
+def main() -> None:
     # =================================================================
     # 1. Manual compress (no LLM needed)
     # =================================================================

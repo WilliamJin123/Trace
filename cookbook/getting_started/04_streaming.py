@@ -26,7 +26,7 @@ from _providers import groq as llm
 MODEL_ID = llm.small
 
 
-def main():
+def main() -> None:
     if not llm.api_key:
         print("SKIPPED (no API key -- set GROQ_API_KEY)")
         return

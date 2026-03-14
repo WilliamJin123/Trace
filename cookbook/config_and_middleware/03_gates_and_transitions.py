@@ -16,10 +16,10 @@ Demonstrates: t.transition(), handoff modes, pre_transition middleware
 No LLM required.
 """
 
-from tract import Tract, BlockedError
+from tract import Tract, BlockedError, MiddlewareContext
 
 
-def main():
+def main() -> None:
     with Tract.open() as t:
 
         # --- Transition gate middleware ---
@@ -28,7 +28,7 @@ def main():
 
         t.system("You are a coding assistant.")
 
-        def review_gate(ctx):
+        def review_gate(ctx: MiddlewareContext):
             """Require at least 5 commits before transitioning to review."""
             if ctx.target != "review":
                 return
@@ -44,7 +44,7 @@ def main():
         # Generic transition logging
         transition_log = []
 
-        def log_transitions(ctx):
+        def log_transitions(ctx: MiddlewareContext):
             """Log all transitions."""
             transition_log.append(ctx.target)
 
@@ -119,7 +119,7 @@ def main():
 
         t.switch("main")
 
-        def production_gate(ctx):
+        def production_gate(ctx: MiddlewareContext):
             """Require 'approved' config flag before production transition."""
             if ctx.target != "production":
                 return

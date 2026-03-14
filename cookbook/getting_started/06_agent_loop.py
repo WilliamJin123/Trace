@@ -116,7 +116,7 @@ TOOL_DEFS = [
 # Main
 # ---------------------------------------------------------------------------
 
-def main():
+def main() -> None:
     print("=" * 60)
     print("Five-Minute Agent Loop")
     print("=" * 60)

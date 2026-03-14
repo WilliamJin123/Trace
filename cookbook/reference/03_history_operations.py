@@ -9,9 +9,10 @@ Quick reference for inspecting and modifying commit history:
 """
 
 from tract import Tract, InstructionContent, CommitOperation
+from tract.formatting import pprint_log
 
 
-def main():
+def main() -> None:
     t = Tract.open()
 
     # Build a small conversation
@@ -22,8 +23,7 @@ def main():
     a2 = t.assistant("The capital of Germany is Berlin.")
 
     print("=== Conversation ===\n")
-    for ci_item in [sys_ci, u1, a1, u2, a2]:
-        print(f"  {ci_item.commit_hash[:8]}  {ci_item.message}")
+    pprint_log([sys_ci, u1, a1, u2, a2])
 
     # =================================================================
     # 1. LOG — walk commit history from HEAD backward
@@ -32,15 +32,10 @@ def main():
     print(f"\n=== 1. Log ({len(history)} commits) ===\n")
     history_limited = t.log(limit=3)     # last 3 commits only
 
-    for entry in history:
-        print(f"  {entry.commit_hash[:8]}  {entry.content_type:14s}  {entry.message}")
+    pprint_log(history)
 
     # Chronological order: reversed()
-    for entry in reversed(history):
-        # Fields: commit_hash, content_type, message, effective_priority,
-        #         generation_config, created_at, parent_hash, ...
-        pri = entry.effective_priority or "normal"
-        print(f"  {entry.commit_hash[:8]}  [{pri:<7}]  {entry.message or ''}")
+    pprint_log(list(reversed(history)))
 
     # Quick filters
     pinned = t.pinned()    # commits that survive compression (instructions, etc.)
@@ -112,9 +107,7 @@ def main():
 
     # View edit chain
     versions = t.edit_history(a1.commit_hash)  # [original, edit1, edit2, ...]
-    for i, v in enumerate(versions):
-        label = "ORIGINAL" if i == 0 else f"EDIT {i}"
-        print(f"  v{i} ({label}) [{v.commit_hash[:8]}] {v.message or ''}")
+    pprint_log(versions)
 
     # Restore an earlier version (creates a new edit, preserves full history)
     restored = t.restore(a1.commit_hash, version=0)  # back to original text

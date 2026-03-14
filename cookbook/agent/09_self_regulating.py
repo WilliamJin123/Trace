@@ -19,7 +19,7 @@ from pathlib import Path
 # Windows console encoding fix
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
-from tract import Tract, BlockedError
+from tract import Tract, BlockedError, MiddlewareContext
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import groq as llm
@@ -28,7 +28,7 @@ from _logging import StepLogger
 MODEL_ID = llm.xlarge
 
 
-def main():
+def main() -> None:
     if not llm.api_key:
         print("SKIPPED (no API key -- set GROQ_API_KEY)")
         return
@@ -59,7 +59,7 @@ def main():
         )
 
         # Gate: require mode config before agent content commits
-        def mode_gate(ctx):
+        def mode_gate(ctx: MiddlewareContext):
             from tract.models.content import ConfigContent, InstructionContent, ReasoningContent
             pending = ctx.pending
             if pending is not None:

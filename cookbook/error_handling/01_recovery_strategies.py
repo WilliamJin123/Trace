@@ -20,11 +20,12 @@ No LLM required.
 from tract import (
     BlockedError,
     CompressionError,
+    MiddlewareContext,
     Tract,
 )
 
 
-def main():
+def main() -> None:
     # =================================================================
     # 1. Checkpoint-and-Rollback
     # =================================================================
@@ -74,7 +75,7 @@ def main():
         )
 
         ctx = t.compile()
-        print(f"  Recovery succeeded: {len(ctx.messages)} messages in context")
+        ctx.pprint(style="compact")
         print(f"  Final HEAD: [{t.head[:8]}]")
         print()
 
@@ -148,7 +149,7 @@ def main():
         print(f"  Merged 'simple_analysis' into main: {result.merge_type}")
 
         ctx = t.compile()
-        print(f"  Final context: {len(ctx.messages)} messages")
+        ctx.pprint(style="compact")
         print()
 
         # Verify isolation: deep_analysis content is not in main context
@@ -218,7 +219,7 @@ def main():
                 # Continue to next, more aggressive strategy
 
         ctx_final = t.compile()
-        print(f"  Final: {len(ctx_final.messages)} messages, ~{ctx_final.token_count} tokens")
+        ctx_final.pprint(style="compact")
         print()
 
         # Verify compression reduced the context
@@ -247,7 +248,7 @@ def main():
         failure_tracker = {"consecutive": 0, "total": 0, "tripped": False}
         FAILURE_THRESHOLD = 3
 
-        def circuit_breaker(ctx):
+        def circuit_breaker(ctx: MiddlewareContext):
             """Block commits after too many consecutive failures."""
             if failure_tracker["tripped"]:
                 raise BlockedError(
@@ -420,7 +421,7 @@ def main():
             print("  All strategies failed -- would escalate to human")
 
         ctx = t.compile()
-        print(f"  Final context: {len(ctx.messages)} messages")
+        ctx.pprint(style="compact")
         print()
 
         # Verify only the successful strategy is in the final context

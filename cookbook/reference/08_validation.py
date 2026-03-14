@@ -14,7 +14,7 @@ from tract import Priority, Tract
 from tract.exceptions import RetryExhaustedError
 
 
-def main():
+def main() -> None:
     # =================================================================
     # 1. Validator signature: (str) -> (bool, str | None)
     # =================================================================

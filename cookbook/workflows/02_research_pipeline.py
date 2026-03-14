@@ -18,7 +18,8 @@ Requires: LLM API key (uses Cerebras provider)
 import sys
 from pathlib import Path
 
-from tract import Tract, BlockedError
+from tract import Tract, BlockedError, MiddlewareContext
+from tract.formatting import pprint_log
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import cerebras as llm
@@ -27,7 +28,7 @@ from _logging import StepLogger
 MODEL_ID = llm.large
 
 
-def main():
+def main() -> None:
     if not llm.api_key:
         print("SKIPPED (no API key -- set CEREBRAS_API_KEY)")
         return
@@ -52,7 +53,7 @@ def main():
         )
 
         # Transition gates via middleware
-        def organize_gate(ctx):
+        def organize_gate(ctx: MiddlewareContext):
             if ctx.target != "organize":
                 return
             count = len(ctx.tract.log())
@@ -62,7 +63,7 @@ def main():
                     [f"Need >= 6 commits for organize (have {count})"],
                 )
 
-        def synthesize_gate(ctx):
+        def synthesize_gate(ctx: MiddlewareContext):
             if ctx.target != "synthesize":
                 return
             count = len(ctx.tract.log())
@@ -156,10 +157,7 @@ def main():
             print(f"    {entry['name']:20s} count={entry['count']}")
 
         print(f"\n  Log (last 10 commits):")
-        for ci in t.log()[-10:]:
-            tags_str = f" [{', '.join(ci.tags)}]" if ci.tags else ""
-            print(f"    {ci.commit_hash[:8]}  {ci.content_type:10s}{tags_str}  "
-                  f"{(ci.message or '')[:40]}")
+        pprint_log(t.log()[-10:])
 
 
 if __name__ == "__main__":

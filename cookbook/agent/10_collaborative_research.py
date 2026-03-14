@@ -129,7 +129,7 @@ ANALYSTS = [
 # Helper: configure a child tract with LLM
 # =====================================================================
 
-def _configure_child(child, *, temperature=0.5):
+def _configure_child(child: "Tract", *, temperature: float = 0.5) -> None:
     """Wire up LLM client on a spawned child tract."""
     client = OpenAIClient(
         api_key=llm.api_key,
@@ -150,7 +150,7 @@ def _configure_child(child, *, temperature=0.5):
 # Main
 # =====================================================================
 
-def main():
+def main() -> None:
     if not llm.api_key:
         print("SKIPPED (no API key -- set GROQ_API_KEY)")
         return

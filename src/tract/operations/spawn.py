@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from tract.engine.commit import CommitEngine
     from tract.protocols import CompiledContext, TokenCounter
+    from tract.storage.schema import CommitRow
     from tract.storage.sqlite import SqliteSpawnPointerRepository
     from tract.tract import Tract
 
@@ -83,7 +84,7 @@ def spawn_tract(
     if inheritance == "selective":
         # Build auto-filter from convenience parameters if no filter_func
         if filter_func is None and (include_tags or exclude_tags or include_types):
-            def _auto_filter(commit_row):
+            def _auto_filter(commit_row: CommitRow) -> bool:
                 tags = set(commit_row.tags_json or [])
                 if include_tags and not any(t in tags for t in include_tags):
                     return False

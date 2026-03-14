@@ -10,7 +10,10 @@ import json
 import logging
 import os
 from collections.abc import AsyncIterator, Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from tract.llm.anthropic_client import StreamEvent
 
 import httpx
 import tenacity
@@ -318,7 +321,7 @@ class OpenAIClient:
         temperature: float | None = None,
         max_tokens: int | None = None,
         **kwargs: Any,
-    ) -> Iterator:
+    ) -> Iterator[StreamEvent]:
         """Stream a chat completion, yielding typed events.
 
         Yields events from :mod:`tract.llm.anthropic_client` event types
@@ -624,7 +627,7 @@ class OpenAIClient:
         temperature: float | None = None,
         max_tokens: int | None = None,
         **kwargs: Any,
-    ) -> AsyncIterator:
+    ) -> AsyncIterator[StreamEvent]:
         """Async stream a chat completion, yielding typed events.
 
         Async version of :meth:`stream`. Yields the same event types.

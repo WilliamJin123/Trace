@@ -18,7 +18,7 @@ from pathlib import Path
 # Windows console encoding fix
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
-from tract import Tract, BlockedError
+from tract import Tract, BlockedError, MiddlewareContext
 from tract.toolkit import ToolConfig, ToolProfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -40,7 +40,7 @@ PROFILE = ToolProfile(
 )
 
 
-def main():
+def main() -> None:
     if not llm.api_key:
         print("SKIPPED (no API key)")
         return
@@ -74,7 +74,7 @@ def main():
         t.configure(stage="research")
 
         # Gate: require at least 3 artifact commits before transition
-        def research_gate(ctx):
+        def research_gate(ctx: MiddlewareContext):
             if ctx.target == "implementation":
                 entries = ctx.tract.log(limit=50)
                 artifacts = [e for e in entries if e.content_type == "artifact"]

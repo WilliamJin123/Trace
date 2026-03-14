@@ -28,7 +28,8 @@ from pathlib import Path
 # Windows console encoding fix
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
-from tract import Tract
+from tract import Tract, MiddlewareContext
+from tract.formatting import pprint_log
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import cerebras as llm
@@ -76,7 +77,7 @@ STAGES = {
 }
 
 
-def build_router(stages: dict, *, min_signals: int = 1):
+def build_router(stages: dict, *, min_signals: int = 1) -> tuple:
     """Build a keyword-routing middleware handler.
 
     Args:
@@ -89,7 +90,7 @@ def build_router(stages: dict, *, min_signals: int = 1):
     """
     state = {"current": "research", "transitions": [], "signal_counts": {}}
 
-    def router(ctx):
+    def router(ctx: MiddlewareContext):
         # Only route on assistant commits (agent-generated content)
         if not ctx.commit or ctx.commit.content_type != "dialogue":
             return
@@ -129,7 +130,7 @@ def build_router(stages: dict, *, min_signals: int = 1):
     return router, state
 
 
-def main():
+def main() -> None:
     if not llm.api_key:
         print("SKIPPED (no API key -- set CEREBRAS_API_KEY)")
         return
@@ -208,9 +209,7 @@ def main():
             print(f"  (The agent may not have produced keyword-rich content.)")
 
         print(f"\n  Commit log:")
-        for ci in t.log()[-10:]:
-            msg = (ci.message or "")[:55]
-            print(f"    {ci.commit_hash[:8]}  {ci.content_type:12s}  {msg}")
+        pprint_log(t.log()[-10:])
 
         print(f"\n  Compiled context:")
         t.compile().pprint(style="compact")

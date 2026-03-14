@@ -5,9 +5,10 @@ tool summarization, reasoning commits, query_by_config, tool provenance.
 """
 
 from tract import Priority, Tract
+from tract.formatting import pprint_log
 
 
-def main():
+def main() -> None:
     # =================================================================
     # 1. Tool result commits (no LLM needed)
     # =================================================================
@@ -25,10 +26,7 @@ def main():
     print(f"tool commit: {ci.commit_hash[:8]}, {t.compile().token_count} tokens")
 
     ctx = t.compile()
-    print(f"  Compiled messages:")
-    for m in ctx.messages:
-        preview = (m.content or "")[:80].replace("\n", " ")
-        print(f"    [{m.role:9s}] {preview}")
+    ctx.pprint(style="compact")
 
     t.close()
 
@@ -61,9 +59,7 @@ def main():
 
     print(f"\n  After dropping failed turns:")
     ctx = t.compile()
-    for m in ctx.messages:
-        preview = (m.content or "")[:80].replace("\n", " ")
-        print(f"    [{m.role:9s}] {preview}")
+    ctx.pprint(style="compact")
 
     # Query tools: find_tool_turns, find_tool_results
     turns = t.find_tool_turns()

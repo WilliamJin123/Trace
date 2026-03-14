@@ -16,7 +16,7 @@ All examples below are structural — no LLM calls. See source files for live de
 from tract import LLMConfig, OperationConfigs, TractConfig, TokenBudgetConfig, Tract
 
 
-def main():
+def main() -> None:
     # =================================================================
     # 1. LEVEL 4 — Tract-level default (lowest priority)
     # =================================================================

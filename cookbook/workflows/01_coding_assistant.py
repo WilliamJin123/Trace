@@ -20,7 +20,8 @@ Requires: LLM API key (uses Cerebras provider)
 import sys
 from pathlib import Path
 
-from tract import Tract, BlockedError
+from tract import Tract, BlockedError, MiddlewareContext
+from tract.formatting import pprint_log
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import cerebras as llm
@@ -29,7 +30,7 @@ from _logging import StepLogger
 MODEL_ID = llm.large
 
 
-def main():
+def main() -> None:
     if not llm.api_key:
         print("SKIPPED (no API key -- set CEREBRAS_API_KEY)")
         return
@@ -65,7 +66,7 @@ def main():
         )
 
         # Transition gates: require minimum commit count before advancing
-        def impl_gate(ctx):
+        def impl_gate(ctx: MiddlewareContext):
             if ctx.target != "implementation":
                 return
             count = len(ctx.tract.log())
@@ -75,7 +76,7 @@ def main():
                     [f"Need >= 6 commits for implementation (have {count})"],
                 )
 
-        def validation_gate(ctx):
+        def validation_gate(ctx: MiddlewareContext):
             if ctx.target != "validation":
                 return
             count = len(ctx.tract.log())
@@ -146,8 +147,7 @@ def main():
             print(f"    {marker} {b.name}")
 
         print(f"\n  Log (last 8 commits):")
-        for ci in t.log()[-8:]:
-            print(f"    {ci.commit_hash[:8]}  {ci.content_type:10s}  {(ci.message or '')[:50]}")
+        pprint_log(t.log()[-8:])
 
 
 if __name__ == "__main__":

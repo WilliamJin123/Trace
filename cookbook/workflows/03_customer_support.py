@@ -20,7 +20,8 @@ Requires: LLM API key (uses Cerebras provider)
 import sys
 from pathlib import Path
 
-from tract import Tract, BlockedError
+from tract import Tract, BlockedError, MiddlewareContext
+from tract.formatting import pprint_log
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import cerebras as llm
@@ -29,7 +30,7 @@ from _logging import StepLogger
 MODEL_ID = llm.large
 
 
-def main():
+def main() -> None:
     if not llm.api_key:
         print("SKIPPED (no API key -- set CEREBRAS_API_KEY)")
         return
@@ -54,7 +55,7 @@ def main():
         )
 
         # Transition gates
-        def resolve_gate(ctx):
+        def resolve_gate(ctx: MiddlewareContext):
             if ctx.target != "resolve":
                 return
             count = len(ctx.tract.log())
@@ -64,7 +65,7 @@ def main():
                     [f"Need >= 5 commits for resolve (have {count})"],
                 )
 
-        def escalate_gate(ctx):
+        def escalate_gate(ctx: MiddlewareContext):
             if ctx.target != "escalate":
                 return
             count = len(ctx.tract.log())
@@ -180,10 +181,7 @@ def main():
                 print(f"    {entry['name']:20s} count={entry['count']}")
 
         print(f"\n  Log (last 8 commits):")
-        for ci in t.log()[-8:]:
-            tags_str = f" [{', '.join(ci.tags)}]" if ci.tags else ""
-            print(f"    {ci.commit_hash[:8]}  {ci.content_type:10s}{tags_str}  "
-                  f"{(ci.message or '')[:45]}")
+        pprint_log(t.log()[-8:])
 
         print(f"\n  Stages completed: 3/3")
 

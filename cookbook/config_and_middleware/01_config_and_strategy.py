@@ -24,7 +24,7 @@ No LLM required.
 from tract import Tract
 
 
-def main():
+def main() -> None:
     with Tract.open() as t:
 
         # --- Config as key-value store ---

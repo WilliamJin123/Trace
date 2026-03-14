@@ -197,7 +197,7 @@ def test_complete_workflow_without_llm():
     print("2. Complete workflow tested without any LLM calls")
     print(f"   Commits: {len(log)}")
     print(f"   Tagged: {len(research_commits)} research commits")
-    print(f"   Compiled: {len(ctx.messages)} messages, ~{ctx.token_count} tokens")
+    ctx.pprint(style="compact")
     print(f"   OpenAI export: {len(openai_msgs)} messages")
 
 
@@ -500,7 +500,7 @@ def test_branching_and_merge():
     print("5. Branching and merge tested without LLM")
     print(f"   Merge 1 (ai_chips): {merge1.merge_type}")
     print(f"   Merge 2 (quantum): {merge2.merge_type}")
-    print(f"   Final context: {len(ctx.messages)} messages")
+    ctx.pprint(style="compact")
     print(f"   Branches: {branch_names}")
 
 
@@ -595,7 +595,7 @@ def test_middleware_blocks_operations():
 
     print("6b. Middleware blocks operations (pre_commit)")
     print(f"    Blocked attempts: {len(blocked_attempts)}")
-    print(f"    Compiled messages: {len(ctx.messages)}")
+    ctx.pprint(style="compact")
 
 
 def test_middleware_on_compile():
@@ -798,7 +798,7 @@ def research_tract():
 
 
 @pytest.fixture
-def coding_tract(mock_client):
+def coding_tract(mock_client: MockLLMClient):
     """Pre-populated tract for testing coding assistant workflows."""
     t = Tract.open(llm_client=mock_client)
     t.system("You are a senior Python developer. Write clean, tested code.")
@@ -816,7 +816,7 @@ def coding_tract(mock_client):
     t.close()
 
 
-def test_fixture_research_tract(research_tract):
+def test_fixture_research_tract(research_tract: Tract) -> None:
     """Test using the research_tract fixture."""
 
     t = research_tract
@@ -838,10 +838,10 @@ def test_fixture_research_tract(research_tract):
     assert "196B" in full_text, "Compressed summary should preserve key data"
 
     print("8a. research_tract fixture used for compression test")
-    print(f"    Messages after compression: {len(ctx.messages)}")
+    ctx.pprint(style="compact")
 
 
-def test_fixture_coding_tract(coding_tract):
+def test_fixture_coding_tract(coding_tract: Tract) -> None:
     """Test using the coding_tract fixture with mock LLM."""
 
     t = coding_tract
@@ -858,7 +858,7 @@ def test_fixture_coding_tract(coding_tract):
     assert "unit tests" in full_text, "New request should be in context"
 
     print("8b. coding_tract fixture used for continued conversation test")
-    print(f"    Total messages: {len(ctx.messages)}")
+    ctx.pprint(style="compact")
     print(f"    Mock LLM response: {(response.text or '(no response)')[:50]}...")
 
 
@@ -971,7 +971,7 @@ def test_full_application_pattern():
     print("10. Full application pattern tested successfully")
     print(f"    Mock LLM calls: {len(mock.calls)}")
     print(f"    Audit entries: {len(audit_log)}")
-    print(f"    Final context: {len(ctx.messages)} messages, ~{ctx.token_count} tokens")
+    ctx.pprint(style="compact")
     print(f"    Branches used: research, analysis, main")
 
 
@@ -979,7 +979,7 @@ def test_full_application_pattern():
 # Summary
 # =====================================================================
 
-def main():
+def main() -> None:
     """Run all test patterns and print summary."""
 
     print("=" * 60)

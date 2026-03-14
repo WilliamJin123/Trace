@@ -19,7 +19,7 @@ Demonstrates: t.configure(), t.get_config(), t.get_all_configs(),
 No LLM required.
 """
 
-from tract import Tract
+from tract import Tract, MiddlewareContext
 
 
 def config_precedence():
@@ -122,7 +122,7 @@ def middleware_config_query():
 
         config_snapshots = []
 
-        def capture_config_on_commit(ctx):
+        def capture_config_on_commit(ctx: MiddlewareContext):
             """Post-commit handler that reads current config."""
             model = ctx.tract.get_config("model")
             max_tokens = ctx.tract.get_config("max_tokens")
@@ -238,7 +238,7 @@ def config_unset_semantics():
         print("6. Config unset semantics: PASSED")
 
 
-def main():
+def main() -> None:
     config_precedence()
     branch_isolated_configs()
     config_invalidation()

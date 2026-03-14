@@ -46,16 +46,18 @@ from datetime import datetime, timezone
 
 from tract import (
     BlockedError,
+    MiddlewareContext,
     Priority,
     Tract,
 )
+from tract.formatting import pprint_log
 
 
 # =====================================================================
 # Observability middleware (closure-based metrics tracker)
 # =====================================================================
 
-def build_metrics_tracker():
+def build_metrics_tracker() -> tuple[dict, callable]:
     """Build a post_commit middleware that tracks operations and tokens."""
     metrics = {
         "commits": 0,
@@ -65,7 +67,7 @@ def build_metrics_tracker():
         "timeline": [],      # (timestamp, event, branch, tokens)
     }
 
-    def on_post_commit(ctx):
+    def on_post_commit(ctx: MiddlewareContext):
         if ctx.commit is None:
             return
         metrics["commits"] += 1
@@ -92,7 +94,7 @@ def build_metrics_tracker():
 def build_quality_gate(required_tag="draft", min_draft_commits=4):
     """Build a pre_transition gate that blocks review until enough drafts exist."""
 
-    def gate(ctx):
+    def gate(ctx: MiddlewareContext):
         if ctx.target != "review":
             return
         # Count commits tagged "draft" -- ensures substantive work before review
@@ -111,7 +113,7 @@ def build_quality_gate(required_tag="draft", min_draft_commits=4):
 # Main workflow
 # =====================================================================
 
-def main():
+def main() -> None:
     print("=" * 70)
     print("FULL SHOWCASE: AI Product Analyst Workflow")
     print("=" * 70)
@@ -353,11 +355,7 @@ def main():
         # Compare optimistic vs pessimistic
         diff_result = t.compare("optimistic", "pessimistic")
         print(f"  Cross-branch diff (optimistic vs pessimistic):")
-        print(f"    Messages added:     {diff_result.stat.messages_added}")
-        print(f"    Messages removed:   {diff_result.stat.messages_removed}")
-        print(f"    Messages modified:  {diff_result.stat.messages_modified}")
-        print(f"    Messages unchanged: {diff_result.stat.messages_unchanged}")
-        print(f"    Token delta:        {diff_result.stat.total_token_delta:+d}")
+        diff_result.pprint(stat_only=True)
         print()
 
         # =============================================================
@@ -380,8 +378,7 @@ def main():
         print(f"  Merged 'pessimistic' into main: {merge_result_2.merge_type}")
 
         ctx_after_merge = t.compile()
-        print(f"  Context after merges: {len(ctx_after_merge.messages)} messages, "
-              f"~{ctx_after_merge.token_count} tokens")
+        ctx_after_merge.pprint(style="compact")
         print()
 
         # =============================================================
@@ -649,9 +646,7 @@ def main():
         # Show a sequential diff
         diff = t.diff()
         print(f"  Diff (previous -> HEAD):")
-        print(f"    Messages added:    {diff.stat.messages_added}")
-        print(f"    Messages modified: {diff.stat.messages_modified}")
-        print(f"    Token delta:       {diff.stat.total_token_delta:+d}")
+        diff.pprint(stat_only=True)
         print()
 
         # =============================================================
@@ -711,12 +706,8 @@ def main():
         print()
 
         # --- Commit log ---
-        log_entries = t.log(limit=12)
-        print(f"  Commit log (last {len(log_entries)}):")
-        for ci in log_entries:
-            tags_str = f" [{', '.join(ci.tags)}]" if ci.tags else ""
-            msg = (ci.message or ci.content_type)[:45]
-            print(f"    {ci.commit_hash[:8]}  {ci.content_type:14s}{tags_str}  {msg}")
+        print(f"  Commit log (last 15):")
+        pprint_log(t.log()[-15:])
         print()
 
         # --- Middleware metrics ---

@@ -24,7 +24,7 @@ from pathlib import Path
 # Windows console encoding fix
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
-from tract import Tract, TractConfig, TokenBudgetConfig
+from tract import Tract, TractConfig, TokenBudgetConfig, MiddlewareContext
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import cerebras as llm
@@ -33,7 +33,7 @@ from _logging import StepLogger
 MODEL_ID = llm.large
 
 
-def main():
+def main() -> None:
 
     # =================================================================
     # 1. Manual edit: trim a verbose tool result in-place
@@ -227,7 +227,7 @@ def main():
 
         compact_state = {"result_tokens": 0, "compactions": 0}
 
-        def auto_compact_tools(ctx):
+        def auto_compact_tools(ctx: MiddlewareContext):
             """Track tool result tokens, trigger compaction at threshold."""
             if not ctx.commit or "tool_result" not in (ctx.commit.tags or []):
                 return

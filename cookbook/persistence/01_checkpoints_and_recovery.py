@@ -26,6 +26,7 @@ import tempfile
 from datetime import datetime, timezone
 
 from tract import Tract
+from tract.formatting import pprint_log
 
 
 def _cleanup_db(db_path: str) -> None:
@@ -41,7 +42,7 @@ def _cleanup_db(db_path: str) -> None:
         pass  # Best-effort cleanup in tests
 
 
-def main():
+def main() -> None:
     # =================================================================
     # 1. Named Checkpoints
     # =================================================================
@@ -241,7 +242,7 @@ def main():
         compiled_text = " ".join((m.content or "") for m in ctx.messages)
         assert "enterprise LLM market" in compiled_text
         assert "Open-source" in compiled_text
-        print(f"    Compiled context: {len(ctx.messages)} messages, ~{ctx.token_count} tokens")
+        ctx.pprint(style="compact")
 
         t.close()
         del t
@@ -322,7 +323,7 @@ def main():
         compiled_text = " ".join((m.content or "") for m in ctx.messages)
         assert "3x infrastructure" not in compiled_text, "Experiment should not be in context"
         assert "Incremental loads" in compiled_text, "Recovery work should be present"
-        print(f"  Compiled context: {len(ctx.messages)} messages (clean, no experiment)")
+        ctx.pprint(style="compact")
         print("  Verified: branch checkpoint preserved clean rollback point")
 
     # =================================================================

@@ -19,10 +19,10 @@ Demonstrates: t.use(), pre_commit validation, post_commit logging,
 No LLM required.
 """
 
-from tract import Tract, BlockedError
+from tract import Tract, BlockedError, MiddlewareContext
 
 
-def main():
+def main() -> None:
     with Tract.open() as t:
 
         # --- Post-commit logging middleware ---
@@ -31,7 +31,7 @@ def main():
 
         commit_log = []
 
-        def log_commits(ctx):
+        def log_commits(ctx: MiddlewareContext):
             """Log every commit with its hash and branch."""
             entry = {
                 "hash": ctx.commit.commit_hash[:8] if ctx.commit else "?",
@@ -54,7 +54,7 @@ def main():
 
         print("\n=== Pre-Commit Validation ===\n")
 
-        def block_secrets(ctx):
+        def block_secrets(ctx: MiddlewareContext):
             """Block commits that look like they contain secrets.
 
             For pre_commit events, ctx.pending holds the content model
@@ -91,7 +91,7 @@ def main():
 
         print("\n=== Pre-Commit Token Limit ===\n")
 
-        def limit_message_length(ctx):
+        def limit_message_length(ctx: MiddlewareContext):
             """Block commits with content longer than 500 characters.
 
             For pre_commit events, ctx.pending holds the content model
@@ -129,7 +129,7 @@ def main():
 
         compile_count = {"n": 0}
 
-        def track_compiles(ctx):
+        def track_compiles(ctx: MiddlewareContext):
             """Track how many times compile is called."""
             compile_count["n"] += 1
 

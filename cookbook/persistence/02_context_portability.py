@@ -25,9 +25,10 @@ import os
 import tempfile
 
 from tract import Tract
+from tract.formatting import pprint_log
 
 
-def main():
+def main() -> None:
     # =================================================================
     # 1. Basic Export/Import
     # =================================================================
@@ -55,7 +56,7 @@ def main():
         assert "data analyst" in text
         assert "revenue" in text.lower()
         print(f"  Exported {len(state['commits'])} commits, loaded {loaded}")
-        print(f"  Compiled: {len(compiled.messages)} messages, ~{compiled.token_count} tokens")
+        compiled.pprint(style="compact")
         print(f"  State keys: {sorted(state.keys())}")
 
     print("\n  Basic export/import: PASSED")
@@ -112,7 +113,7 @@ def main():
             assert "RFC 7807" in text
             assert "cursor-based pagination" in text
             print(f"  Loaded {loaded_count} commits from file")
-            print(f"  Compiled: {len(ctx.messages)} messages, ~{ctx.token_count} tokens")
+            ctx.pprint(style="compact")
             print(f"  Content verified: RFC 7807, cursor-based pagination")
     finally:
         try:
@@ -180,7 +181,7 @@ def main():
         assert "research assistant" in text or "ML" in text.lower()
         assert "StreamingLLM" in text
         assert "technical writer" in text
-        print(f"  Agent B compiled: {len(ctx.messages)} messages, ~{ctx.token_count} tokens")
+        ctx.pprint(style="compact")
         print(f"  Contains Agent A's research + Agent B's additions")
 
     print("\n  Cross-agent context transfer: PASSED")
@@ -305,7 +306,7 @@ def main():
         assert "SAML 2.0" in text
         assert "Q1 roadmap" in text  # shared ancestor content is included
         print(f"  Imported feature branch: {loaded} commits")
-        print(f"  Compiled: {len(ctx.messages)} messages (includes shared + feature)")
+        ctx.pprint(style="compact")
 
     print("\n  Branch export: PASSED")
 
@@ -365,7 +366,7 @@ def main():
         text = ctx.to_text()
         assert "code review" in text.lower() or "Code review summary" in text
         print(f"  Imported compressed state: {loaded} commits")
-        print(f"  Compiled: {len(ctx.messages)} messages, ~{ctx.token_count} tokens")
+        ctx.pprint(style="compact")
         # The imported context should be compact
         assert ctx.token_count <= pre_tokens
         print(f"  Verified: imported state preserves compression")

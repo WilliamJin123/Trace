@@ -39,7 +39,8 @@ Requires: LLM API key (uses Cerebras provider)
 import sys
 from pathlib import Path
 
-from tract import Tract, BlockedError, Priority
+from tract import Tract, BlockedError, MiddlewareContext, Priority
+from tract.formatting import pprint_log
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import cerebras as llm
@@ -48,7 +49,7 @@ from _logging import StepLogger
 MODEL_ID = llm.large
 
 
-def main():
+def main() -> None:
     if not llm.api_key:
         print("SKIPPED (no API key -- set CEREBRAS_API_KEY)")
         return
@@ -94,7 +95,7 @@ def main():
         )
 
         # --- Quality gate: block implementation until tests exist ---
-        def require_tests_for_impl(ctx):
+        def require_tests_for_impl(ctx: MiddlewareContext):
             if ctx.target != "implementation":
                 return
             test_commits = ctx.tract.find(
@@ -108,7 +109,7 @@ def main():
                 )
 
         # --- Quality gate: block review until verification passes ---
-        def require_passing_tests_for_review(ctx):
+        def require_passing_tests_for_review(ctx: MiddlewareContext):
             if ctx.target != "review":
                 return
             results = ctx.tract.find(
@@ -323,9 +324,7 @@ def main():
             # Compare attempt/1 against the main branch to see what diverged
             print("  Analyzing attempt/1 via diff...")
             diff_result = t.compare(branch_a="main", branch_b="attempt/1")
-            print(f"  Diff stat: +{diff_result.stat.messages_added} msgs, "
-                  f"~{diff_result.stat.messages_modified} modified, "
-                  f"{diff_result.stat.total_token_delta:+d} tokens")
+            diff_result.pprint(stat_only=True)
 
             # Switch back to main and branch for attempt/2
             t.switch("main")
@@ -360,9 +359,7 @@ def main():
             # --- Cross-branch comparison ---
             print("\n  Comparing attempt/1 vs attempt/2...")
             cross_diff = t.compare(branch_a="attempt/1", branch_b="attempt/2")
-            print(f"  Cross-diff: +{cross_diff.stat.messages_added} new, "
-                  f"~{cross_diff.stat.messages_modified} modified, "
-                  f"{cross_diff.stat.total_token_delta:+d} tokens")
+            cross_diff.pprint(stat_only=True)
 
             # Verify attempt/2
             t.configure(stage="verification", temperature=0.1)
@@ -506,12 +503,7 @@ def main():
 
         # Commit history
         print(f"\n  Log (last 10 commits):")
-        for ci in t.log(limit=10):
-            meta = ""
-            if ci.metadata and "test_status" in ci.metadata:
-                meta = f"  [{ci.metadata['test_status']}]"
-            print(f"    {ci.commit_hash[:8]}  {ci.content_type:12s}  "
-                  f"{(ci.message or '')[:45]}{meta}")
+        pprint_log(t.log(limit=10))
 
         print(f"\n{'=' * 70}")
         print("WHY TRACT > NAIVE PROMPT CHAINS:")

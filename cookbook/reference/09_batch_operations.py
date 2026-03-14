@@ -20,7 +20,8 @@ No LLM required.
 
 import time
 
-from tract import Tract
+from tract import MiddlewareContext, Tract
+from tract.formatting import pprint_log
 
 
 def basic_batch():
@@ -51,7 +52,7 @@ def basic_batch():
         print(f"  Commits after batch: {commits_after} ({batch_commits} new)")
 
         ctx = t.compile()
-        print(f"  Compiled context: {len(ctx.messages)} messages")
+        ctx.pprint(style="compact")
 
         assert batch_commits == 6, f"Batch should add 6 commits, got {batch_commits}"
         assert len(ctx.messages) >= 7, "Should have system + 6 batch messages"
@@ -173,7 +174,7 @@ def batch_with_middleware():
     with Tract.open() as t:
         commit_log: list[str] = []
 
-        def track_commits(ctx):
+        def track_commits(ctx: MiddlewareContext):
             """Record each commit's content type."""
             if ctx.commit:
                 commit_log.append(ctx.commit.content_type)
@@ -196,7 +197,7 @@ def batch_with_middleware():
         # Verify the batch committed everything
         ctx = t.compile()
         assert len(ctx.messages) >= 3
-        print(f"  Context messages: {len(ctx.messages)}")
+        ctx.pprint(style="compact")
 
         t.remove_middleware(mw_id)
 
@@ -238,13 +239,12 @@ def batch_atomic_branch_setup():
 
         sprint_commits = len(t.log())
         ctx = t.compile()
-        print(f"  Sprint_1 branch: {sprint_commits} commits, "
-              f"{len(ctx.messages)} messages")
+        ctx.pprint(style="compact")
 
         # Switch back to main -- sprint_1 setup is all-or-nothing
         t.switch("main")
         main_ctx = t.compile()
-        print(f"  Main after switch: {len(main_ctx.messages)} messages (clean)")
+        main_ctx.pprint(style="compact")
 
         # Verify branch isolation
         assert len(main_ctx.messages) < len(ctx.messages), (
@@ -254,8 +254,7 @@ def batch_atomic_branch_setup():
         # Merge sprint_1 when ready
         result = t.merge("sprint_1")
         merged_ctx = t.compile()
-        print(f"  After merge: {len(merged_ctx.messages)} messages, "
-              f"type={result.merge_type}")
+        merged_ctx.pprint(style="compact")
 
         text = " ".join((m.content or "") for m in merged_ctx.messages)
         assert "JWT" in text, "Merged content should include sprint work"
@@ -318,7 +317,7 @@ def performance_comparison():
     print("PASSED")
 
 
-def main():
+def main() -> None:
     basic_batch()
     batch_rollback()
     nested_batch_behavior()

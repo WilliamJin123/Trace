@@ -15,10 +15,10 @@ Demonstrates: t.use() for custom logic, closures as state,
 No LLM required.
 """
 
-from tract import Tract, BlockedError
+from tract import Tract, BlockedError, MiddlewareContext
 
 
-def main():
+def main() -> None:
     with Tract.open() as t:
 
         # --- Custom validation: language detection ---
@@ -30,7 +30,7 @@ def main():
 
         detected_languages = []
 
-        def detect_language(ctx):
+        def detect_language(ctx: MiddlewareContext):
             """Post-commit: detect programming language in message."""
             if ctx.commit is None:
                 return
@@ -53,7 +53,7 @@ def main():
 
         user_count = {"n": 0, "total_chars": 0}
 
-        def count_user_messages(ctx):
+        def count_user_messages(ctx: MiddlewareContext):
             """Pre-commit: count user dialogue messages.
 
             The pre_commit ctx.pending holds the content model (e.g.
@@ -92,7 +92,7 @@ def main():
 
         print("\n=== Custom Gate: User Engagement ===\n")
 
-        def engagement_gate(ctx):
+        def engagement_gate(ctx: MiddlewareContext):
             """Require 3+ user messages before any transition."""
             if user_count["n"] < 3:
                 raise BlockedError(
@@ -116,12 +116,12 @@ def main():
 
         blocked_reasons = []
 
-        def content_length_guard(ctx):
+        def content_length_guard(ctx: MiddlewareContext):
             """Block commits with very long messages."""
             if ctx.commit and len(ctx.commit.message or "") > 1000:
                 raise BlockedError("pre_commit", ["Message exceeds 1000 chars"])
 
-        def profanity_guard(ctx):
+        def profanity_guard(ctx: MiddlewareContext):
             """Block commits containing banned words."""
             if ctx.commit is None:
                 return

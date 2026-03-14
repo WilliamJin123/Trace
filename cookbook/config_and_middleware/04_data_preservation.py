@@ -20,10 +20,11 @@ Demonstrates: Priority.PINNED, t.annotate(), t.directive(),
 No LLM required.
 """
 
-from tract import Tract, Priority, DialogueContent, BlockedError
+from tract import Tract, Priority, DialogueContent, BlockedError, MiddlewareContext
+from tract.formatting import pprint_log
 
 
-def main():
+def main() -> None:
     with Tract.open() as t:
 
         # --- Create some conversation history ---
@@ -74,7 +75,7 @@ def main():
 
         print("\n=== Pre-Compress Middleware ===\n")
 
-        def protect_credentials(ctx):
+        def protect_credentials(ctx: MiddlewareContext):
             """Block compression when credential-tagged commits exist."""
             for ci in ctx.tract.log():
                 if "credentials" in (ci.tags or []):
@@ -91,7 +92,7 @@ def main():
 
         print("\n=== Minimum History Guard ===\n")
 
-        def require_min_history(ctx):
+        def require_min_history(ctx: MiddlewareContext):
             """Require at least 20 commits before allowing compression."""
             count = len(ctx.tract.log())
             if count < 20:
@@ -124,9 +125,7 @@ def main():
         # --- Show protected content in log ---
 
         print("\n=== Log ===\n")
-        for ci in t.log():
-            tags_str = f" [{', '.join(ci.tags)}]" if ci.tags else ""
-            print(f"  {ci.commit_hash[:8]}  {ci.content_type:14s}{tags_str}  {(ci.message or '')[:50]}")
+        pprint_log(t.log())
 
 
 if __name__ == "__main__":

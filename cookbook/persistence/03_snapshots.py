@@ -22,9 +22,10 @@ No LLM required.
 """
 
 from tract import Tract
+from tract.formatting import pprint_log
 
 
-def main():
+def main() -> None:
     # =================================================================
     # 1. Creating Named Snapshots
     # =================================================================
@@ -276,7 +277,7 @@ def main():
 
         bad_ctx = t.compile()
         bad_text = bad_ctx.to_text()
-        print(f"  After experiment: {len(bad_ctx.messages)} messages")
+        bad_ctx.pprint(style="compact")
         print(f"  Has bad advice ('no failover'): {'no failover' in bad_text}")
 
         # The experiment was a dead end -- restore to the good state
@@ -290,7 +291,7 @@ def main():
         assert "no failover" not in restored_text
         assert "Pre-populate top 1000" in restored_text
         assert "event-driven via Kafka" in restored_text
-        print(f"  After restore: {len(restored_ctx.messages)} messages, ~{restored_ctx.token_count} tokens")
+        restored_ctx.pprint(style="compact")
         print(f"  Bad advice gone: {'no failover' not in restored_text}")
         print(f"  Good design intact: {'event-driven via Kafka' in restored_text}")
         print(f"  On branch: {t.current_branch}")
@@ -342,7 +343,7 @@ def main():
         t.merge("experiment/ai-features")
         merged_ctx = t.compile()
         merged_text = merged_ctx.to_text()
-        print(f"  After merge: {len(merged_ctx.messages)} messages")
+        merged_ctx.pprint(style="compact")
 
         # The merge brought in risky PII content we did not want
         has_pii_warning = "PII handling" in merged_text
@@ -358,7 +359,7 @@ def main():
         # Verify the merge content is gone
         assert "PII handling" not in restored_text
         assert "v2 features" in restored_text
-        print(f"  After restore: {len(restored_ctx.messages)} messages")
+        restored_ctx.pprint(style="compact")
         print(f"  PII warning gone: {'PII handling' not in restored_text}")
         print(f"  Core features preserved: {'v2 features' in restored_text}")
         print(f"  Restored to branch: {t.current_branch}")

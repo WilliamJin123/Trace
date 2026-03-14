@@ -16,7 +16,7 @@ Demonstrates: t.load_profile(), t.apply_stage(), t.get_config(),
 No LLM required.
 """
 
-from tract import Tract, BlockedError, get_workflow_profile, list_workflow_profiles
+from tract import Tract, BlockedError, MiddlewareContext, get_workflow_profile, list_workflow_profiles
 
 
 def profile_discovery():
@@ -142,8 +142,10 @@ def directives_from_profile():
         text_after = " ".join((m.content or "") for m in ctx_after.messages)
 
         # The coding profile injects "methodology" and "code_quality" directives
-        print(f"  Messages before profile: {len(ctx_before.messages)}")
-        print(f"  Messages after profile:  {len(ctx_after.messages)}")
+        print("  Before profile:")
+        ctx_before.pprint(style="compact")
+        print("  After profile:")
+        ctx_after.pprint(style="compact")
         print()
 
         # Check that directive content appears in compiled context
@@ -183,7 +185,7 @@ def stage_gating_with_middleware():
         for sname, sconfig in coding.stages.items():
             temp_to_stage[sconfig["temperature"]] = sname
 
-        def stage_gate(ctx):
+        def stage_gate(ctx: MiddlewareContext):
             """Block config commits that skip stages.
 
             apply_stage() calls configure(), which creates a ConfigContent commit.
@@ -294,15 +296,14 @@ def research_profile_walkthrough():
             t.merge(stage_name)
 
         ctx_final = t.compile()
-        print(f"  Final merged context: {len(ctx_final.messages)} messages, "
-              f"~{ctx_final.token_count} tokens")
+        ctx_final.pprint(style="compact")
 
     print("  All assertions passed.")
     print()
     print("PASSED")
 
 
-def main():
+def main() -> None:
     profile_discovery()
     profile_loading_and_stages()
     directives_from_profile()

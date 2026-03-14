@@ -24,10 +24,11 @@ import tempfile
 import os
 from pathlib import Path
 
-from tract import Tract, Priority, BlockedError
+from tract import Tract, Priority, BlockedError, MiddlewareContext
+from tract.formatting import pprint_log
 
 
-def main():
+def main() -> None:
     with Tract.open() as t:
 
         # --- 1. Config: key-value settings as commits ---
@@ -90,7 +91,7 @@ def main():
 
         commit_count = {"n": 0}
 
-        def count_commits(ctx):
+        def count_commits(ctx: MiddlewareContext):
             commit_count["n"] += 1
             print(f"    [middleware] post_commit #{commit_count['n']}")
 
@@ -113,8 +114,7 @@ def main():
         # --- 5. Log: configs and directives are visible commits ---
 
         print("\n=== Log (configs and directives are commits) ===\n")
-        for ci in t.log():
-            print(f"  {ci.commit_hash[:8]}  {ci.content_type:14s}  {ci.message}")
+        pprint_log(t.log())
 
     # --- 6. File-backed directives and .tract/prompts/ auto-discovery ---
 
@@ -152,9 +152,7 @@ def main():
             t.directive("tone", path="tone.md")
 
             compiled = t.compile()
-            for m in compiled.messages:
-                preview = m.content[:60].replace("\n", " ")
-                print(f"  [{m.role}] {preview}...")
+            compiled.pprint(style="compact")
 
             print(f"\n  prompt_dir auto-discovered: {t._prompt_dir}")
 
@@ -172,8 +170,7 @@ def main():
             t.directive("safety", path="safety.md")
 
             compiled = t.compile()
-            for m in compiled.messages:
-                print(f"  [{m.role}] {m.content[:60]}...")
+            compiled.pprint(style="compact")
 
             print(f"  prompt_dir (explicit): {t._prompt_dir}")
     finally:

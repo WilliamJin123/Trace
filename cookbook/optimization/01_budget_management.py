@@ -76,7 +76,7 @@ def _analysis_response(quarter: int) -> str:
     )
 
 
-def main():
+def main() -> None:
 
     # =================================================================
     # 1. Per-Stage Token Budgets
@@ -333,25 +333,21 @@ def main():
         # Strategy: full -- every commit with complete content
         ctx_full = t.compile(strategy="full")
         print(f"\n  Strategy: full")
-        print(f"    Messages: {len(ctx_full.messages)}")
-        print(f"    Tokens:   {ctx_full.token_count}")
+        ctx_full.pprint(style="compact")
 
         # Strategy: messages -- commit messages only (short summaries)
         ctx_msg = t.compile(strategy="messages")
         print(f"\n  Strategy: messages")
-        print(f"    Messages: {len(ctx_msg.messages)}")
-        print(f"    Tokens:   {ctx_msg.token_count}")
+        ctx_msg.pprint(style="compact")
 
         # Strategy: adaptive -- last K full, rest as messages
         ctx_adaptive_5 = t.compile(strategy="adaptive", strategy_k=5)
         print(f"\n  Strategy: adaptive (k=5, last 5 commits full)")
-        print(f"    Messages: {len(ctx_adaptive_5.messages)}")
-        print(f"    Tokens:   {ctx_adaptive_5.token_count}")
+        ctx_adaptive_5.pprint(style="compact")
 
         ctx_adaptive_3 = t.compile(strategy="adaptive", strategy_k=3)
         print(f"\n  Strategy: adaptive (k=3, tighter)")
-        print(f"    Messages: {len(ctx_adaptive_3.messages)}")
-        print(f"    Tokens:   {ctx_adaptive_3.token_count}")
+        ctx_adaptive_3.pprint(style="compact")
 
         # Comparison table
         print(f"\n  {'Strategy':<25} {'Messages':>8} {'Tokens':>8} {'Savings':>10}")

@@ -41,7 +41,7 @@ class ToolPresenter:
     semantics (Layer 1) — only how results are communicated to the LLM.
     """
 
-    def __init__(self, tract: Tract, config: PresentationConfig | None = None):
+    def __init__(self, tract: Tract, config: PresentationConfig | None = None) -> None:
         self._tract = tract
         self._config = config or PresentationConfig()
 

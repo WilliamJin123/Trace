@@ -42,7 +42,7 @@ PROFILE = ToolProfile(
 )
 
 
-def main():
+def main() -> None:
     if not llm.api_key:
         print("SKIPPED (no API key -- set CEREBRAS_API_KEY)")
         return

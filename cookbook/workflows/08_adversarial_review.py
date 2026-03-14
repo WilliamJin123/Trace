@@ -28,7 +28,7 @@ Requires: LLM API key (uses Cerebras provider, gpt-oss-120b)
 import sys
 from pathlib import Path
 
-from tract import Tract, BlockedError
+from tract import Tract, BlockedError, MiddlewareContext
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import cerebras as llm
@@ -36,7 +36,7 @@ from _providers import cerebras as llm
 MODEL_ID = llm.xlarge  # gpt-oss-120b
 
 
-def print_conversation(t, label):
+def print_conversation(t: Tract, label: str) -> None:
     """Compile current branch and print the full chat transcript."""
     print(f"\n{'=' * 60}")
     print(f"  FULL CONVERSATION: {label}")
@@ -46,7 +46,7 @@ def print_conversation(t, label):
     print()
 
 
-def main():
+def main() -> None:
     if not llm.api_key:
         print("SKIPPED (no API key -- set CEREBRAS_API_KEY)")
         return
@@ -137,7 +137,7 @@ def main():
         # Gate: critic must commit at least 3 findings
         findings_needed = 3
 
-        def critique_completion_gate(ctx):
+        def critique_completion_gate(ctx: MiddlewareContext):
             if ctx.target != "main":
                 return
             findings = [c for c in ctx.tract.log() if c.tags and "flaw" in c.tags]

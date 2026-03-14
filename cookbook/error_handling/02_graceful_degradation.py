@@ -21,12 +21,13 @@ from typing import Any
 
 from tract import (
     BlockedError,
+    MiddlewareContext,
     Tract,
 )
 from tract.loop import LoopConfig, run_loop
 
 
-def compression_fallback_chain():
+def compression_fallback_chain() -> None:
     """Try progressively more aggressive compression strategies."""
 
     print("=" * 60)
@@ -85,7 +86,7 @@ def compression_fallback_chain():
     print("PASSED")
 
 
-def branch_isolated_retries():
+def branch_isolated_retries() -> None:
     """Isolate risky operations on branches; merge only on success."""
 
     print()
@@ -139,14 +140,14 @@ def branch_isolated_retries():
         assert "R-squared" not in text, "Failed attempt 2 should not be in context"
         assert "moving average" in text, "Successful attempt should be in context"
 
-        print(f"  Final context: {len(ctx_final.messages)} messages")
+        ctx_final.pprint(style="compact")
         print("  Failed branches isolated, successful branch merged")
 
     print()
     print("PASSED")
 
 
-def middleware_circuit_breaker():
+def middleware_circuit_breaker() -> None:
     """Track failures and block operations after threshold."""
 
     print()
@@ -166,7 +167,7 @@ def middleware_circuit_breaker():
             "half_open_after": None,
         }
 
-        def circuit_breaker_mw(ctx):
+        def circuit_breaker_mw(ctx: MiddlewareContext):
             """Block commits when circuit breaker is open."""
             if breaker["open"]:
                 raise BlockedError(
@@ -239,7 +240,7 @@ def middleware_circuit_breaker():
     print("PASSED")
 
 
-def token_budget_exhaustion():
+def token_budget_exhaustion() -> None:
     """Demonstrate step_budget in LoopConfig for token budget control."""
 
     print()
@@ -305,7 +306,7 @@ def token_budget_exhaustion():
     print("PASSED")
 
 
-def config_driven_fallback():
+def config_driven_fallback() -> None:
     """Fall back to simpler configurations on error."""
 
     print()
@@ -395,14 +396,14 @@ def config_driven_fallback():
         assert "unavailable" not in text, "Failed configs should not be in context"
 
         print(f"  Final config: '{succeeded}'")
-        print(f"  Context: {len(ctx.messages)} messages, ~{ctx.token_count} tokens")
+        ctx.pprint(style="compact")
         print("  Failed configs isolated on abandoned branches")
 
     print()
     print("PASSED")
 
 
-def main():
+def main() -> None:
     compression_fallback_chain()
     branch_isolated_retries()
     middleware_circuit_breaker()

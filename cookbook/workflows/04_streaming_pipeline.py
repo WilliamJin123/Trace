@@ -17,7 +17,7 @@ Requires: LLM API key (uses Cerebras provider)
 import sys
 from pathlib import Path
 
-from tract import Tract, BlockedError
+from tract import Tract, BlockedError, MiddlewareContext
 from tract.formatting import StreamPrinter
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -26,7 +26,7 @@ from _providers import cerebras as llm
 MODEL_ID = llm.large
 
 
-def main():
+def main() -> None:
     if not llm.api_key:
         print("SKIPPED (no API key -- set CEREBRAS_API_KEY)")
         return
@@ -41,7 +41,7 @@ def main():
         t.configure(stage="research", temperature=0.8)
 
         # Gate: require commits before synthesis
-        def synthesis_gate(ctx):
+        def synthesis_gate(ctx: MiddlewareContext):
             if ctx.target != "synthesize":
                 return
             commits = len(ctx.tract.log())

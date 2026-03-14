@@ -510,7 +510,7 @@ def pattern_5_hierarchical():
 # Main
 # =====================================================================
 
-def main():
+def main() -> None:
     print()
     print("Supervisor-Worker Orchestration Patterns")
     print("All patterns run locally -- no API keys needed.")

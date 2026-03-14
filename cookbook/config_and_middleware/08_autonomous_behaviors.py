@@ -22,10 +22,11 @@ Demonstrates: autonomous middleware patterns, stateful closures,
               composing middleware with existing operations
 """
 
-from tract import Tract, Priority
+from tract import Tract, Priority, MiddlewareContext
+from tract.formatting import pprint_log
 
 
-def main():
+def main() -> None:
 
     # =================================================================
     # Pattern 1: Auto-skip low-value content types
@@ -40,7 +41,7 @@ def main():
 
         skip_types = {"config", "reasoning"}
 
-        def auto_skip(ctx):
+        def auto_skip(ctx: MiddlewareContext):
             if ctx.commit and ctx.commit.content_type in skip_types:
                 ctx.tract.annotate(ctx.commit.commit_hash, Priority.SKIP)
 
@@ -56,9 +57,7 @@ def main():
         total = len(t.log())
         skipped = len(t.skipped())
         print(f"  Commits made:")
-        for ci in t.log():
-            skip = " [SKIPPED]" if ci.effective_priority == "skip" else ""
-            print(f"    {ci.content_type:12s} {(ci.message or '')[:45]}{skip}")
+        pprint_log(t.log())
         print()
         print(f"\n  Compiled context ({compiled.commit_count} of {total} commits):")
         compiled.pprint(style="compact")
@@ -78,7 +77,7 @@ def main():
 
         compress_state = {"triggered": False, "commit_count": 0}
 
-        def auto_compress_trigger(ctx):
+        def auto_compress_trigger(ctx: MiddlewareContext):
             compress_state["commit_count"] += 1
             threshold = 6
             if compress_state["commit_count"] >= threshold:
@@ -117,7 +116,7 @@ def main():
             "validation": ["test", "verify", "assert", "check"],
         }
 
-        def keyword_router(ctx):
+        def keyword_router(ctx: MiddlewareContext):
             if not ctx.commit:
                 return
             text = (ctx.commit.message or "").lower()
@@ -178,7 +177,7 @@ def main():
 
         error_state = {"consecutive_errors": 0, "adjustments": []}
 
-        def adaptive_config(ctx):
+        def adaptive_config(ctx: MiddlewareContext):
             if not ctx.commit:
                 return
             # Only evaluate tool results for error tracking
@@ -246,7 +245,7 @@ def main():
 
         tool_state = {"result_tokens": 0, "compaction_needed": False}
 
-        def tool_budget_guard(ctx):
+        def tool_budget_guard(ctx: MiddlewareContext):
             if not ctx.commit:
                 return
             if "tool_result" not in (ctx.commit.tags or []):

@@ -23,7 +23,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from tract import BlockedError, Tract, TractConfig, TokenBudgetConfig
+from tract import BlockedError, MiddlewareContext, Tract, TractConfig, TokenBudgetConfig
 from tract.loop import LoopConfig, LoopResult, run_loop
 
 
@@ -88,7 +88,7 @@ class _MockLLM:
 # Pattern 1: Step-by-Step Token Tracking
 # ===================================================================
 
-def token_tracking():
+def token_tracking() -> None:
     """Track per-step token usage and identify cost hotspots."""
 
     print("=" * 60)
@@ -158,7 +158,7 @@ def token_tracking():
 # Pattern 2: Middleware-Based Audit Trail
 # ===================================================================
 
-def audit_trail():
+def audit_trail() -> None:
     """Build audit trail via middleware hooks."""
 
     print()
@@ -173,7 +173,7 @@ def audit_trail():
 
         # --- Register audit middleware for multiple events ---
 
-        def audit_commit(ctx):
+        def audit_commit(ctx: MiddlewareContext):
             audit_log.append({
                 "event": "commit",
                 "time": datetime.now(timezone.utc).isoformat(),
@@ -182,14 +182,14 @@ def audit_trail():
                 "content_type": ctx.commit.content_type if ctx.commit else "unknown",
             })
 
-        def audit_compile(ctx):
+        def audit_compile(ctx: MiddlewareContext):
             audit_log.append({
                 "event": "compile",
                 "time": datetime.now(timezone.utc).isoformat(),
                 "branch": ctx.branch,
             })
 
-        def audit_compress(ctx):
+        def audit_compress(ctx: MiddlewareContext):
             audit_log.append({
                 "event": "compress",
                 "time": datetime.now(timezone.utc).isoformat(),
@@ -242,7 +242,7 @@ def audit_trail():
 # Pattern 3: Health Dashboard
 # ===================================================================
 
-def health_dashboard():
+def health_dashboard() -> None:
     """Build a health dashboard from t.health() + metrics."""
 
     print()
@@ -326,7 +326,7 @@ def health_dashboard():
 # Pattern 4: Budget Dashboard
 # ===================================================================
 
-def budget_dashboard():
+def budget_dashboard() -> None:
     """Track remaining budget across workflow stages."""
 
     print()
@@ -467,7 +467,7 @@ def budget_dashboard():
 # Pattern 5: Error Rate Monitoring
 # ===================================================================
 
-def error_rate_monitoring():
+def error_rate_monitoring() -> None:
     """Monitor tool error rates and circuit-break on high failure."""
 
     print()
@@ -576,7 +576,7 @@ def error_rate_monitoring():
 # Pattern 6: Context Growth Alerting
 # ===================================================================
 
-def context_growth_alerting():
+def context_growth_alerting() -> None:
     """Alert when context growth rate exceeds expectations."""
 
     print()
@@ -708,7 +708,7 @@ def context_growth_alerting():
 # Main
 # ===================================================================
 
-def main():
+def main() -> None:
     token_tracking()
     audit_trail()
     health_dashboard()

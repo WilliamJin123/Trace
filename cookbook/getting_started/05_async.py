@@ -57,7 +57,7 @@ CUSTOM_HANDLERS = {
 }
 
 
-async def main():
+async def main() -> None:
     if not llm.api_key:
         print("SKIPPED (no API key -- set GROQ_API_KEY)")
         return

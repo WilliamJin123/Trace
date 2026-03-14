@@ -5,9 +5,10 @@ PINNED/SKIP/NORMAL/IMPORTANT, system(edit=), tool_result(edit=).
 """
 
 from tract import Priority, Tract
+from tract.formatting import pprint_log
 
 
-def main():
+def main() -> None:
     # =================================================================
     # 1. Tags: auto-classification + explicit + mutable
     # =================================================================
@@ -99,8 +100,7 @@ def main():
     print(f"pinned:  {len(t.pinned())} commits")
 
     # Effective priority visible in log()
-    for entry in reversed(t.log()):
-        print(f"  {entry.commit_hash[:8]} {entry.effective_priority:<7} {entry.message or ''}")
+    pprint_log(list(reversed(t.log())))
 
     t.close()
 

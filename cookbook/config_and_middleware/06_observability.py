@@ -28,10 +28,10 @@ No LLM required.
 import time
 from datetime import datetime, timezone
 
-from tract import Tract
+from tract import Tract, MiddlewareContext
 
 
-def main():
+def main() -> None:
     # =================================================================
     # 1. LLM Call Logging
     # =================================================================
@@ -58,7 +58,7 @@ def main():
         # Approximate cost per 1K tokens (production would use actual rates)
         COST_PER_1K = {"input": 0.003, "output": 0.015}
 
-        def track_llm_calls(ctx):
+        def track_llm_calls(ctx: MiddlewareContext):
             """Post-commit: capture generation metadata from every commit."""
             if ctx.commit is None:
                 return
@@ -157,7 +157,7 @@ def main():
             "review": 300,
         }
 
-        def track_stage_tokens(ctx):
+        def track_stage_tokens(ctx: MiddlewareContext):
             """Post-commit: accumulate tokens for the current stage."""
             if ctx.commit is None:
                 return
@@ -174,7 +174,7 @@ def main():
                 warning = f"WARNING: stage '{stage}' at {used}/{limit} tokens ({used/limit:.0%})"
                 budget["warnings"].append(warning)
 
-        def update_stage_on_transition(ctx):
+        def update_stage_on_transition(ctx: MiddlewareContext):
             """Post-transition: update current stage tracker."""
             if ctx.target:
                 budget["current_stage"] = ctx.target
@@ -273,7 +273,7 @@ def main():
 
         audit_log = []
 
-        def audit_commits(ctx):
+        def audit_commits(ctx: MiddlewareContext):
             """Post-commit: record commit operations."""
             if ctx.commit is None:
                 return
@@ -289,7 +289,7 @@ def main():
                 "message": (ctx.commit.message or "")[:50],
             })
 
-        def audit_compiles(ctx):
+        def audit_compiles(ctx: MiddlewareContext):
             """Pre-compile: record compile operations."""
             audit_log.append({
                 "time": datetime.now(timezone.utc).isoformat(),
@@ -299,7 +299,7 @@ def main():
                 "head": ctx.head[:8],
             })
 
-        def audit_compress(ctx):
+        def audit_compress(ctx: MiddlewareContext):
             """Pre-compress: record compress operations."""
             audit_log.append({
                 "time": datetime.now(timezone.utc).isoformat(),
@@ -309,7 +309,7 @@ def main():
                 "head": ctx.head[:8],
             })
 
-        def audit_merge(ctx):
+        def audit_merge(ctx: MiddlewareContext):
             """Pre-merge: record merge operations."""
             audit_log.append({
                 "time": datetime.now(timezone.utc).isoformat(),
@@ -319,7 +319,7 @@ def main():
                 "head": ctx.head[:8],
             })
 
-        def audit_transitions(ctx):
+        def audit_transitions(ctx: MiddlewareContext):
             """Pre/post transition: record stage transitions."""
             audit_log.append({
                 "time": datetime.now(timezone.utc).isoformat(),
@@ -426,7 +426,7 @@ def main():
             "completed": [],  # list of {stage, duration_s}
         }
 
-        def on_pre_transition(ctx):
+        def on_pre_transition(ctx: MiddlewareContext):
             """Record end time for the current stage."""
             elapsed = time.monotonic() - stage_timing["stage_start"]
             stage_timing["completed"].append({
@@ -434,7 +434,7 @@ def main():
                 "duration_s": round(elapsed, 4),
             })
 
-        def on_post_transition(ctx):
+        def on_post_transition(ctx: MiddlewareContext):
             """Record start time for the new stage."""
             stage_timing["current_stage"] = ctx.target or ctx.branch
             stage_timing["stage_start"] = time.monotonic()
@@ -518,7 +518,7 @@ def main():
             "events": [],  # list of {before_tokens, after_tokens, ratio, ...}
         }
 
-        def snapshot_before_compress(ctx):
+        def snapshot_before_compress(ctx: MiddlewareContext):
             """Pre-compress: snapshot token count before compression."""
             compiled = ctx.tract.compile()
             compression_metrics["_pending"] = {

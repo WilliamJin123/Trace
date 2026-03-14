@@ -16,7 +16,7 @@ from tract import (
 )
 
 
-def main():
+def main() -> None:
     # =================================================================
     # 1. CONTENT TYPES — manual commit with t.commit(ContentModel(...))
     # =================================================================
