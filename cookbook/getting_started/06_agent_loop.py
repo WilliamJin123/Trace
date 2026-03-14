@@ -155,19 +155,7 @@ def main():
 
     print()
     print("  --- LoopResult ---")
-    print(f"  status:         {result.status}")
-    print(f"  reason:         {result.reason}")
-    print(f"  steps:          {result.steps}")
-    print(f"  tool_calls:     {result.tool_calls}")
-    print(f"  final_response: {result.final_response}")
-    print()
-
-    # Token usage aggregation
-    print("  --- Token Usage ---")
-    print(f"  total_prompt_tokens:     {result.total_prompt_tokens}")
-    print(f"  total_completion_tokens: {result.total_completion_tokens}")
-    print(f"  total_tokens:            {result.total_tokens}")
-    print(f"  step_usages count:       {len(result.step_usages)}")
+    result.pprint()
     print()
 
     # ---------------------------------------------------------------------------

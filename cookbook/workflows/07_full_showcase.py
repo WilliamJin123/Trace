@@ -413,11 +413,7 @@ def main():
         )
 
         ctx_after = t.compile()
-        print(f"  After compression:  {len(ctx_after.messages)} messages, "
-              f"~{ctx_after.token_count} tokens")
-        print(f"  Compression ratio:  {compress_result.compression_ratio:.2f}")
-        print(f"  Source commits:     {len(compress_result.source_commits)}")
-        print(f"  Preserved commits:  {len(compress_result.preserved_commits)}")
+        compress_result.pprint()
 
         # Verify pinned findings survived
         compiled_text = " ".join((m.content or "") for m in ctx_after.messages)

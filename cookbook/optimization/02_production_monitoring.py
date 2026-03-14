@@ -138,9 +138,7 @@ def token_tracking():
             )
 
         print()
-        print(f"  Total steps: {result.steps}")
-        print(f"  Total tokens: {result.total_tokens}")
-        print(f"  Avg tokens/step: {result.total_tokens // max(result.steps, 1)}")
+        result.pprint()
 
         if alerts:
             print(f"  ALERTS: steps {alerts} exceeded {ALERT_THRESHOLD}-token threshold")
@@ -559,8 +557,7 @@ def error_rate_monitoring():
             )
 
         print()
-        print(f"  Loop status: {result.status}")
-        print(f"  Steps: {result.steps}, Tool calls: {result.tool_calls}")
+        result.pprint()
 
         if problematic_tools:
             print(f"  ACTION: disable/investigate: {', '.join(problematic_tools)}")

@@ -57,7 +57,6 @@ def main():
             )
 
         print(f"Streamed {printer.chunk_count} chunks")
-        print(f"Status: {result.status}")
         result.pprint()
 
         # ---------------------------------------------------------

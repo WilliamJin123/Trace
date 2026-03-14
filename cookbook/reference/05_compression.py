@@ -23,9 +23,7 @@ def main():
     result = t.compress(
         content="User learned about black holes (extreme gravity) and neutron stars (dense remnants).",
     )
-    print(f"compressed: {result.original_tokens} -> {result.compressed_tokens} tokens")
-    print(f"ratio: {result.compression_ratio:.0%}, archived: {len(result.source_commits)}")
-    print(f"preserved (PINNED): {len(result.preserved_commits)}")
+    result.pprint()
     t.close()
 
     # =================================================================

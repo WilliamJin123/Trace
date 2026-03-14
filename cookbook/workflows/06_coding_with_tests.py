@@ -181,7 +181,6 @@ def main():
 
         print("\n=== Context Management: Compress Planning ===\n")
 
-        pre_compress_tokens = t.status().token_count
         compress_result = t.compress(
             content="Email validation planning summary: Function validate_email(email) -> bool. "
             "Valid patterns: user@domain.tld, user+tag@domain.com, user@sub.domain.com, "
@@ -190,9 +189,7 @@ def main():
             "Implementation approach: manual character-by-character validation, "
             "no regex library. Split on @, validate local part and domain separately.",
         )
-        post_compress_tokens = t.status().token_count
-        print(f"  Compressed: {pre_compress_tokens} -> {post_compress_tokens} tokens "
-              f"(ratio: {compress_result.compression_ratio:.2f})")
+        compress_result.pprint()
 
         # =============================================================
         # 4. TEST WRITING STAGE

@@ -156,14 +156,9 @@ def main():
             ),
         )
         print(f"\n  Generation stage (after compressing research):")
-        print(f"    Compressed: {result.original_tokens} -> {result.compressed_tokens} tokens")
-        print(f"    Ratio:      {result.compression_ratio:.0%}")
-        print(f"    Preserved (PINNED): {len(result.preserved_commits)}")
-
+        result.pprint()
         gen_status = t.status()
-        print(f"    Budget: {gen_status.token_budget_max} tokens")
-        print(f"    Used:   {gen_status.token_count} tokens")
-        print(f"    Free:   {gen_status.token_budget_max - gen_status.token_count} tokens for generation")
+        gen_status.pprint()
 
     # =================================================================
     # 2. Auto-Compression Threshold

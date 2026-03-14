@@ -49,7 +49,7 @@ def compression_fallback_chain():
         ctx_original = t.compile()
         original_tokens = ctx_original.token_count
         original_msgs = len(ctx_original.messages)
-        print(f"  Original: {original_msgs} messages, ~{original_tokens} tokens")
+        ctx_original.pprint(style="compact")
 
         # Fallback chain: try each strategy in order
         strategies = [
@@ -292,11 +292,7 @@ def token_budget_exhaustion():
             config=config,
         )
 
-        print(f"  Status: {result.status}")
-        print(f"  Reason: {result.reason}")
-        print(f"  Steps taken: {result.steps}")
-        print(f"  Total tokens: {result.total_tokens}")
-        print(f"  Budget exhausted: {result.budget_exhausted}")
+        result.pprint()
 
         # The loop should have stopped before max_steps due to budget
         # Note: the loop accumulates step_usages and checks step_budget
