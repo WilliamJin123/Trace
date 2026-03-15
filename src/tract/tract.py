@@ -383,6 +383,7 @@ class Tract:
         # Middleware state
         self._middleware: dict[str, list[tuple[str, Callable]]] = {}
         self._in_middleware_events: set[str] = set()
+        self._gates: dict[str, str] = {}  # gate_name -> handler_id
 
         # Persistence state
         self._db_path: str = ":memory:"
@@ -1044,8 +1045,91 @@ class Tract:
             for i, (hid, _fn) in enumerate(handlers):
                 if hid == handler_id:
                     handlers.pop(i)
+                    # Clean up _gates if this was a gate handler
+                    stale = [n for n, gid in self._gates.items() if gid == handler_id]
+                    for n in stale:
+                        del self._gates[n]
                     return
         raise ValueError(f"Middleware handler '{handler_id}' not found")
+
+    def gate(
+        self,
+        name: str,
+        *,
+        event: MiddlewareEvent,
+        check: str,
+        model: str | None = None,
+        condition: Callable | None = None,
+        temperature: float = 0.1,
+        max_log_entries: int = 30,
+    ) -> str:
+        """Register a semantic gate (LLM-powered quality check).
+
+        A semantic gate is a middleware handler that uses an LLM to evaluate
+        whether the current context meets a natural-language criterion.
+        If the criterion is not met, the gate blocks by raising BlockedError.
+
+        Args:
+            name: Unique name for this gate.
+            event: Middleware event to fire on (e.g., "pre_transition", "pre_commit").
+            check: Natural language description of the criterion to evaluate.
+            model: LLM model override. Uses tract's default if None.
+            condition: Optional deterministic pre-check. If provided and returns False,
+                the LLM call is skipped (gate passes automatically). Use this to
+                avoid unnecessary LLM calls.
+            temperature: LLM temperature (default 0.1 for deterministic judgment).
+            max_log_entries: Maximum commits to include in the manifest.
+
+        Returns:
+            Handler ID (can be used with remove_middleware() or remove_gate()).
+
+        Raises:
+            ValueError: If a gate with this name already exists, or event is invalid.
+
+        Example::
+
+            t.gate(
+                "research-quality",
+                event="pre_transition",
+                check="Does the research contain at least 3 distinct perspectives?",
+                model="gpt-4o-mini",
+                condition=lambda ctx: ctx.target == "synthesis",
+            )
+        """
+        if name in self._gates:
+            raise ValueError(f"Gate '{name}' already registered. Remove it first.")
+
+        from tract.gate import SemanticGate
+
+        handler = SemanticGate(
+            name=name,
+            check=check,
+            model=model,
+            condition=condition,
+            temperature=temperature,
+            max_log_entries=max_log_entries,
+        )
+        handler_id = self.use(event, handler)
+        self._gates[name] = handler_id
+        return handler_id
+
+    def remove_gate(self, name: str) -> None:
+        """Remove a named semantic gate.
+
+        Args:
+            name: The gate name passed to gate().
+
+        Raises:
+            ValueError: If no gate with this name exists.
+        """
+        handler_id = self._gates.pop(name, None)
+        if handler_id is None:
+            raise ValueError(f"Gate '{name}' not found")
+        self.remove_middleware(handler_id)
+
+    def list_gates(self) -> list[str]:
+        """Return names of all registered semantic gates."""
+        return list(self._gates.keys())
 
     def _run_middleware(self, event: str, **kwargs: Any) -> None:
         """Run middleware handlers for an event.

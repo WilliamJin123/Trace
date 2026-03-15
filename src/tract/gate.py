@@ -1,0 +1,350 @@
+"""Semantic gates for tract middleware.
+
+A SemanticGate is a callable that plugs into tract's middleware system
+via ``t.use(event, gate_instance)``.  When fired, it builds a lightweight
+manifest from the commit log and active config, sends it to an LLM with
+a natural-language criterion, and raises :class:`BlockedError` if the
+criterion is not met.
+
+Example::
+
+    from tract.gate import SemanticGate
+
+    gate = SemanticGate(
+        name="research-complete",
+        check="At least 3 commits tagged 'key-finding' exist",
+    )
+    t.use("pre_transition", gate)
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+from collections import Counter
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Callable
+
+from tract.exceptions import BlockedError
+
+if TYPE_CHECKING:
+    from tract.middleware import MiddlewareContext
+    from tract.tract import Tract
+
+__all__: list[str] = [
+    "SemanticGate",
+    "GateResult",
+]
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# System prompt for the gate LLM
+# ---------------------------------------------------------------------------
+_GATE_SYSTEM_PROMPT = """\
+You are a quality gate evaluating whether a context meets a specific criterion.
+
+You will receive a context manifest (metadata about commits, not full content) and a criterion to check.
+
+Respond with JSON:
+{"result": "pass", "reason": "Brief explanation"}
+or
+{"result": "fail", "reason": "Brief explanation of what's missing"}
+
+Be strict. Only pass if the criterion is clearly met based on the available evidence."""
+
+
+# ---------------------------------------------------------------------------
+# GateResult — immutable result of a gate evaluation
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class GateResult:
+    """Result of a single gate evaluation."""
+
+    gate_name: str
+    passed: bool
+    reason: str
+    tokens_used: int  # tokens consumed by the gate's LLM call
+
+
+# ---------------------------------------------------------------------------
+# SemanticGate — middleware-compatible callable
+# ---------------------------------------------------------------------------
+@dataclass
+class SemanticGate:
+    """LLM-powered quality gate for tract middleware.
+
+    Register with ``t.use(event, gate)`` where *event* is any
+    :data:`~tract.middleware.MiddlewareEvent`.
+
+    When invoked the gate:
+
+    1. Runs an optional deterministic ``condition`` callback — returns
+       early (passes) if the callback returns ``False``.
+    2. Builds a lightweight manifest from ``t.log()`` and
+       ``t.get_all_configs()`` (never ``t.status()`` or ``t.compile()``
+       which would cause recursion).
+    3. Sends the manifest plus the ``check`` criterion to an LLM.
+    4. Parses the LLM response for PASS / FAIL.
+    5. On FAIL, raises :class:`~tract.exceptions.BlockedError`.
+
+    Attributes:
+        name: Human-readable gate identifier.
+        check: Natural-language criterion the context must satisfy.
+        model: Model override passed to ``client.chat()``.  Use the
+            actual model ID (e.g. ``"gpt-4o"``), not an alias.
+        condition: Optional deterministic pre-check.  Receives the
+            :class:`~tract.middleware.MiddlewareContext` and returns
+            ``True`` to proceed with the LLM check, or ``False`` to
+            skip the gate entirely (auto-pass).
+        temperature: Sampling temperature for the gate call.
+        max_log_entries: Maximum number of commits to include in the
+            manifest (newest first).
+    """
+
+    name: str
+    check: str
+    model: str | None = None
+    condition: Callable[[Any], bool] | None = None
+    temperature: float = 0.1
+    max_log_entries: int = 30
+
+    # Stored after each invocation so callers can inspect.
+    last_result: GateResult | None = field(default=None, init=False, repr=False)
+
+    # ------------------------------------------------------------------
+    # __call__ — middleware handler interface
+    # ------------------------------------------------------------------
+    def __call__(self, ctx: MiddlewareContext) -> None:
+        """Evaluate the gate.  Raises :class:`BlockedError` on failure."""
+
+        # 1. Deterministic pre-check
+        if self.condition is not None:
+            try:
+                should_check = self.condition(ctx)
+            except Exception:
+                logger.warning(
+                    "Gate '%s' condition callback raised; skipping gate (pass).",
+                    self.name,
+                    exc_info=True,
+                )
+                self.last_result = GateResult(
+                    gate_name=self.name,
+                    passed=True,
+                    reason="Condition callback raised; defaulting to pass.",
+                    tokens_used=0,
+                )
+                return
+            if not should_check:
+                self.last_result = GateResult(
+                    gate_name=self.name,
+                    passed=True,
+                    reason="Condition returned False; gate skipped.",
+                    tokens_used=0,
+                )
+                return
+
+        # 2. Resolve LLM client
+        tract = ctx.tract
+        try:
+            client = tract._resolve_llm_client("gate")
+        except RuntimeError:
+            raise RuntimeError(
+                f"SemanticGate '{self.name}' requires an LLM client but none "
+                f"is configured.  Call t.configure_llm() or pass api_key= to "
+                f"Tract.open()."
+            )
+
+        # 3. Build manifest and messages
+        manifest = self._build_manifest(tract)
+        messages = self._build_messages(manifest, ctx)
+
+        # 4. LLM call — fail-open on infrastructure errors
+        tokens_used = 0
+        try:
+            llm_kwargs: dict[str, Any] = {"temperature": self.temperature}
+            if self.model is not None:
+                llm_kwargs["model"] = self.model
+
+            response = client.chat(messages, **llm_kwargs)
+        except Exception:
+            logger.warning(
+                "Gate '%s' LLM call failed; passing by default (fail-open).",
+                self.name,
+                exc_info=True,
+            )
+            self.last_result = GateResult(
+                gate_name=self.name,
+                passed=True,
+                reason="LLM call failed; fail-open default.",
+                tokens_used=0,
+            )
+            return
+
+        try:
+            raw_text = client.extract_content(response)
+        except Exception:
+            logger.warning(
+                "Gate '%s' failed to extract LLM response; passing by default (fail-open).",
+                self.name,
+                exc_info=True,
+            )
+            self.last_result = GateResult(
+                gate_name=self.name,
+                passed=True,
+                reason="Failed to extract LLM response; fail-open default.",
+                tokens_used=0,
+            )
+            return
+
+        # Track token usage if available
+        try:
+            usage = client.extract_usage(response) if hasattr(client, "extract_usage") else None
+            if usage and isinstance(usage, dict):
+                tokens_used = usage.get("total_tokens", 0)
+        except Exception:
+            pass  # Usage tracking is best-effort
+
+        # 5. Parse response
+        passed, reason = self._parse_response(raw_text)
+        self.last_result = GateResult(
+            gate_name=self.name,
+            passed=passed,
+            reason=reason,
+            tokens_used=tokens_used,
+        )
+
+        # 6. Block if failed
+        if not passed:
+            raise BlockedError(
+                ctx.event,
+                [f"Gate '{self.name}' FAILED: {reason}"],
+            )
+
+    # ------------------------------------------------------------------
+    # Manifest construction
+    # ------------------------------------------------------------------
+    def _build_manifest(self, tract: Tract) -> str:
+        """Build a text manifest from log entries and active config.
+
+        Uses only ``t.log()`` and ``t.get_all_configs()`` — never
+        ``t.status()`` or ``t.compile()`` to avoid recursion.
+        """
+        branch = tract.current_branch or "(detached)"
+        head = tract.head
+        head_short = head[:8] if head else "(empty)"
+
+        entries = tract.log(limit=self.max_log_entries)
+        total_commits = len(entries)
+
+        lines: list[str] = [
+            "=== CONTEXT MANIFEST ===",
+            f"Branch: {branch} | HEAD: {head_short} | Commits shown: {total_commits}",
+            "",
+        ]
+
+        # Commit log table
+        if entries:
+            lines.append("COMMIT LOG (newest first):")
+            for entry in entries:
+                h = entry.commit_hash[:8]
+                ctype = entry.content_type
+                tokens = entry.token_count
+                tags_str = ",".join(entry.tags) if entry.tags else ""
+                priority = entry.effective_priority or "NORMAL"
+                msg = entry.message if entry.message else "(no message)"
+                if len(msg) > 60:
+                    msg = msg[:57] + "..."
+                lines.append(
+                    f"  [{h}] {ctype:<12} | {tokens:>5} tok | "
+                    f"tags:[{tags_str}] | {priority:<9} | \"{msg}\""
+                )
+            lines.append("")
+
+        # Active configuration
+        try:
+            config = tract.get_all_configs()
+        except Exception:
+            config = {}
+        if config:
+            lines.append(f"ACTIVE CONFIG: {json.dumps(config, default=str)}")
+
+        # Tag summary
+        if entries:
+            tag_counter: Counter[str] = Counter()
+            for entry in entries:
+                for tag in entry.tags:
+                    tag_counter[tag] += 1
+            if tag_counter:
+                tag_summary = ", ".join(
+                    f"{tag}({count})" for tag, count in tag_counter.most_common()
+                )
+                lines.append(f"TAGS: {tag_summary}")
+
+        return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # Message construction
+    # ------------------------------------------------------------------
+    def _build_messages(
+        self, manifest: str, ctx: MiddlewareContext
+    ) -> list[dict[str, str]]:
+        """Construct the LLM messages for the gate evaluation."""
+        user_content = (
+            f"=== CRITERION ===\n"
+            f"{self.check}\n"
+            f"\n"
+            f"=== EVENT ===\n"
+            f"{ctx.event}\n"
+            f"\n"
+            f"{manifest}"
+        )
+        return [
+            {"role": "system", "content": _GATE_SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ]
+
+    # ------------------------------------------------------------------
+    # Response parsing
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _parse_response(text: str) -> tuple[bool, str]:
+        """Parse an LLM response into (passed, reason).
+
+        Tries JSON first, then falls back to scanning for PASS/FAIL
+        keywords in the raw text.
+        """
+        # Strip markdown code fences if present
+        cleaned = text.strip()
+        if cleaned.startswith("```"):
+            # Remove opening fence (```json or ```)
+            first_newline = cleaned.index("\n") if "\n" in cleaned else len(cleaned)
+            cleaned = cleaned[first_newline + 1:]
+            if cleaned.endswith("```"):
+                cleaned = cleaned[:-3]
+            cleaned = cleaned.strip()
+
+        # Attempt JSON parse
+        try:
+            data = json.loads(cleaned)
+            if isinstance(data, dict):
+                result = str(data.get("result") or "").lower().strip()
+                reason = str(data.get("reason") or "").strip() or "(no reason given)"
+                if result == "pass":
+                    return True, reason
+                if result == "fail":
+                    return False, reason
+                # Unrecognised result value — fall through to keyword scan
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
+
+        # Fallback: word-boundary keyword scan
+        text_lower = text.lower()
+        if re.search(r"\bfail\b", text_lower):
+            return False, text.strip()[:200]
+        if re.search(r"\bpass\b", text_lower):
+            return True, text.strip()[:200]
+
+        # Ambiguous — treat as pass (fail-open)
+        return True, f"Could not parse gate response; defaulting to pass. Raw: {text[:200]}"

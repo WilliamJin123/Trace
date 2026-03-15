@@ -86,6 +86,9 @@ from tract.operations.diff import DiffResult, MessageDiff, DiffStat
 from tract.operations.config_index import ConfigIndex
 from tract.middleware import MiddlewareContext, MiddlewareEvent
 
+# Semantic gates
+from tract.gate import SemanticGate, GateResult
+
 # Directive templates
 from tract.templates import DirectiveTemplate, list_templates, get_template, register_template
 
@@ -238,6 +241,9 @@ __all__ = [
     "DiffStat",
     # Config index and middleware
     "ConfigIndex",
+    # Semantic gates
+    "SemanticGate",
+    "GateResult",
     "MiddlewareContext",
     "MiddlewareEvent",
     # Directive templates
