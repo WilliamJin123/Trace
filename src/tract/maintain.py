@@ -139,6 +139,15 @@ class SemanticMaintainer:
     If the LLM decides no peeking is needed, it can return actions
     directly in the first pass (skipping the second call).
 
+    .. note:: **Recursion guard interaction**
+
+       Actions like ``configure`` and ``directive`` internally call
+       ``t.commit()``, which fires ``post_commit`` middleware.  If this
+       maintainer is registered on ``post_commit``, the tract's recursion
+       guard silently drops the inner ``post_commit`` event to prevent
+       infinite loops.  The inner commits *are* persisted and visible in
+       the log, but other ``post_commit`` handlers will not see them.
+
     Attributes:
         name: Human-readable maintainer identifier.
         instructions: Natural-language instructions for what maintenance
@@ -229,6 +238,13 @@ class SemanticMaintainer:
         try:
             client = tract._resolve_llm_client("maintain")
         except RuntimeError:
+            self.last_result = MaintainResult(
+                maintainer_name=self.name,
+                actions_requested=0, actions_executed=0, actions_failed=0,
+                tokens_used=0,
+                reasoning="No LLM client configured; cannot run maintainer.",
+                errors=[],
+            )
             raise RuntimeError(
                 f"SemanticMaintainer '{self.name}' requires an LLM client but none "
                 f"is configured.  Call t.configure_llm() or pass api_key= to "
@@ -318,7 +334,7 @@ class SemanticMaintainer:
         # 9. Execute block actions (raises BlockedError)
         if block_actions:
             reasons = [
-                a.get("reason", "(no reason given)") for a in block_actions
+                a.get("reason") or "(no reason given)" for a in block_actions
             ]
             raise BlockedError(ctx.event, reasons)
 

@@ -217,6 +217,12 @@ class SemanticGate:
         try:
             client = tract._resolve_llm_client("gate")
         except RuntimeError:
+            self.last_result = GateResult(
+                gate_name=self.name,
+                passed=True,
+                reason="No LLM client configured; fail-open default.",
+                tokens_used=0,
+            )
             raise RuntimeError(
                 f"SemanticGate '{self.name}' requires an LLM client but none "
                 f"is configured.  Call t.configure_llm() or pass api_key= to "

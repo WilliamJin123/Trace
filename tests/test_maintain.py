@@ -990,6 +990,72 @@ class TestBlockAction:
         assert m.last_result.actions_executed == 1  # only gc; block raises
         assert m.last_result.actions_failed == 0
 
+    def test_block_reason_null_coerced(self):
+        """Block action with reason=None is coerced to default string."""
+        from tract.exceptions import BlockedError
+
+        response = _action_response("Blocking", [
+            {"type": "block", "reason": None},
+        ])
+        client = FakeLLMClient(response)
+        tract_mock = _make_tract_mock(client=client)
+        ctx = _make_ctx(tract_mock)
+
+        m = SemanticMaintainer(
+            name="null-reason",
+            instructions="x",
+            actions=["block"],
+        )
+        with pytest.raises(BlockedError) as exc_info:
+            m(ctx)
+
+        # reason should be the default string, not None
+        assert exc_info.value.reasons[0] == "(no reason given)"
+
+    def test_block_reason_empty_string_coerced(self):
+        """Block action with reason='' is coerced to default string."""
+        from tract.exceptions import BlockedError
+
+        response = _action_response("Blocking", [
+            {"type": "block", "reason": ""},
+        ])
+        client = FakeLLMClient(response)
+        tract_mock = _make_tract_mock(client=client)
+        ctx = _make_ctx(tract_mock)
+
+        m = SemanticMaintainer(
+            name="empty-reason",
+            instructions="x",
+            actions=["block"],
+        )
+        with pytest.raises(BlockedError) as exc_info:
+            m(ctx)
+
+        assert exc_info.value.reasons[0] == "(no reason given)"
+
+
+class TestLastResultOnClientError:
+    """Verify last_result is set even when LLM client resolution fails."""
+
+    def test_last_result_set_on_client_error(self):
+        """last_result is populated before RuntimeError is raised."""
+        tract_mock = _make_tract_mock(client=None)
+        tract_mock._resolve_llm_client.side_effect = RuntimeError("no client")
+        ctx = _make_ctx(tract_mock)
+
+        m = SemanticMaintainer(
+            name="no-client",
+            instructions="x",
+            actions=["gc"],
+        )
+        with pytest.raises(RuntimeError, match="requires an LLM client"):
+            m(ctx)
+
+        assert m.last_result is not None
+        assert m.last_result.actions_executed == 0
+        assert m.last_result.tokens_used == 0
+        assert "No LLM client" in m.last_result.reasoning
+
 
 # ---------------------------------------------------------------------------
 # Peek parsing tests

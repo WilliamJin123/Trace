@@ -225,6 +225,20 @@ class TestLLMClientResolution:
         with pytest.raises(RuntimeError, match="requires an LLM client"):
             gate(ctx)
 
+    def test_no_client_sets_last_result(self):
+        """last_result is populated even when client resolution fails."""
+        tract_mock = _make_tract_mock()
+        ctx = _make_ctx(tract_mock)
+
+        gate = SemanticGate(name="no-client", check="anything")
+        with pytest.raises(RuntimeError):
+            gate(ctx)
+
+        assert gate.last_result is not None
+        assert gate.last_result.passed is True  # fail-open
+        assert gate.last_result.tokens_used == 0
+        assert "No LLM client" in gate.last_result.reason
+
     def test_client_resolved_for_gate_operation(self):
         """Client is resolved with 'gate' operation key."""
         client = FakeLLMClient()
