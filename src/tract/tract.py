@@ -395,6 +395,12 @@ class Tract:
         # Workflow profile state
         self._active_profile: object | None = None  # WorkflowProfile when loaded
 
+        # Per-instance template and profile registries (seeded from defaults)
+        from tract.templates import default_template_registry
+        from tract.profiles import default_profile_registry
+        self._template_registry: dict = default_template_registry()
+        self._profile_registry: dict = default_profile_registry()
+
         # Custom tools registered via @t.tool decorator
         self._custom_tools: dict[str, Any] = {}  # name -> ToolDefinition
 
@@ -939,25 +945,45 @@ class Tract:
     ) -> CommitInfo:
         """Apply a directive template by name with parameters.
 
+        Uses the per-instance template registry (seeded from defaults).
+
         Args:
-            name: Template name (built-in or custom registered)
+            name: Template name (built-in or custom registered on this instance)
             directive_name: Override the directive name (defaults to template name)
             **params: Template parameters to fill in placeholders
 
         Returns:
             CommitInfo for the directive commit
         """
-        from tract.templates import get_template
-
-        template = get_template(name)
+        if name not in self._template_registry:
+            available = ", ".join(sorted(self._template_registry.keys()))
+            raise KeyError(f"Template '{name}' not found. Available: {available}")
+        template = self._template_registry[name]
         content = template.render(**params)
         return self.directive(directive_name or template.name, content)
 
     def list_templates(self) -> list:
-        """List all available directive templates."""
-        from tract.templates import list_templates
+        """List all available directive templates from this instance's registry."""
+        return list(self._template_registry.values())
 
-        return list_templates()
+    def register_template(self, template: object) -> None:
+        """Register a custom directive template on this Tract instance.
+
+        Args:
+            template: A :class:`DirectiveTemplate` instance.
+        """
+        self._template_registry[template.name] = template  # type: ignore[union-attr]
+
+    def get_template(self, name: str) -> object:
+        """Get a template by name from this instance's registry.
+
+        Raises:
+            KeyError: If the template name is not found.
+        """
+        if name not in self._template_registry:
+            available = ", ".join(sorted(self._template_registry.keys()))
+            raise KeyError(f"Template '{name}' not found. Available: {available}")
+        return self._template_registry[name]
 
     # ------------------------------------------------------------------
     # Workflow profiles
@@ -965,6 +991,8 @@ class Tract:
 
     def load_profile(self, name: str, *, apply_directives: bool = True) -> None:
         """Load a workflow profile, applying its config and directives.
+
+        Uses the per-instance profile registry (seeded from defaults).
 
         Args:
             name: Profile name (``"coding"``, ``"research"``, ``"ecommerce"``,
@@ -975,9 +1003,10 @@ class Tract:
         Raises:
             KeyError: If the profile name is not found.
         """
-        from tract.profiles import get_profile as _get_workflow_profile
-
-        profile = _get_workflow_profile(name)
+        if name not in self._profile_registry:
+            available = ", ".join(sorted(self._profile_registry.keys()))
+            raise KeyError(f"Profile '{name}' not found. Available: {available}")
+        profile = self._profile_registry[name]
 
         # Apply config
         if profile.config:
@@ -1024,6 +1053,29 @@ class Tract:
     def active_profile(self) -> object | None:
         """The currently loaded workflow profile, or None."""
         return self._active_profile
+
+    def register_profile(self, profile: object) -> None:
+        """Register a custom workflow profile on this Tract instance.
+
+        Args:
+            profile: A :class:`WorkflowProfile` instance.
+        """
+        self._profile_registry[profile.name] = profile  # type: ignore[union-attr]
+
+    def get_profile(self, name: str) -> object:
+        """Get a workflow profile by name from this instance's registry.
+
+        Raises:
+            KeyError: If the profile name is not found.
+        """
+        if name not in self._profile_registry:
+            available = ", ".join(sorted(self._profile_registry.keys()))
+            raise KeyError(f"Profile '{name}' not found. Available: {available}")
+        return self._profile_registry[name]
+
+    def list_profiles(self) -> list:
+        """List all available workflow profiles from this instance's registry."""
+        return list(self._profile_registry.values())
 
     def add_middleware(self, event: MiddlewareEvent, handler: Callable) -> str:
         """Register middleware. Returns handler ID for removal."""
@@ -1291,6 +1343,7 @@ class Tract:
         Returns:
             CommitInfo of the handoff commit on the target, or None if no handoff.
         """
+        self._check_open()
         self._run_middleware("pre_transition", target=target)
 
         payload = None
@@ -1646,6 +1699,7 @@ class Tract:
         Returns:
             CommitInfo for the metadata commit.
         """
+        self._check_open()
         from tract.models.content import MetadataContent
 
         # MetadataContent.data is dict; if str passed, wrap it
@@ -1957,6 +2011,7 @@ class Tract:
         Returns:
             :class:`CommitInfo` for the new commit.
         """
+        self._check_open()
         from tract.models.content import ReasoningContent
 
         return self.commit(
@@ -2000,6 +2055,7 @@ class Tract:
         Returns:
             :class:`CommitInfo` for the new commit.
         """
+        self._check_open()
         from tract.models.content import DialogueContent
 
         meta = {**(metadata or {}), "tool_call_id": tool_call_id, "name": name}
@@ -3436,6 +3492,7 @@ class Tract:
 
         The LLM summarization is awaited; commit finalization is sync.
         """
+        self._check_open()
         from tract.operations.compression import (
             _classify_by_priority,
             _commit_compression,
@@ -3599,6 +3656,7 @@ class Tract:
         triggered_by: str | None = None,
     ) -> ToolCompactResult:
         """Async version of :meth:`compress_tool_calls`."""
+        self._check_open()
         from tract.exceptions import CompressionError
         from tract.llm.protocols import acall_llm
         from tract.models.compression import ToolCompactResult
@@ -4087,6 +4145,7 @@ class Tract:
         Args:
             commit_or_hash: A :class:`CommitInfo` or a commit hash string.
         """
+        self._check_open()
         from tract.formatting import pprint_commit_info
 
         if isinstance(commit_or_hash, str):
@@ -4249,6 +4308,7 @@ class Tract:
         Returns:
             True if the tag was removed, False if it didn't exist.
         """
+        self._check_open()
         if self._tag_annotation_repo is None:
             return False
         result = self._tag_annotation_repo.remove_tag(
@@ -4703,6 +4763,7 @@ class Tract:
             List of matching :class:`CommitInfo` in reverse chronological
             order (newest first).
         """
+        self._check_open()
         import re
 
         # Resolve starting commit hash
@@ -4961,6 +5022,7 @@ class Tract:
             TraceError: If no commits exist.
             CommitNotFoundError: If references can't be resolved.
         """
+        self._check_open()
         from tract.operations.diff import compute_diff
 
         # Default commit_b to HEAD
@@ -5045,6 +5107,7 @@ class Tract:
             TraceError: If the current branch has no commits (when defaulting side A).
             CommitNotFoundError: If a reference cannot be resolved.
         """
+        self._check_open()
         from tract.operations.diff import compute_diff
 
         # --- Validate mutual exclusivity ---
@@ -5104,6 +5167,7 @@ class Tract:
         Raises:
             CommitNotFoundError: If the commit cannot be resolved.
         """
+        self._check_open()
         resolved = self.resolve_commit(commit_hash)
         row = self._commit_repo.get(resolved)
         if row is None:
@@ -5146,6 +5210,7 @@ class Tract:
             CommitNotFoundError: If the commit cannot be resolved.
             IndexError: If ``version`` is out of range.
         """
+        self._check_open()
         history = self.edit_history(commit_hash)
         if version < 0 or version >= len(history):
             raise IndexError(
@@ -5504,6 +5569,7 @@ class Tract:
         Raises:
             TraceError: If there is no HEAD (empty tract).
         """
+        self._check_open()
         import time
 
         current_head = self.head
@@ -5590,6 +5656,7 @@ class Tract:
         Raises:
             ValueError: If no matching snapshot is found.
         """
+        self._check_open()
         snapshots = self.list_snapshots()
         match: dict | None = None
         for snap in snapshots:
@@ -5634,6 +5701,7 @@ class Tract:
             A dict with keys: version, tract_id, branch, head, commits,
             branches, exported_at.
         """
+        self._check_open()
         from tract.operations.ancestry import walk_ancestry
 
         head = self.head
@@ -5739,6 +5807,7 @@ class Tract:
         Raises:
             ValueError: If the state dict is invalid or version unsupported.
         """
+        self._check_open()
         if not isinstance(state, dict) or state.get("version") != 1:
             raise ValueError("Invalid or unsupported export state (expected version=1)")
 
@@ -5860,6 +5929,7 @@ class Tract:
                 from *client* (suitable for OpenAI-compatible APIs).
                 Pass a custom resolver for non-OpenAI clients.
         """
+        self._check_open()
         # Close the old client if we own it (prevents resource leak on swap)
         if self._owns_llm_client and self._llm_client is not None:
             try:
@@ -5910,6 +5980,7 @@ class Tract:
                 compress=LLMConfig(model="gpt-3.5-turbo"),
             )
         """
+        self._check_open()
         if _configs is not None and operation_configs:
             raise TypeError(
                 "Cannot mix positional OperationConfigs with keyword arguments"
@@ -5983,6 +6054,7 @@ class Tract:
                 compress=ollama_client,
             )
         """
+        self._check_open()
         if _clients is not None and operation_clients:
             raise TypeError(
                 "Cannot mix positional OperationClients with keyword arguments"
@@ -6104,6 +6176,7 @@ class Tract:
             TypeError: If both positional and keyword arguments provided.
             ValueError: If an unknown operation name is given.
         """
+        self._check_open()
         if _prompts is not None and prompt_overrides:
             raise TypeError(
                 "Cannot mix positional OperationPrompts with keyword arguments"
@@ -6493,6 +6566,7 @@ class Tract:
             ImportCommitError: If issues detected and no resolver, or
                 resolver aborts.
         """
+        self._check_open()
         from tract.operations.rebase import import_commit as _import_commit
 
         # Resolve commit hash (supports prefixes and branch names)
@@ -7233,6 +7307,7 @@ class Tract:
             TraceError: If no commits exist or *head_hash* doesn't match.
             ContentValidationError: If dict format is unrecognised.
         """
+        self._check_open()
         # Normalize input
         if isinstance(usage, dict):
             usage = self._normalize_usage_dict(usage)

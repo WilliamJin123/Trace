@@ -15,6 +15,7 @@ __all__: list[str] = [
     "RESEARCH",
     "ECOMMERCE",
     "BUILT_IN_PROFILES",
+    "_DEFAULT_PROFILES",
     "get_profile",
     "list_profiles",
     "register_profile",
@@ -141,33 +142,46 @@ ECOMMERCE = WorkflowProfile(
 )
 
 # ---------------------------------------------------------------------------
-# Registry
+# Default registry (seed data for per-instance registries)
 # ---------------------------------------------------------------------------
 
-BUILT_IN_PROFILES: dict[str, WorkflowProfile] = {
+_DEFAULT_PROFILES: dict[str, WorkflowProfile] = {
     "coding": CODING,
     "research": RESEARCH,
     "ecommerce": ECOMMERCE,
 }
 
+# Backward-compat alias
+BUILT_IN_PROFILES = _DEFAULT_PROFILES
+
+
+# ---------------------------------------------------------------------------
+# Module-level public API (operates on the global _DEFAULT_PROFILES dict)
+# ---------------------------------------------------------------------------
+
 
 def get_profile(name: str) -> WorkflowProfile:
-    """Get a workflow profile by name.
+    """Get a workflow profile by name from the global registry.
 
     Raises:
         KeyError: If no profile with that name is registered.
     """
-    if name not in BUILT_IN_PROFILES:
-        available = ", ".join(sorted(BUILT_IN_PROFILES.keys()))
+    if name not in _DEFAULT_PROFILES:
+        available = ", ".join(sorted(_DEFAULT_PROFILES.keys()))
         raise KeyError(f"Profile '{name}' not found. Available: {available}")
-    return BUILT_IN_PROFILES[name]
+    return _DEFAULT_PROFILES[name]
 
 
 def list_profiles() -> list[WorkflowProfile]:
-    """List all available workflow profiles."""
-    return list(BUILT_IN_PROFILES.values())
+    """List all available workflow profiles from the global registry."""
+    return list(_DEFAULT_PROFILES.values())
 
 
 def register_profile(profile: WorkflowProfile) -> None:
-    """Register a custom workflow profile."""
-    BUILT_IN_PROFILES[profile.name] = profile
+    """Register a custom workflow profile in the global registry."""
+    _DEFAULT_PROFILES[profile.name] = profile
+
+
+def default_profile_registry() -> dict[str, WorkflowProfile]:
+    """Return a fresh copy of the default profiles for per-instance use."""
+    return dict(_DEFAULT_PROFILES)

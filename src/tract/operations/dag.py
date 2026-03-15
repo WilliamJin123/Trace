@@ -57,17 +57,36 @@ def _bfs_walk(
                     queue.append(extra)
 
 
+def _get_parents(
+    commit_hash: str,
+    commit_repo: CommitRepository,
+    parent_repo: CommitParentRepository | None,
+) -> list[str]:
+    """Return all parent hashes (first-parent + extra merge parents) for a commit."""
+    parents: list[str] = []
+    commit = commit_repo.get(commit_hash)
+    if commit and commit.parent_hash:
+        parents.append(commit.parent_hash)
+    if parent_repo is not None:
+        for extra in parent_repo.get_parents(commit_hash):
+            if extra not in parents:
+                parents.append(extra)
+    return parents
+
+
 def find_merge_base(
     commit_repo: CommitRepository,
     parent_repo: CommitParentRepository | None,
     hash_a: str,
     hash_b: str,
 ) -> str | None:
-    """Find the best common ancestor (merge base) of two commits.
+    """Find the lowest common ancestor (merge base) of two commits.
 
-    Walks both ancestor chains using BFS and returns the first intersection.
-    For linear history, this is the point where branches diverged.
-    For merge commits, follows ALL parents.
+    Uses simultaneous two-frontier BFS: both sides expand level-by-level
+    in alternation, and the first node seen by both frontiers is the LCA.
+    This is guaranteed to find the *closest* common ancestor, unlike a
+    one-side-materialize approach which can return suboptimal results on
+    diamond DAGs.
 
     Args:
         commit_repo: Commit repository for hash lookups.
@@ -78,11 +97,45 @@ def find_merge_base(
     Returns:
         The commit hash of the merge base, or None if no common ancestor.
     """
-    ancestors_a = set(_bfs_walk(hash_a, commit_repo, parent_repo))
+    # Trivial case: same commit.
+    if hash_a == hash_b:
+        return hash_a
 
-    for h in _bfs_walk(hash_b, commit_repo, parent_repo):
-        if h in ancestors_a:
-            return h
+    seen_a: set[str] = {hash_a}
+    seen_b: set[str] = {hash_b}
+    queue_a: deque[str] = deque([hash_a])
+    queue_b: deque[str] = deque([hash_b])
+
+    # Check initial overlap (one is already an ancestor of the other).
+    if hash_a in seen_b:
+        return hash_a
+    if hash_b in seen_a:
+        return hash_b
+
+    while queue_a or queue_b:
+        # Expand one level of frontier A.
+        if queue_a:
+            level_size = len(queue_a)
+            for _ in range(level_size):
+                current = queue_a.popleft()
+                for parent in _get_parents(current, commit_repo, parent_repo):
+                    if parent not in seen_a:
+                        if parent in seen_b:
+                            return parent
+                        seen_a.add(parent)
+                        queue_a.append(parent)
+
+        # Expand one level of frontier B.
+        if queue_b:
+            level_size = len(queue_b)
+            for _ in range(level_size):
+                current = queue_b.popleft()
+                for parent in _get_parents(current, commit_repo, parent_repo):
+                    if parent not in seen_b:
+                        if parent in seen_a:
+                            return parent
+                        seen_b.add(parent)
+                        queue_b.append(parent)
 
     return None
 

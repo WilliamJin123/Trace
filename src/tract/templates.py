@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 __all__: list[str] = [
     "DirectiveTemplate",
     "BUILT_IN_TEMPLATES",
+    "_DEFAULT_TEMPLATES",
     "list_templates",
     "get_template",
     "register_template",
@@ -39,14 +40,14 @@ class DirectiveTemplate:
 
 
 # ---------------------------------------------------------------------------
-# Built-in templates registry
+# Built-in templates (seed data for per-instance registries)
 # ---------------------------------------------------------------------------
 
-BUILT_IN_TEMPLATES: dict[str, DirectiveTemplate] = {}
+_DEFAULT_TEMPLATES: dict[str, DirectiveTemplate] = {}
 
 
 def _register(t: DirectiveTemplate) -> DirectiveTemplate:
-    BUILT_IN_TEMPLATES[t.name] = t
+    _DEFAULT_TEMPLATES[t.name] = t
     return t
 
 
@@ -215,23 +216,35 @@ _register(
 
 
 # ---------------------------------------------------------------------------
-# Public API
+# Backward-compat alias: BUILT_IN_TEMPLATES points to _DEFAULT_TEMPLATES
+# ---------------------------------------------------------------------------
+
+BUILT_IN_TEMPLATES = _DEFAULT_TEMPLATES
+
+
+# ---------------------------------------------------------------------------
+# Module-level public API (operates on the global _DEFAULT_TEMPLATES dict)
 # ---------------------------------------------------------------------------
 
 
 def list_templates() -> list[DirectiveTemplate]:
-    """Return all registered templates."""
-    return list(BUILT_IN_TEMPLATES.values())
+    """Return all registered templates from the global registry."""
+    return list(_DEFAULT_TEMPLATES.values())
 
 
 def get_template(name: str) -> DirectiveTemplate:
-    """Get a template by name. Raises KeyError if not found."""
-    if name not in BUILT_IN_TEMPLATES:
-        available = ", ".join(sorted(BUILT_IN_TEMPLATES.keys()))
+    """Get a template by name from the global registry. Raises KeyError if not found."""
+    if name not in _DEFAULT_TEMPLATES:
+        available = ", ".join(sorted(_DEFAULT_TEMPLATES.keys()))
         raise KeyError(f"Template '{name}' not found. Available: {available}")
-    return BUILT_IN_TEMPLATES[name]
+    return _DEFAULT_TEMPLATES[name]
 
 
 def register_template(template: DirectiveTemplate) -> None:
-    """Register a custom directive template."""
-    BUILT_IN_TEMPLATES[template.name] = template
+    """Register a custom directive template in the global registry."""
+    _DEFAULT_TEMPLATES[template.name] = template
+
+
+def default_template_registry() -> dict[str, DirectiveTemplate]:
+    """Return a fresh copy of the default templates for per-instance use."""
+    return dict(_DEFAULT_TEMPLATES)
