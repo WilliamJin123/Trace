@@ -609,3 +609,199 @@ class TestGateAndMaintainerCoexistence:
 
             # Both should have fired
             assert len(dual.calls) == 2
+
+
+# ---------------------------------------------------------------------------
+# 14. Block action through Tract API
+# ---------------------------------------------------------------------------
+
+class TestMaintainerBlockAction:
+    def test_block_action_raises_blocked_error_through_tract(self):
+        """A maintainer with block action raises BlockedError through t.commit()."""
+        from tract.exceptions import BlockedError
+
+        with Tract.open() as t:
+            _seed_commits(t, n=1)
+
+            response = _action_response("Blocking", [
+                {"type": "block", "reason": "Context is in bad state"},
+            ])
+            mock = MockLLMClient(response)
+            t.configure_llm(mock)
+
+            t.maintain(
+                "blocker",
+                event="post_commit",
+                instructions="Block if bad state",
+                actions=["block"],
+            )
+
+            with pytest.raises(BlockedError, match="bad state"):
+                t.commit(
+                    {"content_type": "dialogue", "role": "user", "text": "trigger"},
+                    message="trigger",
+                )
+
+    def test_block_after_maintenance(self):
+        """Non-block actions execute before the block raises."""
+        from tract.exceptions import BlockedError
+
+        with Tract.open() as t:
+            _seed_commits(t, n=1)
+
+            response = _action_response("Configure then block", [
+                {"type": "configure", "key": "stage", "value": "blocked"},
+                {"type": "block", "reason": "Pausing after config"},
+            ])
+            mock = MockLLMClient(response)
+            t.configure_llm(mock)
+
+            t.maintain(
+                "config-then-block",
+                event="post_commit",
+                instructions="Configure then block",
+                actions=["configure", "block"],
+            )
+
+            with pytest.raises(BlockedError, match="Pausing"):
+                t.commit(
+                    {"content_type": "dialogue", "role": "user", "text": "trigger"},
+                    message="trigger",
+                )
+
+            # The configure action should have executed before the block
+            assert t.get_config("stage") == "blocked"
+
+
+# ---------------------------------------------------------------------------
+# 15. Peeking through Tract API
+# ---------------------------------------------------------------------------
+
+class SequenceMockClient:
+    """Returns different responses on successive calls."""
+
+    def __init__(self, responses: list[str]):
+        self.responses = responses
+        self.call_count = 0
+        self.calls: list[tuple[list[dict], dict]] = []
+
+    def chat(self, messages: list[dict], **kwargs) -> dict:
+        self.calls.append((messages, kwargs))
+        idx = min(self.call_count, len(self.responses) - 1)
+        text = self.responses[idx]
+        self.call_count += 1
+        return {"choices": [{"message": {"content": text}}]}
+
+    def extract_content(self, response: dict) -> str:
+        return response["choices"][0]["message"]["content"]
+
+    def extract_usage(self, response: dict) -> dict:
+        return {"total_tokens": 100}
+
+    def close(self) -> None:
+        pass
+
+
+class TestMaintainerPeeking:
+    def test_peeking_through_tract_api(self):
+        """t.maintain() with max_peeks passes through to handler."""
+        with Tract.open() as t:
+            _seed_commits(t, n=2)
+
+            # LLM skips peeking and returns actions directly
+            response = _action_response("No peek needed", [])
+            mock = MockLLMClient(response)
+            t.configure_llm(mock)
+
+            t.maintain(
+                "peek-maintainer",
+                event="post_commit",
+                instructions="Check content quality",
+                actions=["annotate"],
+                max_peeks=3,
+            )
+
+            # Trigger
+            t.commit(
+                {"content_type": "dialogue", "role": "user", "text": "trigger"},
+                message="trigger",
+            )
+
+            # LLM was called (first pass -- peek selection)
+            assert len(mock.calls) == 1
+            # The system prompt should reference peeking
+            system_msg = mock.calls[0][0][0]["content"]
+            assert "peek" in system_msg.lower()
+
+    def test_peeking_fetches_real_content(self):
+        """Peeking retrieves actual commit content from the tract."""
+        with Tract.open() as t:
+            hashes = _seed_commits(t, n=2)
+            target_prefix = hashes[0][:8]
+
+            # Pass 1: request to peek at the first commit
+            # Pass 2: return no actions after peeking
+            pass1_resp = json.dumps({"peek": [target_prefix]})
+            pass2_resp = _action_response("Reviewed content", [])
+
+            client = SequenceMockClient([pass1_resp, pass2_resp])
+            t.configure_llm(client)
+
+            t.maintain(
+                "content-peek",
+                event="post_commit",
+                instructions="Inspect commit content",
+                actions=["annotate"],
+                max_peeks=3,
+            )
+
+            # Trigger
+            t.commit(
+                {"content_type": "dialogue", "role": "user", "text": "trigger"},
+                message="trigger",
+            )
+
+            # Two LLM calls: peek + action
+            assert client.call_count == 2
+
+            # The second call should contain the peeked content
+            pass2_messages = client.calls[1][0]
+            user_msg = pass2_messages[1]["content"]
+            assert "PEEKED COMMIT CONTENTS" in user_msg
+            assert target_prefix in user_msg
+            # The actual content should be present (Finding 1)
+            assert "Finding 1" in user_msg
+
+    def test_peeking_caps_at_max_peeks(self):
+        """Peeking caps at max_peeks even if LLM requests more."""
+        with Tract.open() as t:
+            hashes = _seed_commits(t, n=5)
+            all_prefixes = [h[:8] for h in hashes]
+
+            # Pass 1: request to peek at all 5 commits (but max_peeks=2)
+            pass1_resp = json.dumps({"peek": all_prefixes})
+            pass2_resp = _action_response("Done", [])
+
+            client = SequenceMockClient([pass1_resp, pass2_resp])
+            t.configure_llm(client)
+
+            t.maintain(
+                "capped-peek",
+                event="post_commit",
+                instructions="x",
+                actions=["annotate"],
+                max_peeks=2,
+            )
+
+            # Trigger
+            t.commit(
+                {"content_type": "dialogue", "role": "user", "text": "trigger"},
+                message="trigger",
+            )
+
+            # Second call should only contain 2 peeked commits
+            pass2_messages = client.calls[1][0]
+            user_msg = pass2_messages[1]["content"]
+            # Count occurrences of the delimiter pattern
+            peek_sections = user_msg.count("--- [")
+            assert peek_sections == 2

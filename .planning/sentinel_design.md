@@ -6,7 +6,10 @@
   - Post_* events rejected at registration time (gates block; can't block post-op).
 - **Phase 2 — `t.maintain()` (SemanticMaintainer)**: SHIPPED. `src/tract/maintain.py`. 72 tests.
   - Actions: annotate, compress, configure, directive, tag, gc.
-- **Phase 3 — Full sentinel (peeking + multi-turn)**: NOT STARTED. Deferred pending demand.
+- **Phase 3 — Peeking + block actions**: SHIPPED. Added to `src/tract/maintain.py`.
+  - Two-pass flow: manifest → peek selection → enriched action decision.
+  - Block action type: executes maintenance first, then raises BlockedError.
+  - `max_peeks` parameter on `t.maintain()` and `SemanticMaintainer`.
 
 ## Problem
 

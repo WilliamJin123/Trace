@@ -1158,6 +1158,7 @@ class Tract:
         condition: Callable | None = None,
         temperature: float = 0.1,
         max_log_entries: int = 30,
+        max_peeks: int = 0,
     ) -> str:
         """Register a semantic maintainer (LLM-powered context maintenance).
 
@@ -1165,18 +1166,25 @@ class Tract:
         what maintenance actions to take on the context. Unlike gates (which block),
         maintainers execute actions (annotate, compress, configure, etc.).
 
+        When ``max_peeks > 0``, the maintainer uses a two-pass flow:
+        first it asks the LLM which commits need full content inspection,
+        fetches those contents, then makes a second call for action decisions.
+
         Args:
             name: Unique name for this maintainer.
             event: Middleware event to fire on (e.g., "post_commit", "post_transition").
             instructions: Natural language description of what maintenance to perform.
             actions: List of allowed action types. If None, all actions are allowed.
-                Valid types: "annotate", "compress", "configure", "directive", "tag", "gc".
+                Valid types: "annotate", "compress", "configure", "directive",
+                "tag", "gc", "block".
             model: LLM model override. Uses tract's default if None.
             condition: Optional deterministic pre-check. If provided and returns False,
                 the LLM call is skipped (maintainer does nothing). Use this to
                 avoid unnecessary LLM calls.
             temperature: LLM temperature (default 0.1 for deterministic judgment).
             max_log_entries: Maximum commits to include in the manifest.
+            max_peeks: Maximum commits the LLM may inspect for full content.
+                0 (default) disables peeking — single LLM call only.
 
         Returns:
             Handler ID (can be used with remove_middleware() or remove_maintainer()).
@@ -1192,6 +1200,7 @@ class Tract:
                 event="post_commit",
                 instructions="Mark tool_io commits older than 10 entries as SKIP",
                 actions=["annotate"],
+                max_peeks=3,
                 condition=lambda ctx: ctx.tract.log(limit=1)[0].content_type == "tool_io",
             )
         """
@@ -1212,6 +1221,7 @@ class Tract:
             condition=condition,
             temperature=temperature,
             max_log_entries=max_log_entries,
+            max_peeks=max_peeks,
         )
         handler_id = self.use(event, handler)
         self._maintainers[name] = handler_id

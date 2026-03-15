@@ -852,3 +852,696 @@ class TestEdgeCases:
             tract_mock.annotate.assert_called_once_with(
                 "x" * 40, prio_enum, reason=None,
             )
+
+
+# ---------------------------------------------------------------------------
+# Block action tests
+# ---------------------------------------------------------------------------
+
+class TestBlockAction:
+    def test_block_in_valid_actions(self):
+        """'block' is a valid action type."""
+        m = SemanticMaintainer(
+            name="block-test",
+            instructions="x",
+            actions=["block"],
+        )
+        assert "block" in m.actions
+
+    def test_block_raises_blocked_error(self):
+        """Block action raises BlockedError after executing other actions."""
+        from tract.exceptions import BlockedError
+
+        response = _action_response("Bad state detected", [
+            {"type": "configure", "key": "stage", "value": "paused"},
+            {"type": "block", "reason": "Bad state"},
+        ])
+        client = FakeLLMClient(response)
+        tract_mock = _make_tract_mock(client=client)
+        ctx = _make_ctx(tract_mock)
+
+        m = SemanticMaintainer(
+            name="block-m",
+            instructions="Block if bad state",
+            actions=["configure", "block"],
+        )
+        with pytest.raises(BlockedError, match="Bad state"):
+            m(ctx)
+
+        # configure should have been executed first
+        tract_mock.configure.assert_called_once_with(stage="paused")
+
+    def test_block_without_reason(self):
+        """Block action with no reason uses default text."""
+        from tract.exceptions import BlockedError
+
+        response = _action_response("Blocking", [
+            {"type": "block"},  # no "reason" key
+        ])
+        client = FakeLLMClient(response)
+        tract_mock = _make_tract_mock(client=client)
+        ctx = _make_ctx(tract_mock)
+
+        m = SemanticMaintainer(
+            name="no-reason-block",
+            instructions="x",
+            actions=["block"],
+        )
+        with pytest.raises(BlockedError) as exc_info:
+            m(ctx)
+
+        assert "(no reason given)" in exc_info.value.reasons[0]
+
+    def test_multiple_block_actions(self):
+        """Multiple block actions collect all reasons in BlockedError."""
+        from tract.exceptions import BlockedError
+
+        response = _action_response("Multiple blocks", [
+            {"type": "block", "reason": "Reason A"},
+            {"type": "block", "reason": "Reason B"},
+        ])
+        client = FakeLLMClient(response)
+        tract_mock = _make_tract_mock(client=client)
+        ctx = _make_ctx(tract_mock)
+
+        m = SemanticMaintainer(
+            name="multi-block",
+            instructions="x",
+            actions=["block"],
+        )
+        with pytest.raises(BlockedError) as exc_info:
+            m(ctx)
+
+        assert len(exc_info.value.reasons) == 2
+        assert "Reason A" in exc_info.value.reasons[0]
+        assert "Reason B" in exc_info.value.reasons[1]
+
+    def test_block_only_action(self):
+        """Block as the only action still raises BlockedError."""
+        from tract.exceptions import BlockedError
+
+        response = _action_response("Just blocking", [
+            {"type": "block", "reason": "Stop everything"},
+        ])
+        client = FakeLLMClient(response)
+        tract_mock = _make_tract_mock(client=client)
+        ctx = _make_ctx(tract_mock)
+
+        m = SemanticMaintainer(
+            name="block-only",
+            instructions="x",
+            actions=["block"],
+        )
+        with pytest.raises(BlockedError, match="Stop everything"):
+            m(ctx)
+
+        # last_result should still be set before the raise
+        assert m.last_result is not None
+        assert m.last_result.actions_requested == 1
+        assert m.last_result.actions_executed == 1  # block counts as executed
+
+    def test_block_result_tracks_execution(self):
+        """MaintainResult counts block actions as executed, non-block failures as failed."""
+        from tract.exceptions import BlockedError
+
+        response = _action_response("Block after gc", [
+            {"type": "gc"},
+            {"type": "block", "reason": "Done"},
+        ])
+        client = FakeLLMClient(response)
+        tract_mock = _make_tract_mock(client=client)
+        ctx = _make_ctx(tract_mock)
+
+        m = SemanticMaintainer(
+            name="track-block",
+            instructions="x",
+            actions=["gc", "block"],
+        )
+        with pytest.raises(BlockedError):
+            m(ctx)
+
+        assert m.last_result is not None
+        assert m.last_result.actions_requested == 2
+        assert m.last_result.actions_executed == 2  # gc + block
+        assert m.last_result.actions_failed == 0
+
+
+# ---------------------------------------------------------------------------
+# Peek parsing tests
+# ---------------------------------------------------------------------------
+
+class TestPeekParsing:
+    def test_parse_peek_request(self):
+        """Parse a JSON peek request."""
+        hashes, actions = SemanticMaintainer._parse_peek_or_actions(
+            '{"peek": ["abc123", "def456"]}'
+        )
+        assert hashes == ["abc123", "def456"]
+        assert actions is None
+
+    def test_parse_direct_actions(self):
+        """Parse direct actions (no peeking needed)."""
+        text = '{"reasoning": "No peek needed", "actions": [{"type": "gc"}]}'
+        hashes, actions = SemanticMaintainer._parse_peek_or_actions(text)
+        assert hashes == []
+        assert actions is not None
+        assert actions[0] == "No peek needed"
+        assert len(actions[1]) == 1
+        assert actions[1][0]["type"] == "gc"
+
+    def test_parse_empty_peek_list(self):
+        """Empty peek list means no peeking."""
+        hashes, actions = SemanticMaintainer._parse_peek_or_actions(
+            '{"peek": []}'
+        )
+        assert hashes == []
+        assert actions is None
+
+    def test_parse_malformed_json(self):
+        """Malformed JSON returns empty peeks, no actions."""
+        hashes, actions = SemanticMaintainer._parse_peek_or_actions(
+            "this is not valid json at all"
+        )
+        assert hashes == []
+        assert actions is None
+
+    def test_parse_with_code_fences(self):
+        """Code-fenced peek request is handled correctly."""
+        text = '```json\n{"peek": ["abc123"]}\n```'
+        hashes, actions = SemanticMaintainer._parse_peek_or_actions(text)
+        assert hashes == ["abc123"]
+        assert actions is None
+
+    def test_parse_peek_non_list(self):
+        """Non-list peek value returns empty list."""
+        hashes, actions = SemanticMaintainer._parse_peek_or_actions(
+            '{"peek": "not-a-list"}'
+        )
+        assert hashes == []
+        assert actions is None
+
+    def test_parse_peek_filters_empty_values(self):
+        """Empty/falsy values in peek list are filtered out."""
+        hashes, actions = SemanticMaintainer._parse_peek_or_actions(
+            '{"peek": ["abc", "", null, "def"]}'
+        )
+        assert hashes == ["abc", "def"]
+        assert actions is None
+
+    def test_parse_direct_actions_no_reasoning(self):
+        """Direct actions with no reasoning use default."""
+        text = '{"actions": [{"type": "gc"}]}'
+        hashes, actions = SemanticMaintainer._parse_peek_or_actions(text)
+        assert hashes == []
+        assert actions is not None
+        assert actions[0] == "(no reasoning given)"
+
+    def test_parse_direct_actions_filters_invalid(self):
+        """Direct actions without 'type' key are filtered."""
+        text = json.dumps({
+            "reasoning": "mixed",
+            "actions": [{"type": "gc"}, {"no_type": "bad"}, "string-entry"],
+        })
+        hashes, actions = SemanticMaintainer._parse_peek_or_actions(text)
+        assert hashes == []
+        assert actions is not None
+        assert len(actions[1]) == 1
+        assert actions[1][0]["type"] == "gc"
+
+
+# ---------------------------------------------------------------------------
+# Peeking flow tests
+# ---------------------------------------------------------------------------
+
+class PeekThenActionMockClient:
+    """Returns peek request on first call, actions on second."""
+
+    def __init__(self, peek_hashes: list[str], actions_response: str):
+        self.call_count = 0
+        self.peek_hashes = peek_hashes
+        self.actions_response = actions_response
+        self.calls: list[tuple[list[dict], dict]] = []
+
+    def chat(self, messages: list[dict], **kwargs: Any) -> dict:
+        self.calls.append((messages, kwargs))
+        self.call_count += 1
+        if self.call_count == 1:
+            text = json.dumps({"peek": self.peek_hashes})
+        else:
+            text = self.actions_response
+        return {"choices": [{"message": {"content": text}}]}
+
+    def extract_content(self, response: dict) -> str:
+        return response["choices"][0]["message"]["content"]
+
+    def extract_usage(self, response: dict) -> dict:
+        return {"total_tokens": 100}
+
+    def close(self) -> None:
+        pass
+
+
+class DirectActionMockClient:
+    """Returns direct actions on the first call (no peeking)."""
+
+    def __init__(self, response_text: str):
+        self.response_text = response_text
+        self.calls: list[tuple[list[dict], dict]] = []
+
+    def chat(self, messages: list[dict], **kwargs: Any) -> dict:
+        self.calls.append((messages, kwargs))
+        return {"choices": [{"message": {"content": self.response_text}}]}
+
+    def extract_content(self, response: dict) -> str:
+        return response["choices"][0]["message"]["content"]
+
+    def extract_usage(self, response: dict) -> dict:
+        return {"total_tokens": 100}
+
+    def close(self) -> None:
+        pass
+
+
+class TestPeekingFlow:
+    def test_peeking_disabled_by_default(self):
+        """max_peeks=0 uses single-pass flow (no peek messages)."""
+        client = FakeLLMClient(_action_response("single pass"))
+        tract_mock = _make_tract_mock(client=client)
+        ctx = _make_ctx(tract_mock)
+
+        m = SemanticMaintainer(
+            name="no-peek",
+            instructions="x",
+            actions=["gc"],
+            max_peeks=0,
+        )
+        m(ctx)
+
+        # Only one LLM call
+        assert client.last_messages is not None
+        # System prompt should be the action prompt, not the peek prompt
+        assert "maintenance agent" in client.last_messages[0]["content"].lower()
+        assert m.last_result.peeks_requested == 0
+        assert m.last_result.peeks_performed == 0
+
+    def test_peeking_two_pass(self):
+        """max_peeks>0 triggers two-pass flow when LLM requests peeks."""
+        hash1 = "a" * 40
+        actions_resp = _action_response("After peeking", [{"type": "gc"}])
+        client = PeekThenActionMockClient(
+            peek_hashes=["a" * 8],
+            actions_response=actions_resp,
+        )
+        tract_mock = _make_tract_mock(client=client)
+        # Set up resolve_commit and get_content for peeking
+        tract_mock.resolve_commit.return_value = hash1
+        tract_mock.get_content.return_value = "This is the content"
+        ctx = _make_ctx(tract_mock)
+
+        m = SemanticMaintainer(
+            name="peek-m",
+            instructions="Inspect commits",
+            actions=["gc"],
+            max_peeks=3,
+        )
+        m(ctx)
+
+        # Two LLM calls: peek pass + action pass
+        assert client.call_count == 2
+        assert m.last_result is not None
+        assert m.last_result.peeks_requested == 1
+        assert m.last_result.peeks_performed == 1
+        assert m.last_result.actions_executed == 1
+        tract_mock.gc.assert_called_once()
+
+    def test_peeking_direct_actions(self):
+        """LLM can skip peeking and return actions directly in pass 1."""
+        direct_resp = _action_response("No peek needed", [{"type": "gc"}])
+        client = DirectActionMockClient(direct_resp)
+        tract_mock = _make_tract_mock(client=client)
+        ctx = _make_ctx(tract_mock)
+
+        m = SemanticMaintainer(
+            name="direct-peek",
+            instructions="x",
+            actions=["gc"],
+            max_peeks=3,
+        )
+        m(ctx)
+
+        # Only one LLM call (skipped peeking)
+        assert len(client.calls) == 1
+        assert m.last_result.peeks_requested == 0
+        assert m.last_result.peeks_performed == 0
+        assert m.last_result.actions_executed == 1
+        tract_mock.gc.assert_called_once()
+
+    def test_peeking_capped_at_max(self):
+        """Peek requests exceeding max_peeks are capped."""
+        actions_resp = _action_response("Done", [{"type": "gc"}])
+        # Request 5 peeks but max_peeks=2
+        client = PeekThenActionMockClient(
+            peek_hashes=["a1", "b2", "c3", "d4", "e5"],
+            actions_response=actions_resp,
+        )
+        tract_mock = _make_tract_mock(client=client)
+        tract_mock.resolve_commit.side_effect = lambda x: x + "0" * (40 - len(x))
+        tract_mock.get_content.return_value = "content"
+        ctx = _make_ctx(tract_mock)
+
+        m = SemanticMaintainer(
+            name="cap-peek",
+            instructions="x",
+            actions=["gc"],
+            max_peeks=2,
+        )
+        m(ctx)
+
+        assert m.last_result.peeks_requested == 5
+        assert m.last_result.peeks_performed == 2
+        # Only 2 resolve_commit calls (capped)
+        assert tract_mock.resolve_commit.call_count == 2
+
+    def test_peeking_content_retrieval(self):
+        """Peeked content appears in pass-2 messages."""
+        actions_resp = _action_response("Reviewed", [])
+        client = PeekThenActionMockClient(
+            peek_hashes=["abc123"],
+            actions_response=actions_resp,
+        )
+        tract_mock = _make_tract_mock(client=client)
+        tract_mock.resolve_commit.return_value = "abc123" + "0" * 34
+        tract_mock.get_content.return_value = "Interesting commit content"
+        ctx = _make_ctx(tract_mock)
+
+        m = SemanticMaintainer(
+            name="content-peek",
+            instructions="x",
+            actions=["gc"],
+            max_peeks=3,
+        )
+        m(ctx)
+
+        # Second call should contain the peeked content
+        assert len(client.calls) == 2
+        pass2_messages = client.calls[1][0]
+        user_msg = pass2_messages[1]["content"]
+        assert "PEEKED COMMIT CONTENTS" in user_msg
+        assert "abc123" in user_msg
+        assert "Interesting commit content" in user_msg
+
+    def test_peeking_content_truncated(self):
+        """Peeked content is truncated to 2000 chars."""
+        long_content = "x" * 5000
+        actions_resp = _action_response("Reviewed", [])
+        client = PeekThenActionMockClient(
+            peek_hashes=["abc"],
+            actions_response=actions_resp,
+        )
+        tract_mock = _make_tract_mock(client=client)
+        tract_mock.resolve_commit.return_value = "abc" + "0" * 37
+        tract_mock.get_content.return_value = long_content
+        ctx = _make_ctx(tract_mock)
+
+        m = SemanticMaintainer(
+            name="truncate-peek",
+            instructions="x",
+            actions=["gc"],
+            max_peeks=3,
+        )
+        m(ctx)
+
+        # Verify truncation: pass-2 content should not have the full 5000 chars
+        pass2_messages = client.calls[1][0]
+        user_msg = pass2_messages[1]["content"]
+        # The peeked content section should have at most 2000 x's
+        assert "x" * 2000 in user_msg
+        assert "x" * 2001 not in user_msg
+
+    def test_peeking_dict_content_serialized(self):
+        """Dict content is JSON-serialized and truncated."""
+        actions_resp = _action_response("Done", [])
+        client = PeekThenActionMockClient(
+            peek_hashes=["abc"],
+            actions_response=actions_resp,
+        )
+        tract_mock = _make_tract_mock(client=client)
+        tract_mock.resolve_commit.return_value = "abc" + "0" * 37
+        tract_mock.get_content.return_value = {"key": "value", "nested": [1, 2, 3]}
+        ctx = _make_ctx(tract_mock)
+
+        m = SemanticMaintainer(
+            name="dict-peek",
+            instructions="x",
+            actions=["gc"],
+            max_peeks=3,
+        )
+        m(ctx)
+
+        pass2_messages = client.calls[1][0]
+        user_msg = pass2_messages[1]["content"]
+        assert '"key"' in user_msg
+        assert '"value"' in user_msg
+
+    def test_peeking_none_content(self):
+        """None content shows '(content not found)' message."""
+        actions_resp = _action_response("Done", [])
+        client = PeekThenActionMockClient(
+            peek_hashes=["abc"],
+            actions_response=actions_resp,
+        )
+        tract_mock = _make_tract_mock(client=client)
+        tract_mock.resolve_commit.return_value = "abc" + "0" * 37
+        tract_mock.get_content.return_value = None
+        ctx = _make_ctx(tract_mock)
+
+        m = SemanticMaintainer(
+            name="none-peek",
+            instructions="x",
+            actions=["gc"],
+            max_peeks=3,
+        )
+        m(ctx)
+
+        pass2_messages = client.calls[1][0]
+        user_msg = pass2_messages[1]["content"]
+        assert "(content not found)" in user_msg
+
+    def test_peeking_failed_retrieval(self):
+        """Failed content retrieval doesn't crash -- shows error message."""
+        actions_resp = _action_response("Done", [])
+        client = PeekThenActionMockClient(
+            peek_hashes=["abc"],
+            actions_response=actions_resp,
+        )
+        tract_mock = _make_tract_mock(client=client)
+        tract_mock.resolve_commit.side_effect = RuntimeError("No such commit")
+        ctx = _make_ctx(tract_mock)
+
+        m = SemanticMaintainer(
+            name="fail-peek",
+            instructions="x",
+            actions=["gc"],
+            max_peeks=3,
+        )
+        m(ctx)
+
+        # Should not crash; should still make the second LLM call
+        assert client.call_count == 2
+        pass2_messages = client.calls[1][0]
+        user_msg = pass2_messages[1]["content"]
+        assert "could not retrieve" in user_msg
+
+    def test_peek_result_tracking(self):
+        """MaintainResult tracks peeks_requested and peeks_performed."""
+        actions_resp = _action_response("Done", [{"type": "gc"}])
+        client = PeekThenActionMockClient(
+            peek_hashes=["h1", "h2", "h3"],
+            actions_response=actions_resp,
+        )
+        tract_mock = _make_tract_mock(client=client)
+        tract_mock.resolve_commit.side_effect = lambda x: x + "0" * (40 - len(x))
+        tract_mock.get_content.return_value = "content"
+        ctx = _make_ctx(tract_mock)
+
+        m = SemanticMaintainer(
+            name="track-peek",
+            instructions="x",
+            actions=["gc"],
+            max_peeks=5,
+        )
+        m(ctx)
+
+        assert m.last_result.peeks_requested == 3
+        assert m.last_result.peeks_performed == 3
+        assert m.last_result.tokens_used == 200  # 100 per call * 2 calls
+
+    def test_peeking_llm_fail_open_pass1(self):
+        """LLM failure during peek pass is fail-open."""
+        client = MagicMock()
+        client.chat.side_effect = ConnectionError("network error")
+        tract_mock = _make_tract_mock(client=client)
+        ctx = _make_ctx(tract_mock)
+
+        m = SemanticMaintainer(
+            name="fail-peek-pass1",
+            instructions="x",
+            actions=["gc"],
+            max_peeks=3,
+        )
+        m(ctx)  # Should not raise
+
+        assert m.last_result is not None
+        assert m.last_result.actions_requested == 0
+        assert "fail-open" in m.last_result.reasoning.lower()
+
+    def test_peeking_llm_fail_open_pass2(self):
+        """LLM failure during action pass (after successful peek) is fail-open."""
+        class FailOnSecondCallClient:
+            def __init__(self):
+                self.call_count = 0
+                self.calls = []
+
+            def chat(self, messages, **kwargs):
+                self.calls.append((messages, kwargs))
+                self.call_count += 1
+                if self.call_count == 1:
+                    return {"choices": [{"message": {"content": '{"peek": ["abc"]}'}}]}
+                raise ConnectionError("second call fails")
+
+            def extract_content(self, response):
+                return response["choices"][0]["message"]["content"]
+
+            def extract_usage(self, response):
+                return {"total_tokens": 100}
+
+            def close(self):
+                pass
+
+        client = FailOnSecondCallClient()
+        tract_mock = _make_tract_mock(client=client)
+        tract_mock.resolve_commit.return_value = "abc" + "0" * 37
+        tract_mock.get_content.return_value = "content"
+        ctx = _make_ctx(tract_mock)
+
+        m = SemanticMaintainer(
+            name="fail-pass2",
+            instructions="x",
+            actions=["gc"],
+            max_peeks=3,
+        )
+        m(ctx)  # Should not raise
+
+        assert m.last_result is not None
+        assert "fail-open" in m.last_result.reasoning.lower()
+
+    def test_peeking_empty_peek_list_falls_through(self):
+        """Empty peek list from LLM triggers a normal action call."""
+        class EmptyPeekThenActionClient:
+            def __init__(self):
+                self.call_count = 0
+                self.calls = []
+
+            def chat(self, messages, **kwargs):
+                self.calls.append((messages, kwargs))
+                self.call_count += 1
+                if self.call_count == 1:
+                    return {"choices": [{"message": {"content": '{"peek": []}'}}]}
+                return {"choices": [{"message": {"content": _action_response("Fallthrough", [{"type": "gc"}])}}]}
+
+            def extract_content(self, response):
+                return response["choices"][0]["message"]["content"]
+
+            def extract_usage(self, response):
+                return {"total_tokens": 50}
+
+            def close(self):
+                pass
+
+        client = EmptyPeekThenActionClient()
+        tract_mock = _make_tract_mock(client=client)
+        ctx = _make_ctx(tract_mock)
+
+        m = SemanticMaintainer(
+            name="empty-peek",
+            instructions="x",
+            actions=["gc"],
+            max_peeks=3,
+        )
+        m(ctx)
+
+        # Two LLM calls: empty peek + fallback action call
+        assert client.call_count == 2
+        assert m.last_result.peeks_requested == 0
+        assert m.last_result.peeks_performed == 0
+        assert m.last_result.actions_executed == 1
+        tract_mock.gc.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _strip_fences tests
+# ---------------------------------------------------------------------------
+
+class TestStripFences:
+    def test_strip_json_fences(self):
+        """Strips ```json ... ``` fences."""
+        text = '```json\n{"key": "value"}\n```'
+        assert SemanticMaintainer._strip_fences(text) == '{"key": "value"}'
+
+    def test_strip_plain_fences(self):
+        """Strips ``` ... ``` fences."""
+        text = '```\n{"key": "value"}\n```'
+        assert SemanticMaintainer._strip_fences(text) == '{"key": "value"}'
+
+    def test_no_fences(self):
+        """No fences -- returns text as-is (stripped)."""
+        text = '  {"key": "value"}  '
+        assert SemanticMaintainer._strip_fences(text) == '{"key": "value"}'
+
+    def test_strip_fences_with_language_tag(self):
+        """Strips fences with other language tags like ```python."""
+        text = '```python\nprint("hello")\n```'
+        assert SemanticMaintainer._strip_fences(text) == 'print("hello")'
+
+    def test_strip_fences_preserves_inner_content(self):
+        """Inner newlines and formatting are preserved."""
+        text = '```json\n{\n  "a": 1,\n  "b": 2\n}\n```'
+        result = SemanticMaintainer._strip_fences(text)
+        assert '"a": 1' in result
+        assert '"b": 2' in result
+
+
+# ---------------------------------------------------------------------------
+# MaintainResult peek fields tests
+# ---------------------------------------------------------------------------
+
+class TestMaintainResultPeekFields:
+    def test_default_peek_fields(self):
+        """MaintainResult defaults peeks_requested and peeks_performed to 0."""
+        r = MaintainResult(
+            maintainer_name="m",
+            actions_requested=0,
+            actions_executed=0,
+            actions_failed=0,
+            tokens_used=0,
+            reasoning="ok",
+            errors=[],
+        )
+        assert r.peeks_requested == 0
+        assert r.peeks_performed == 0
+
+    def test_custom_peek_fields(self):
+        """MaintainResult accepts custom peek field values."""
+        r = MaintainResult(
+            maintainer_name="m",
+            actions_requested=1,
+            actions_executed=1,
+            actions_failed=0,
+            tokens_used=200,
+            reasoning="peeked",
+            errors=[],
+            peeks_requested=5,
+            peeks_performed=3,
+        )
+        assert r.peeks_requested == 5
+        assert r.peeks_performed == 3
