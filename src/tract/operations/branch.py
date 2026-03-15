@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 
 # Characters forbidden in branch names (git-style)
-_FORBIDDEN_CHARS = re.compile(r"[\s~^:?*\[\\]")
+_FORBIDDEN_CHARS = re.compile(r"[\s~^:?*\[\]\\]")
 
 
 def validate_branch_name(name: str) -> None:
@@ -51,7 +51,7 @@ def validate_branch_name(name: str) -> None:
 
     if _FORBIDDEN_CHARS.search(name):
         raise InvalidBranchNameError(
-            name, "branch name contains forbidden characters (whitespace, ~, ^, :, ?, *, [, \\)"
+            name, "branch name contains forbidden characters (whitespace, ~, ^, :, ?, *, [, ], \\)"
         )
 
     if name.startswith("/") or name.endswith("/") or "//" in name:

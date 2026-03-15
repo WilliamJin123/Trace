@@ -463,7 +463,7 @@ class TestGetBranchCommits:
         tip = tract.head
 
         commits = get_branch_commits(
-            tract._commit_repo, tract._parent_repo, tip, base
+            tract._commit_repo, tip, base
         )
         assert len(commits) == 1
         assert commits[0].commit_hash == tip
@@ -477,7 +477,7 @@ class TestGetBranchCommits:
         second = tract.head
 
         commits = get_branch_commits(
-            tract._commit_repo, tract._parent_repo, second, base
+            tract._commit_repo, second, base
         )
         assert len(commits) == 2
         assert commits[0].commit_hash == first  # chronological order
@@ -487,7 +487,7 @@ class TestGetBranchCommits:
         """Same commit as base and tip returns empty list."""
         base = tract.head
         commits = get_branch_commits(
-            tract._commit_repo, tract._parent_repo, base, base
+            tract._commit_repo, base, base
         )
         assert commits == []
 

@@ -240,12 +240,25 @@ class OpenAIClient:
     def close(self) -> None:
         """Close the underlying httpx client."""
         self._client.close()
+        if hasattr(self, '_async_client') and self._async_client is not None:
+            # Can't await in sync context, but httpx.AsyncClient.aclose()
+            # also has a sync close() fallback
+            try:
+                self._async_client.close()
+            except Exception:
+                pass
 
     def __enter__(self) -> OpenAIClient:
         return self
 
     def __exit__(self, *args: object) -> None:
         self.close()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        await self.aclose()
 
     @staticmethod
     def extract_content(response: dict) -> str:

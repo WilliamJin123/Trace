@@ -333,7 +333,10 @@ def run_loop(
         )
 
         # Extract and commit reasoning traces (e.g. <think> tags from Qwen)
-        content = _handle_reasoning(response, client, tract, content)
+        try:
+            content = _handle_reasoning(response, client, tract, content)
+        except Exception:
+            logger.warning("Failed to extract reasoning; continuing with original content.", exc_info=True)
 
         last_response = content
 
@@ -1150,7 +1153,10 @@ async def arun_loop(
         )
 
         # Extract and commit reasoning traces (sync)
-        content = _handle_reasoning(response, client, tract, content)
+        try:
+            content = _handle_reasoning(response, client, tract, content)
+        except Exception:
+            logger.warning("Failed to extract reasoning; continuing with original content.", exc_info=True)
 
         last_response = content
 

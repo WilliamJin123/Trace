@@ -41,6 +41,15 @@ if TYPE_CHECKING:
 _COMPACT_DEFAULT_MAX_CHARS = 1000
 """Default max_chars for compact style when None is passed."""
 
+
+def _truncate(text: str, max_chars: int) -> str:
+    """Truncate *text* to *max_chars*, appending ``...`` when safe."""
+    if len(text) <= max_chars:
+        return text
+    if max_chars <= 3:
+        return text[:max_chars]
+    return text[:max_chars - 3] + "..."
+
 # Brighter markdown theme for dark terminals — replaces Rich's default
 # magenta/cyan with white/bright_white tones.
 _MARKDOWN_THEME = Theme({
@@ -149,7 +158,7 @@ def pprint_chat_response(response: ChatResponse, *, max_chars: int | None = None
     if prompt:
         prompt_text = prompt
         if max_chars is not None and len(prompt_text) > max_chars:
-            prompt_text = prompt_text[:max_chars - 3] + "..."
+            prompt_text = _truncate(prompt_text, max_chars)
         console.print(Panel(
             prompt_text,
             title="[bold]User[/bold]",
@@ -159,7 +168,7 @@ def pprint_chat_response(response: ChatResponse, *, max_chars: int | None = None
     # Main text — rendered as Markdown (LLM responses are almost always markdown)
     text = response.text
     if max_chars is not None and len(text) > max_chars:
-        text = text[:max_chars - 3] + "..."
+        text = _truncate(text, max_chars)
 
     # Tool-calling responses: show function calls in magenta
     tool_calls = getattr(response, "tool_calls", None)
@@ -266,13 +275,13 @@ def pprint_compiled_context(
                 call_parts.append(f"{tc.name}({args})")
             display_text = "; ".join(call_parts)
             if max_chars is not None and len(display_text) > max_chars:
-                display_text = display_text[:max_chars - 3] + "..."
+                display_text = _truncate(display_text, max_chars)
             role_label = Text("tool call", style="bold magenta")
             cell: Text | Markdown = Text(display_text, style="bold magenta")
         else:
             content = msg.content
             if max_chars is not None and len(content) > max_chars:
-                content = content[:max_chars - 3] + "..."
+                content = _truncate(content, max_chars)
             sk = _style_key(msg)
             color = _ROLE_COLORS.get(sk, "white")
             label = "reasoning" if sk == "reasoning" else ("tool res." if msg.role == "tool" else msg.role)
@@ -393,13 +402,13 @@ def _pprint_compiled_compact(ctx: CompiledContext, *, max_chars: int | None = No
                 call_parts.append(f"{tc.name}({args})")
             preview = "; ".join(call_parts)
             if max_chars is not None and len(preview) > max_chars:
-                preview = preview[:max_chars - 3] + "..."
+                preview = _truncate(preview, max_chars)
         else:
             sk = _style_key(msg)
             color = _ROLE_COLORS.get(sk, "white")
             role_label = "reasoning" if sk == "reasoning" else ("tool res." if msg.role == "tool" else msg.role)
             if max_chars is not None and len(content) > max_chars:
-                preview = content[:max_chars - 3] + "..."
+                preview = _truncate(content, max_chars)
             else:
                 preview = content
 
@@ -473,7 +482,7 @@ def _pprint_compiled_chat(ctx: CompiledContext, *, max_chars: int | None = None,
     for i, msg in enumerate(ctx.messages):
         content = msg.content
         if max_chars is not None and len(content) > max_chars:
-            content = content[:max_chars - 3] + "..."
+            content = _truncate(content, max_chars)
 
         sk = _style_key(msg)
         title, border = _ROLE_STYLES.get(sk, (msg.role.title(), "white"))
@@ -570,7 +579,7 @@ def pprint_commit_info(
     if info.message:
         msg = info.message
         if max_chars is not None and len(msg) > max_chars:
-            msg = msg[:max_chars - 3] + "..."
+            msg = _truncate(msg, max_chars)
         body_parts.append(f"[bold]Message:[/bold]   {msg}")
 
     # Token count and timestamp
@@ -591,7 +600,7 @@ def pprint_commit_info(
     if content is not None:
         display_content = content
         if max_chars is not None and len(display_content) > max_chars:
-            display_content = display_content[:max_chars - 3] + "..."
+            display_content = _truncate(display_content, max_chars)
         body_parts.append("")
         body_parts.append("[bold]Content:[/bold]")
         body_parts.append(display_content)

@@ -100,7 +100,7 @@ def replay_commit(
         operation=original_row.operation,
         message=original_row.message,
         edit_target=edit_target if original_row.operation == CommitOperation.EDIT else None,
-        metadata=dict(original_row.metadata_json) if original_row.metadata_json else None,
+        metadata=(dict(original_row.metadata_json) if isinstance(original_row.metadata_json, dict) else original_row.metadata_json) if original_row.metadata_json else None,
         generation_config=(
             dict(original_row.generation_config_json)
             if original_row.generation_config_json
@@ -336,7 +336,7 @@ def plan_rebase(
 
     # Collect commits to replay (merge_base..current_tip, chronological order)
     if merge_base is not None:
-        commits_to_replay = get_branch_commits(commit_repo, parent_repo, current_tip, merge_base)
+        commits_to_replay = get_branch_commits(commit_repo, current_tip, merge_base)
     else:
         # No common ancestor -- replay all commits on current branch
         commits_to_replay = list(reversed(list(commit_repo.get_ancestors(current_tip))))

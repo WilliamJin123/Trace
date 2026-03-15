@@ -369,8 +369,8 @@ def merge_branches(
         a_commits = list(reversed(list(commit_repo.get_ancestors(current_hash))))
         b_commits = list(reversed(list(commit_repo.get_ancestors(source_hash))))
     else:
-        a_commits = get_branch_commits(commit_repo, parent_repo, current_hash, merge_base)
-        b_commits = get_branch_commits(commit_repo, parent_repo, source_hash, merge_base)
+        a_commits = get_branch_commits(commit_repo, current_hash, merge_base)
+        b_commits = get_branch_commits(commit_repo, source_hash, merge_base)
 
     # --- Detect conflicts ---
     conflicts = detect_conflicts(
@@ -449,7 +449,8 @@ def merge_branches(
                 all_resolved = False
 
         if all_resolved and len(result.resolutions) == len(conflicts):
-            result.merge_type = "semantic" if strategy == "semantic" else "conflict"
+            is_semantic = isinstance(strategy, str) and strategy.lower() == "semantic"
+            result.merge_type = "semantic" if is_semantic else "conflict"
 
     return result
 

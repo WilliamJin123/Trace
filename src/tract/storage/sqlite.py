@@ -287,9 +287,10 @@ class SqliteCommitRepository(CommitRepository):
 
     def update_metadata(self, commit_hash: str, metadata: dict) -> None:
         row = self.get(commit_hash)
-        if row is not None:
-            row.metadata_json = metadata
-            self._session.flush()
+        if row is None:
+            raise ValueError(f"Commit {commit_hash!r} not found")
+        row.metadata_json = metadata
+        self._session.flush()
 
     def delete(self, commit_hash: str) -> None:
         """Delete a commit by hash. Also cleans up related rows.
@@ -326,6 +327,16 @@ class SqliteCommitRepository(CommitRepository):
         # Bulk delete CommitToolRow entries referencing this commit
         self._session.execute(
             delete(CommitToolRow).where(CommitToolRow.commit_hash == commit_hash)
+        )
+
+        # Bulk delete TagAnnotationRow entries referencing this commit
+        self._session.execute(
+            delete(TagAnnotationRow).where(TagAnnotationRow.target_hash == commit_hash)
+        )
+
+        # Bulk delete OperationCommitRow entries referencing this commit
+        self._session.execute(
+            delete(OperationCommitRow).where(OperationCommitRow.commit_hash == commit_hash)
         )
 
         # Bulk nullify parent_hash on children (SET NULL semantics)
@@ -641,7 +652,7 @@ class SqliteAnnotationRepository(AnnotationRepository):
             .subquery()
         )
 
-        # Join to get full rows
+        # Join to get full rows, order by id desc for deterministic tie-breaking
         stmt = (
             select(AnnotationRow)
             .join(
@@ -649,10 +660,14 @@ class SqliteAnnotationRepository(AnnotationRepository):
                 (AnnotationRow.target_hash == max_time_subq.c.target_hash)
                 & (AnnotationRow.created_at == max_time_subq.c.max_created_at),
             )
+            .order_by(AnnotationRow.id.desc())
         )
 
         rows = self._session.execute(stmt).scalars().all()
-        return {row.target_hash: row for row in rows}
+        # dict comprehension iterates in order; last write wins, so the
+        # lowest id (oldest) would overwrite — but we want highest id.
+        # Build dict from reversed list so highest-id row is final value.
+        return {row.target_hash: row for row in reversed(list(rows))}
 
 
 class SqliteOperationEventRepository(OperationEventRepository):
@@ -1059,6 +1074,9 @@ class SqliteTagAnnotationRepository(TagAnnotationRepository):
     def get_commits_by_tags(
         self, tract_id: str, tags: list[str], match: str = "any"
     ) -> list[str]:
+        if match not in ("any", "all"):
+            raise ValueError(f"match must be 'any' or 'all', got {match!r}")
+
         if not tags:
             return []
 

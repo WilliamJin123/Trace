@@ -76,7 +76,6 @@ __all__ = [
     "get_profile",
     "get_all_tools",
     "tools_to_callables",
-    "get_profile",
     # Loop
     "LoopConfig",
     "LoopResult",

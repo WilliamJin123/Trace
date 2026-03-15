@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 
 __all__: list[str] = [
@@ -26,17 +25,16 @@ class DirectiveTemplate:
     def render(self, **kwargs: object) -> str:
         """Render the template with provided parameters.
 
-        Raises ValueError if any placeholders remain unresolved after
-        substitution.
+        Raises ValueError if any declared parameters remain unresolved
+        after substitution.
         """
         content = self.content
         for key, value in kwargs.items():
             content = content.replace(f"{{{key}}}", str(value))
-        # Check for unresolved placeholders
-        unresolved = re.findall(r"\{([^}]+)\}", content)
-        remaining = [u for u in unresolved if u not in kwargs]
-        if remaining:
-            raise ValueError(f"Unresolved template parameters: {remaining}")
+        # Check for unresolved declared parameters (not arbitrary braces)
+        missing = [p for p in self.parameters if p not in kwargs]
+        if missing:
+            raise ValueError(f"Unresolved template parameters: {missing}")
         return content
 
 

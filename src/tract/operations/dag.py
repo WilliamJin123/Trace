@@ -113,7 +113,6 @@ def get_all_ancestors(
 
 def get_branch_commits(
     commit_repo: CommitRepository,
-    parent_repo: CommitParentRepository | None,
     branch_tip: str,
     merge_base: str,
 ) -> list[CommitRow]:
@@ -124,7 +123,6 @@ def get_branch_commits(
 
     Args:
         commit_repo: Commit repository for hash lookups.
-        parent_repo: Parent repository (unused, reserved for future).
         branch_tip: The tip commit hash of the branch.
         merge_base: The merge base commit hash (excluded from results).
 

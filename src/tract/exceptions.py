@@ -244,7 +244,7 @@ class TagNotRegisteredError(TraceError):
 
     def __init__(self, tag_name: str | list[str]) -> None:
         if isinstance(tag_name, list):
-            self.tag_name = tag_name[0] if len(tag_name) == 1 else tag_name[0]
+            self.tag_name = tag_name[0] if len(tag_name) == 1 else tag_name
             self.tag_names = tag_name
             quoted = ", ".join(f"'{t}'" for t in tag_name)
             super().__init__(

@@ -100,11 +100,12 @@ class LLMConfig:
             object.__setattr__(self, "stop_sequences", tuple(self.stop_sequences))
 
     def __hash__(self) -> int:
-        extra_hashable = tuple(sorted(self.extra.items())) if self.extra else ()
+        import json
+        extra_hashable = json.dumps(self.extra, sort_keys=True, default=str) if self.extra else ""
         return hash((
             self.model, self.temperature, self.top_p, self.max_tokens,
             self.stop_sequences, self.frequency_penalty, self.presence_penalty,
-            self.top_k, self.seed, extra_hashable,
+            self.top_k, self.seed, hash(extra_hashable),
         ))
 
     @classmethod

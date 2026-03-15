@@ -596,7 +596,10 @@ def collapse_tract(
                     {"role": "user", "content": user_prompt},
                 ],
             )
-            summary_text = response.choices[0].message.content
+            if hasattr(llm_client, "extract_content"):
+                summary_text = llm_client.extract_content(response)
+            else:
+                summary_text = response["choices"][0]["message"]["content"]
         except Exception as e:
             # Wrap any LLM/network error into SpawnError for uniform handling.
             logger.warning("LLM collapse call failed: %s", e, exc_info=True)
@@ -708,7 +711,10 @@ async def acollapse_tract(
                     {"role": "user", "content": user_prompt},
                 ],
             )
-            summary_text = response["choices"][0]["message"]["content"]
+            if hasattr(llm_client, "extract_content"):
+                summary_text = llm_client.extract_content(response)
+            else:
+                summary_text = response["choices"][0]["message"]["content"]
         except Exception as e:
             # Wrap any LLM/network error into SpawnError for uniform handling.
             logger.warning("Async LLM collapse call failed: %s", e, exc_info=True)

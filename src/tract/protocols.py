@@ -241,7 +241,17 @@ class CompiledContext:
                     new_content if isinstance(new_content, list)
                     else ([{"type": "text", "text": new_content}] if new_content else [])
                 )
-                merged[-1]["content"] = prev_blocks + new_blocks
+                merged_blocks = [
+                    b for b in (prev_blocks + new_blocks)
+                    if not (
+                        isinstance(b, dict)
+                        and b.get("type") == "text"
+                        and not b.get("text", "").strip()
+                    )
+                ]
+                if not merged_blocks:
+                    merged_blocks = [{"type": "text", "text": "(empty)"}]
+                merged[-1]["content"] = merged_blocks
             else:
                 merged.append(dict(msg))
 

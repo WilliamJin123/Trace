@@ -161,6 +161,7 @@ def _fallback_message(content_type: str, text: str) -> str:
         A text preview (max 500 chars), or the content_type if text
         is empty.
     """
+    text = text or ""
     preview = text.strip().replace("\n", " ")
     if not preview:
         return content_type
@@ -929,7 +930,7 @@ class Tract:
         # When user explicitly requests NORMAL, annotate to override the
         # type-hint default of PINNED.
         actual_priority = priority if priority is not None else _Priority.PINNED
-        if priority is not None and actual_priority != _Priority.PINNED:
+        if priority is not None:
             self.annotate(info.commit_hash, actual_priority)
         return info
 
@@ -2997,7 +2998,8 @@ class Tract:
 
         # Step 4: SKIP the intermediate user + assistant commits from
         # the chat() call so only the EDIT survives in compiled context.
-        self.annotate(response.commit_info.parent_hash, Priority.SKIP)
+        if response.commit_info.parent_hash is not None:
+            self.annotate(response.commit_info.parent_hash, Priority.SKIP)
         self.annotate(response.commit_info.commit_hash, Priority.SKIP)
         if response.reasoning_commit is not None:
             self.annotate(response.reasoning_commit.commit_hash, Priority.SKIP)
@@ -3162,6 +3164,7 @@ class Tract:
 
         Compile context, call LLM asynchronously, commit assistant response.
         """
+        self._check_open()
         if not self._has_llm_client("chat"):
             from tract.llm.errors import LLMConfigError
 
@@ -3397,7 +3400,8 @@ class Tract:
             message=message or f"revise: {prompt[:60]}",
         )
 
-        self.annotate(response.commit_info.parent_hash, Priority.SKIP)
+        if response.commit_info.parent_hash is not None:
+            self.annotate(response.commit_info.parent_hash, Priority.SKIP)
         self.annotate(response.commit_info.commit_hash, Priority.SKIP)
         if response.reasoning_commit is not None:
             self.annotate(response.reasoning_commit.commit_hash, Priority.SKIP)
@@ -3666,7 +3670,7 @@ class Tract:
             **llm_kwargs_resolved,
         )
 
-        raw_content = response["choices"][0]["message"]["content"]
+        raw_content = self._extract_content(response, client=llm)
         try:
             summaries = json.loads(raw_content)
         except (json.JSONDecodeError, TypeError) as exc:
@@ -3980,6 +3984,11 @@ class Tract:
             else []
         )
         new_hashes = [result.commit_hashes[i] for i in final_order]
+        new_priorities = (
+            [result.priorities[i] for i in final_order]
+            if result.priorities
+            else []
+        )
 
         # Recount tokens for the new message order
         token_count = self._token_counter.count_messages(
@@ -3993,6 +4002,7 @@ class Tract:
             token_source=result.token_source,
             generation_configs=new_configs,
             commit_hashes=new_hashes,
+            priorities=new_priorities,
         )
 
     def get_commit(self, commit_hash: str) -> CommitInfo | None:
@@ -4030,7 +4040,6 @@ class Tract:
         if blob is None:
             return None
 
-        import json
         try:
             data = json.loads(blob.payload_json)
         except (json.JSONDecodeError, TypeError):
@@ -5774,7 +5783,7 @@ class Tract:
             except Exception:
                 # Content validation failed (unrecognized type, schema mismatch,
                 # or corrupt payload); skip this entry rather than aborting import.
-                logger.debug(
+                logger.warning(
                     "load_state: skipping entry with content_type=%r: validation failed",
                     content_type, exc_info=True,
                 )
@@ -7079,7 +7088,7 @@ class Tract:
         )
 
         # 4. Parse per-result summaries from LLM response
-        raw_content = response["choices"][0]["message"]["content"]
+        raw_content = self._extract_content(response, client=llm)
         try:
             summaries = json.loads(raw_content)
         except (json.JSONDecodeError, TypeError) as exc:
@@ -7357,16 +7366,19 @@ class Tract:
         # Invalidate compile cache on batch entry and set _in_batch flag
         # so _commit_session() defers and commit() skips cache updates.
         self._cache.clear()
+        was_in_batch = self._in_batch
         self._in_batch = True
         try:
             yield
             # Success: single commit for the entire batch
-            self._session.commit()
+            if not was_in_batch:
+                self._session.commit()
         except Exception:
-            self._session.rollback()
+            if not was_in_batch:
+                self._session.rollback()
             raise
         finally:
-            self._in_batch = False
+            self._in_batch = was_in_batch
 
 
     def register_content_type(self, name: str, model: type[BaseModel]) -> None:

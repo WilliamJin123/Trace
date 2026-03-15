@@ -7,6 +7,7 @@ so the rest of tract (loop, compression, spawn, resolver) works unchanged.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import uuid
 from collections.abc import AsyncIterator, Iterator
@@ -20,6 +21,8 @@ from tract.llm.errors import (
     LLMRateLimitError,
     LLMResponseError,
 )
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_MAX_TOKENS = 8192
 
@@ -213,6 +216,8 @@ class AnthropicClient:
             raise LLMAuthError(f"Permission denied: {e}") from e
         except anthropic.RateLimitError as e:
             raise LLMRateLimitError(f"Rate limited: {e}") from e
+        except anthropic.APIConnectionError as e:
+            raise LLMResponseError(f"Connection error: {e}") from e
         except anthropic.APIStatusError as e:
             raise LLMResponseError(f"API error ({e.status_code}): {e}") from e
 
@@ -250,12 +255,25 @@ class AnthropicClient:
     def close(self) -> None:
         """Close the underlying client."""
         self._client.close()
+        if hasattr(self, '_async_client') and self._async_client is not None:
+            # Can't await in sync context, but httpx.AsyncClient.aclose()
+            # also has a sync close() fallback
+            try:
+                self._async_client.close()
+            except Exception:
+                pass
 
     def __enter__(self) -> AnthropicClient:
         return self
 
     def __exit__(self, *args: object) -> None:
         self.close()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        await self.aclose()
 
     # ------------------------------------------------------------------
     # Async support
@@ -330,6 +348,8 @@ class AnthropicClient:
             raise LLMAuthError(f"Permission denied: {e}") from e
         except anthropic.RateLimitError as e:
             raise LLMRateLimitError(f"Rate limited: {e}") from e
+        except anthropic.APIConnectionError as e:
+            raise LLMResponseError(f"Connection error: {e}") from e
         except anthropic.APIStatusError as e:
             raise LLMResponseError(f"API error ({e.status_code}): {e}") from e
 
@@ -369,8 +389,8 @@ class AnthropicClient:
         system, anthropic_messages = self._translate_messages(messages)
 
         create_kwargs: dict[str, Any] = {
-            "model": model or self._default_model,
-            "max_tokens": max_tokens or self._default_max_tokens,
+            "model": model if model is not None else self._default_model,
+            "max_tokens": max_tokens if max_tokens is not None else self._default_max_tokens,
             "messages": anthropic_messages,
         }
         if system is not None:
@@ -563,6 +583,7 @@ class AnthropicClient:
                     "name": tool_choice.get("function", {}).get("name", ""),
                 }
             return tool_choice
+        logger.warning("Unknown tool_choice type %r; defaulting to auto", type(tool_choice).__name__)
         return {"type": "auto"}
 
     # ------------------------------------------------------------------

@@ -94,6 +94,7 @@ def reset(
     mode: Literal["soft", "hard"],
     tract_id: str,
     ref_repo: RefRepository,
+    commit_repo: CommitRepository | None = None,
 ) -> str:
     """Reset HEAD to a target commit.
 
@@ -111,10 +112,20 @@ def reset(
         mode: "soft" or "hard".
         tract_id: The tract identifier.
         ref_repo: Ref repository for HEAD manipulation.
+        commit_repo: Optional commit repository for validating target exists.
 
     Returns:
         The target commit hash (new HEAD).
+
+    Raises:
+        ValueError: If commit_repo is provided and target_hash does not exist.
     """
+    # Validate target commit exists if commit_repo is available
+    if commit_repo is not None:
+        row = commit_repo.get(target_hash)
+        if row is None:
+            raise ValueError(f"Target commit {target_hash!r} does not exist")
+
     # Store current HEAD as ORIG_HEAD
     current_head = ref_repo.get_head(tract_id)
     if current_head is not None:
