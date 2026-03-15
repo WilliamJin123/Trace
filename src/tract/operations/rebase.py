@@ -102,7 +102,7 @@ def replay_commit(
         edit_target=edit_target if original_row.operation == CommitOperation.EDIT else None,
         metadata=(dict(original_row.metadata_json) if isinstance(original_row.metadata_json, dict) else original_row.metadata_json) if original_row.metadata_json else None,
         generation_config=(
-            dict(original_row.generation_config_json)
+            (dict(original_row.generation_config_json) if isinstance(original_row.generation_config_json, dict) else original_row.generation_config_json)
             if original_row.generation_config_json
             else None
         ),

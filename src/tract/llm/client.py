@@ -241,12 +241,9 @@ class OpenAIClient:
         """Close the underlying httpx client."""
         self._client.close()
         if hasattr(self, '_async_client') and self._async_client is not None:
-            # Can't await in sync context, but httpx.AsyncClient.aclose()
-            # also has a sync close() fallback
-            try:
-                self._async_client.close()
-            except Exception:
-                pass
+            # httpx.AsyncClient has no sync close(); drop the reference
+            # so GC can reclaim the connection pool.
+            self._async_client = None
 
     def __enter__(self) -> OpenAIClient:
         return self

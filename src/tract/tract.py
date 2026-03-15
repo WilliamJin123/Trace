@@ -1269,7 +1269,7 @@ class Tract:
                 target=kwargs.get("target"),
                 pending=kwargs.get("pending"),
             )
-            for _id, fn in handlers:
+            for _id, fn in list(handlers):
                 fn(ctx)
         finally:
             self._in_middleware_events.discard(event)
@@ -2410,7 +2410,7 @@ class Tract:
             return c.extract_content(response)
         # Default: OpenAI format
         try:
-            return response["choices"][0]["message"]["content"]
+            return response["choices"][0]["message"]["content"] or ""
         except (KeyError, IndexError, TypeError) as exc:
             from tract.llm.errors import LLMResponseError
 
