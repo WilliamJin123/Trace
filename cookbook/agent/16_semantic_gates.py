@@ -236,7 +236,8 @@ if __name__ == "__main__":
 
 
 # --- See also ---
+# Semantic maintenance:         agent/17_semantic_maintenance.py
 # Deterministic quality gates:  agent/07_quality_gates.py
 # Staged workflow:              agent/05_staged_workflow.py
 # Profile-based stages:         agent/11_profile_staged_agent.py
-# Middleware basics:             config_and_middleware/02_middleware.py
+# Middleware basics:             config_and_middleware/02_event_automation.py

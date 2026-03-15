@@ -303,6 +303,7 @@ if __name__ == "__main__":
 # --- See also ---
 # Middleware basics:        config_and_middleware/02_event_automation.py
 # Observability middleware: config_and_middleware/06_observability.py
-# Self-routing workflow:    workflows/09_self_routing.py
+# Semantic gates (LLM):    agent/16_semantic_gates.py
+# Semantic maintenance:     agent/17_semantic_maintenance.py
 # Tool compaction (LLM):   agent/15_tool_compaction.py
 # Self-routing workflow:    workflows/09_self_routing.py
