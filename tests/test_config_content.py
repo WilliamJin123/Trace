@@ -127,7 +127,7 @@ class TestConfigNotCompilable:
         """Config commits are not present in compiled messages."""
         with Tract.open() as t:
             t.system("You are helpful.")
-            t.configure(model="gpt-4o")
+            t.config.set(model="gpt-4o")
             t.user("Hello")
             compiled = t.compile()
             # Only instruction + user messages should appear
@@ -142,7 +142,7 @@ class TestConfigNotCompilable:
         with Tract.open() as t:
             t.user("Hello")
             count_before = len(t.compile().messages)
-            t.configure(temperature=0.5)
+            t.config.set(temperature=0.5)
             count_after = len(t.compile().messages)
             # Config commit should not add a compiled message
             assert count_after == count_before
@@ -159,15 +159,15 @@ class TestConfigIndexBuild:
     def test_build_single_config(self):
         """ConfigIndex.build resolves a single config commit."""
         with Tract.open() as t:
-            t.configure(model="gpt-4o")
+            t.config.set(model="gpt-4o")
             idx = t.config_index
             assert idx.get("model") == "gpt-4o"
 
     def test_build_multiple_configs(self):
         """ConfigIndex accumulates settings across multiple config commits."""
         with Tract.open() as t:
-            t.configure(model="gpt-4o")
-            t.configure(temperature=0.7)
+            t.config.set(model="gpt-4o")
+            t.config.set(temperature=0.7)
             idx = t.config_index
             assert idx.get("model") == "gpt-4o"
             assert idx.get("temperature") == 0.7
@@ -200,29 +200,29 @@ class TestConfigIndexGetters:
     def test_get_existing_key(self):
         """get() returns value for existing key."""
         with Tract.open() as t:
-            t.configure(model="gpt-4o")
-            assert t.get_config("model") == "gpt-4o"
+            t.config.set(model="gpt-4o")
+            assert t.config.get("model") == "gpt-4o"
 
     def test_get_missing_key_default(self):
         """get() returns default for missing key."""
         with Tract.open() as t:
-            t.configure(model="gpt-4o")
-            assert t.get_config("temperature") is None
-            assert t.get_config("temperature", default=0.5) == 0.5
+            t.config.set(model="gpt-4o")
+            assert t.config.get("temperature") is None
+            assert t.config.get("temperature", default=0.5) == 0.5
 
     def test_get_all_returns_dict(self):
         """get_all() returns all resolved settings as a dict."""
         with Tract.open() as t:
-            t.configure(model="gpt-4o", temperature=0.7)
-            result = t.get_all_configs()
+            t.config.set(model="gpt-4o", temperature=0.7)
+            result = t.config.get_all()
             assert result == {"model": "gpt-4o", "temperature": 0.7}
 
     def test_get_all_excludes_none(self):
         """get_all() excludes keys with None values."""
         with Tract.open() as t:
-            t.configure(model="gpt-4o")
-            t.configure(model=None)
-            result = t.get_all_configs()
+            t.config.set(model="gpt-4o")
+            t.config.set(model=None)
+            result = t.config.get_all()
             assert "model" not in result
 
 
@@ -237,35 +237,35 @@ class TestConfigIndexPrecedence:
     def test_later_config_overrides_earlier(self):
         """Closer-to-HEAD config commit wins for the same key."""
         with Tract.open() as t:
-            t.configure(model="gpt-3.5")
-            t.configure(model="gpt-4o")
-            assert t.get_config("model") == "gpt-4o"
+            t.config.set(model="gpt-3.5")
+            t.config.set(model="gpt-4o")
+            assert t.config.get("model") == "gpt-4o"
 
     def test_partial_override(self):
         """Later config only overrides specified keys."""
         with Tract.open() as t:
-            t.configure(model="gpt-3.5", temperature=0.7)
-            t.configure(model="gpt-4o")
-            assert t.get_config("model") == "gpt-4o"
-            assert t.get_config("temperature") == 0.7
+            t.config.set(model="gpt-3.5", temperature=0.7)
+            t.config.set(model="gpt-4o")
+            assert t.config.get("model") == "gpt-4o"
+            assert t.config.get("temperature") == 0.7
 
     def test_multiple_overrides(self):
         """Multiple overrides in sequence, last one wins."""
         with Tract.open() as t:
-            t.configure(model="gpt-3.5")
-            t.configure(model="gpt-4")
-            t.configure(model="gpt-4o")
-            assert t.get_config("model") == "gpt-4o"
+            t.config.set(model="gpt-3.5")
+            t.config.set(model="gpt-4")
+            t.config.set(model="gpt-4o")
+            assert t.config.get("model") == "gpt-4o"
 
     def test_interleaved_with_non_config(self):
         """Config resolution works with interleaved non-config commits."""
         with Tract.open() as t:
-            t.configure(model="gpt-3.5")
+            t.config.set(model="gpt-3.5")
             t.user("Hello")
             t.assistant("Hi")
-            t.configure(model="gpt-4o")
+            t.config.set(model="gpt-4o")
             t.user("Another message")
-            assert t.get_config("model") == "gpt-4o"
+            assert t.config.get("model") == "gpt-4o"
 
 
 # ---------------------------------------------------------------------------
@@ -284,23 +284,23 @@ class TestConfigIndexInvalidation:
         assert idx.is_stale
 
     def test_configure_invalidates_index(self):
-        """t.configure() invalidates the config index for rebuild."""
+        """t.config.set() invalidates the config index for rebuild."""
         with Tract.open() as t:
-            t.configure(model="gpt-3.5")
+            t.config.set(model="gpt-3.5")
             _ = t.config_index  # Force build
             assert not t._config_mgr._config_index.is_stale
-            t.configure(model="gpt-4o")
+            t.config.set(model="gpt-4o")
             # After configure, index should be stale
             assert t._config_mgr._config_index.is_stale
 
     def test_stale_index_rebuilds_on_access(self):
         """Accessing config_index when stale triggers rebuild."""
         with Tract.open() as t:
-            t.configure(model="gpt-3.5")
+            t.config.set(model="gpt-3.5")
             _ = t.config_index  # Build
-            t.configure(model="gpt-4o")
+            t.config.set(model="gpt-4o")
             # Access should rebuild with new value
-            assert t.get_config("model") == "gpt-4o"
+            assert t.config.get("model") == "gpt-4o"
 
 
 # ---------------------------------------------------------------------------
@@ -314,32 +314,32 @@ class TestConfigUnsetSemantics:
     def test_none_value_unsets_key(self):
         """Setting a key to None means 'unset'."""
         with Tract.open() as t:
-            t.configure(model="gpt-4o")
-            assert t.get_config("model") == "gpt-4o"
-            t.configure(model=None)
-            assert t.get_config("model") is None
+            t.config.set(model="gpt-4o")
+            assert t.config.get("model") == "gpt-4o"
+            t.config.set(model=None)
+            assert t.config.get("model") is None
 
     def test_none_unset_returns_default(self):
         """After unsetting, get_config returns the default."""
         with Tract.open() as t:
-            t.configure(model="gpt-4o")
-            t.configure(model=None)
-            assert t.get_config("model", default="fallback") == "fallback"
+            t.config.set(model="gpt-4o")
+            t.config.set(model=None)
+            assert t.config.get("model", default="fallback") == "fallback"
 
     def test_none_excluded_from_get_all(self):
         """get_all() does not include keys set to None."""
         with Tract.open() as t:
-            t.configure(model="gpt-4o", temperature=0.7)
-            t.configure(model=None)
-            all_cfg = t.get_all_configs()
+            t.config.set(model="gpt-4o", temperature=0.7)
+            t.config.set(model=None)
+            all_cfg = t.config.get_all()
             assert "model" not in all_cfg
             assert all_cfg["temperature"] == 0.7
 
     def test_unset_then_reset(self):
         """Can set, unset, then re-set a key."""
         with Tract.open() as t:
-            t.configure(model="gpt-3.5")
-            t.configure(model=None)
-            assert t.get_config("model") is None
-            t.configure(model="gpt-4o")
-            assert t.get_config("model") == "gpt-4o"
+            t.config.set(model="gpt-3.5")
+            t.config.set(model=None)
+            assert t.config.get("model") is None
+            t.config.set(model="gpt-4o")
+            assert t.config.get("model") == "gpt-4o"

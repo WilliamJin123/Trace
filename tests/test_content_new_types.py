@@ -171,7 +171,7 @@ class TestConfigNotCompiled:
         """A config commit should not appear in compiled messages."""
         t = Tract.open()
         t.user("Hello")
-        t.configure(temperature=0.3)
+        t.config.set(temperature=0.3)
         t.assistant("World")
         compiled = t.compile()
         # Should have 2 messages (user + assistant), NOT 3
@@ -197,7 +197,7 @@ class TestConfigNotCompiled:
         """Config commits should not be counted in compiled commit_count."""
         t = Tract.open()
         t.user("Hello")
-        t.configure(model="gpt-4o")
+        t.config.set(model="gpt-4o")
         t.assistant("World")
         compiled = t.compile()
         assert compiled.commit_count == 2

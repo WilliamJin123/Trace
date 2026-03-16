@@ -33,7 +33,7 @@ class TestTransitionBasic:
         with Tract.open() as t:
             t.user("Setup")
             t.transition("feature")
-            branches = {b.name for b in t.list_branches()}
+            branches = {b.name for b in t.branches.list()}
             assert "feature" in branches
 
     def test_transition_switches_to_target(self):
@@ -47,7 +47,7 @@ class TestTransitionBasic:
         """transition() switches to an existing branch without error."""
         with Tract.open() as t:
             t.user("Setup")
-            t.branch("feature", switch=False)
+            t.branches.create("feature", switch=False)
             t.transition("feature")
             assert t.current_branch == "feature"
 
@@ -131,7 +131,7 @@ class TestTransitionHandoff:
             for i in range(5):
                 t.user(f"User message {i}")
                 t.assistant(f"Reply {i}")
-            t.configure(handoff_summary_k=2)
+            t.config.set(handoff_summary_k=2)
             result = t.transition("feature", handoff="summary")
             assert result is not None
 
@@ -151,7 +151,7 @@ class TestTransitionMiddleware:
             def blocker(ctx):
                 if ctx.target == "restricted":
                     raise BlockedError("pre_transition", "Branch restricted")
-            t.use("pre_transition", blocker)
+            t.middleware.add("pre_transition", blocker)
             with pytest.raises(BlockedError, match="Branch restricted"):
                 t.transition("restricted")
             assert t.current_branch == "main"
@@ -163,7 +163,7 @@ class TestTransitionMiddleware:
             def blocker(ctx):
                 if ctx.target == "restricted":
                     raise BlockedError("pre_transition", "Branch restricted")
-            t.use("pre_transition", blocker)
+            t.middleware.add("pre_transition", blocker)
             # This should succeed
             t.transition("allowed")
             assert t.current_branch == "allowed"
@@ -179,7 +179,7 @@ class TestTransitionMiddleware:
                     "target": ctx.target,
                     "current_branch": t.current_branch,
                 })
-            t.use("post_transition", post_handler)
+            t.middleware.add("post_transition", post_handler)
             t.transition("feature")
             assert len(events) == 1
             assert events[0]["event"] == "post_transition"
@@ -192,7 +192,7 @@ class TestTransitionMiddleware:
         order = []
         with Tract.open() as t:
             t.user("Setup")
-            t.use("pre_transition", lambda ctx: order.append("pre"))
-            t.use("post_transition", lambda ctx: order.append("post"))
+            t.middleware.add("pre_transition", lambda ctx: order.append("pre"))
+            t.middleware.add("post_transition", lambda ctx: order.append("post"))
             t.transition("feature")
             assert order == ["pre", "post"]

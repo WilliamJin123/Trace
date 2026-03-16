@@ -139,9 +139,9 @@ class TestAcompressToolCallsBasic:
         mock = MockLLMClient(responses=[
             _make_response(json.dumps(["Found DISCOVERY comment at file.py:36."]))
         ])
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
 
-        result = await t.acompress_tool_calls(target_tokens=50)
+        result = await t.compression.acompress_tool_calls(target_tokens=50)
 
         assert isinstance(result, ToolCompactResult)
         assert len(result.edit_commits) == 1
@@ -161,12 +161,12 @@ class TestAcompressToolCallsBasic:
         mock = MockLLMClient(responses=[
             _make_response(json.dumps(["Compacted result."]))
         ])
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
 
-        result = await t.acompress_tool_calls()
+        result = await t.compression.acompress_tool_calls()
 
         # Check the edit commit preserves metadata
-        edited_ci = t.get_commit(result.edit_commits[0])
+        edited_ci = t.search.get_commit(result.edit_commits[0])
         assert edited_ci is not None
         meta = edited_ci.metadata or {}
         assert meta.get("tool_call_id") == "call_1"
@@ -205,9 +205,9 @@ class TestAcompressToolCallsBasic:
         mock = MockLLMClient(responses=[
             _make_response(json.dumps(["Grep summary.", "Read summary."]))
         ])
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
 
-        result = await t.acompress_tool_calls()
+        result = await t.compression.acompress_tool_calls()
         assert isinstance(result, ToolCompactResult)
         assert len(result.edit_commits) == 2
         assert len(result.source_commits) == 2
@@ -223,10 +223,10 @@ class TestAcompressToolCallsBasic:
         t.assistant("Hi.")
 
         mock = MockLLMClient()
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
 
         with pytest.raises(CompressionError, match="No tool turns"):
-            await t.acompress_tool_calls()
+            await t.compression.acompress_tool_calls()
 
     @pytest.mark.asyncio
     async def test_acompress_tool_calls_name_filter(self):
@@ -253,9 +253,9 @@ class TestAcompressToolCallsBasic:
         mock = MockLLMClient(responses=[
             _make_response(json.dumps(["Grep summary."]))
         ])
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
 
-        result = await t.acompress_tool_calls(name="grep")
+        result = await t.compression.acompress_tool_calls(name="grep")
         assert isinstance(result, ToolCompactResult)
         assert grep_result.commit_hash in result.source_commits
         assert read_result.commit_hash not in result.source_commits
@@ -274,10 +274,10 @@ class TestAreviseExtended:
         """arevise should create EDIT commit replacing the target."""
         client = MockLLMClient([_make_response("Improved text.")])
         t = Tract.open()
-        t.configure_llm(client)
+        t.config.configure_llm(client)
         original = t.assistant("Original text.")
 
-        result = await t.arevise(original.commit_hash, "Make it better")
+        result = await t.llm.arevise(original.commit_hash, "Make it better")
         assert result.text == "Improved text."
         assert result.commit_info is not None
         assert result.commit_info.operation.value == "edit"
@@ -287,16 +287,16 @@ class TestAreviseExtended:
         """arevise should mark chat intermediate commits as SKIP."""
         client = MockLLMClient([_make_response("Revised content.")])
         t = Tract.open()
-        t.configure_llm(client)
+        t.config.configure_llm(client)
         original = t.assistant("Original content.")
 
-        result = await t.arevise(original.commit_hash, "Improve this")
+        result = await t.llm.arevise(original.commit_hash, "Improve this")
 
         # The user message and assistant response from achat should be SKIP
-        log = t.log(limit=100)
+        log = t.search.log(limit=100)
         skip_count = 0
         for ci in log:
-            ann = t.get_annotations(ci.commit_hash)
+            ann = t.annotations.get(ci.commit_hash)
             for a in ann:
                 if a.priority == Priority.SKIP:
                     skip_count += 1
@@ -307,10 +307,10 @@ class TestAreviseExtended:
         """arevise on a system/instruction commit should create a system EDIT."""
         client = MockLLMClient([_make_response("Improved system prompt.")])
         t = Tract.open()
-        t.configure_llm(client)
+        t.config.configure_llm(client)
         original = t.system("Old system prompt.")
 
-        result = await t.arevise(original.commit_hash, "Make system prompt better")
+        result = await t.llm.arevise(original.commit_hash, "Make system prompt better")
         assert result.text == "Improved system prompt."
         assert result.commit_info is not None
 
@@ -319,11 +319,11 @@ class TestAreviseExtended:
         """arevise with invalid commit hash should raise."""
         client = MockLLMClient([_make_response("Revised.")])
         t = Tract.open()
-        t.configure_llm(client)
+        t.config.configure_llm(client)
         t.system("Test.")
 
         with pytest.raises(Exception):
-            await t.arevise("nonexistent_hash_000", "Improve this")
+            await t.llm.arevise("nonexistent_hash_000", "Improve this")
 
 
 # ---------------------------------------------------------------------------
@@ -346,10 +346,10 @@ class TestAchatExtended:
         client = MockLLMClient([tool_response, final_response])
 
         t = Tract.open()
-        t.configure_llm(client)
+        t.config.configure_llm(client)
         t.system("You are helpful.")
 
-        result = await t.achat("Check something")
+        result = await t.llm.achat("Check something")
         # achat commits user + assistant; tool_calls are in metadata
         assert result.tool_calls is not None
         assert len(result.tool_calls) == 1
@@ -360,10 +360,10 @@ class TestAchatExtended:
         """achat should record the original prompt text."""
         client = MockLLMClient([_make_response("Response.")])
         t = Tract.open()
-        t.configure_llm(client)
+        t.config.configure_llm(client)
         t.system("Be helpful.")
 
-        result = await t.achat("My question")
+        result = await t.llm.achat("My question")
         assert result.prompt == "My question"
 
     @pytest.mark.asyncio
@@ -376,7 +376,7 @@ class TestAchatExtended:
         ]
         client = MockLLMClient(responses)
         t = Tract.open()
-        t.configure_llm(client)
+        t.config.configure_llm(client)
         t.system("Be helpful.")
 
         def validator(text):
@@ -384,7 +384,7 @@ class TestAchatExtended:
                 return (True, None)
             return (False, "not good enough")
 
-        result = await t.achat("Question", validator=validator, max_retries=3)
+        result = await t.llm.achat("Question", validator=validator, max_retries=3)
         assert result.text == "good answer"
         assert result.prompt == "Question"
 
@@ -402,11 +402,11 @@ class TestAgenerateExtended:
         """agenerate with a system prompt should compile it into messages."""
         client = MockLLMClient([_make_response("System-aware response.")])
         t = Tract.open()
-        t.configure_llm(client)
+        t.config.configure_llm(client)
         t.system("You are a coding assistant.")
         t.user("Hello")
 
-        result = await t.agenerate()
+        result = await t.llm.agenerate()
         assert result.text == "System-aware response."
         # Verify system message was included in the LLM call
         assert client.last_messages is not None
@@ -421,7 +421,7 @@ class TestAgenerateExtended:
         responses = [_make_response("always bad")] * 10
         client = MockLLMClient(responses)
         t = Tract.open()
-        t.configure_llm(client)
+        t.config.configure_llm(client)
         t.system("Test.")
         t.user("Question")
 
@@ -429,7 +429,7 @@ class TestAgenerateExtended:
             return (False, "never good enough")
 
         with pytest.raises(RetryExhaustedError):
-            await t.agenerate(validator=always_fail, max_retries=2)
+            await t.llm.agenerate(validator=always_fail, max_retries=2)
 
     @pytest.mark.asyncio
     async def test_agenerate_no_client_raises(self):
@@ -441,18 +441,18 @@ class TestAgenerateExtended:
         t.user("Hello")
 
         with pytest.raises(LLMConfigError):
-            await t.agenerate()
+            await t.llm.agenerate()
 
     @pytest.mark.asyncio
     async def test_agenerate_records_usage(self):
         """agenerate should record token usage."""
         client = MockLLMClient([_make_response("Response.")])
         t = Tract.open()
-        t.configure_llm(client)
+        t.config.configure_llm(client)
         t.system("Test.")
         t.user("Hello")
 
-        result = await t.agenerate()
+        result = await t.llm.agenerate()
         assert result.usage is not None
         assert result.usage.total_tokens == 15
         assert result.usage.prompt_tokens == 10
@@ -485,10 +485,10 @@ class TestArunExtended:
         client = MockLLMClient([tool_response1, tool_response2, final_response])
 
         t = Tract.open()
-        t.configure_llm(client)
+        t.config.configure_llm(client)
         t.system("You are a multi-step agent.")
 
-        result = await t.arun(
+        result = await t.llm.arun(
             task="Run multi-step",
             tools=[
                 {
@@ -529,10 +529,10 @@ class TestArunExtended:
         client = MockLLMClient([tool_response])
 
         t = Tract.open()
-        t.configure_llm(client)
+        t.config.configure_llm(client)
         t.system("Agent.")
 
-        result = await t.arun(
+        result = await t.llm.arun(
             task="Infinite loop",
             max_steps=2,
             tools=[{
@@ -553,11 +553,11 @@ class TestArunExtended:
         """arun without task should still work (uses existing context)."""
         client = MockLLMClient([_make_response("Done.")])
         t = Tract.open()
-        t.configure_llm(client)
+        t.config.configure_llm(client)
         t.system("You are helpful.")
         t.user("Some existing context.")
 
-        result = await t.arun()
+        result = await t.llm.arun()
         assert result.status == "completed"
 
 
@@ -577,15 +577,15 @@ class TestAcompressExtended:
         h1 = t.user("Message 1")
         t.assistant("Response 1")
         h2 = t.user("Important message")
-        t.annotate(h2.commit_hash, Priority.PINNED, reason="critical")
+        t.annotations.set(h2.commit_hash, Priority.PINNED, reason="critical")
         t.assistant("Response 2")
         t.user("Message 3")
         t.assistant("Response 3")
 
         client = MockLLMClient([_make_response("Compressed summary.")])
-        t.configure_llm(client)
+        t.config.configure_llm(client)
 
-        result = await t.acompress()
+        result = await t.compression.acompress()
         assert result.compressed_tokens > 0
         assert len(result.preserved_commits) >= 1
         # The pinned commit should survive
@@ -601,7 +601,7 @@ class TestAcompressExtended:
         t.user("Message 2")
         t.assistant("Response 2")
 
-        result = await t.acompress(content="Manual summary of conversation.")
+        result = await t.compression.acompress(content="Manual summary of conversation.")
         assert result.compressed_tokens > 0
 
     @pytest.mark.asyncio
@@ -609,14 +609,14 @@ class TestAcompressExtended:
         """acompress with LLM should produce a summary commit."""
         client = MockLLMClient([_make_response("LLM-generated summary.")])
         t = Tract.open()
-        t.configure_llm(client)
+        t.config.configure_llm(client)
         t.system("You are helpful.")
         t.user("Message 1")
         t.assistant("Response 1")
         t.user("Message 2")
         t.assistant("Response 2")
 
-        result = await t.acompress()
+        result = await t.compression.acompress()
         assert result.compressed_tokens > 0
 
         # Compiled context should include the summary
@@ -632,24 +632,24 @@ class TestAcompressExtended:
         # Sync
         t1 = Tract.open()
         c1 = MockLLMClient([_make_response("Summary.")])
-        t1.configure_llm(c1)
+        t1.config.configure_llm(c1)
         t1.system("Helpful.")
         t1.user("Msg 1")
         t1.assistant("Resp 1")
         t1.user("Msg 2")
         t1.assistant("Resp 2")
-        sync_result = t1.compress()
+        sync_result = t1.compression.compress()
 
         # Async
         t2 = Tract.open()
         c2 = MockLLMClient([_make_response("Summary.")])
-        t2.configure_llm(c2)
+        t2.config.configure_llm(c2)
         t2.system("Helpful.")
         t2.user("Msg 1")
         t2.assistant("Resp 1")
         t2.user("Msg 2")
         t2.assistant("Resp 2")
-        async_result = await t2.acompress()
+        async_result = await t2.compression.acompress()
 
         # Both should compress the same number of source commits
         assert len(sync_result.source_commits) == len(async_result.source_commits)
@@ -666,4 +666,4 @@ class TestAcompressExtended:
         # No client, no content — should raise CompressionError
         # because there's nothing to generate the summary
         with pytest.raises(Exception):
-            await t.acompress()
+            await t.compression.acompress()

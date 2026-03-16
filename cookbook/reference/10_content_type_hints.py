@@ -16,7 +16,7 @@ Patterns shown:
   5. Custom Content Type with Hints -- register a custom type, observe default hints
 
 Demonstrates: BUILTIN_TYPE_HINTS, ContentTypeHints, t.commit(), t.compile(),
-              t.register_content_type(), t.annotate(), Priority,
+              t.register_content_type(), t.annotations.set(), Priority,
               InstructionContent, DialogueContent, ReasoningContent,
               MetadataContent, ConfigContent
 
@@ -226,10 +226,10 @@ def main() -> None:
         print(f"  Answer '345' in output:                     YES")
 
         # But the reasoning IS in the DAG -- queryable for debugging
-        log = t.log(limit=10)
+        log = t.search.log(limit=10)
         reasoning_commits = [e for e in log if e.content_type == "reasoning"]
         assert len(reasoning_commits) == 1
-        content = t.get_content(reasoning_commits[0].commit_hash)
+        content = t.search.get_content(reasoning_commits[0].commit_hash)
         # get_content returns a dict for reasoning (structured type)
         content_text = content["text"] if isinstance(content, dict) else str(content)
         assert "Step 1" in content_text
@@ -237,7 +237,7 @@ def main() -> None:
         print(f"    Content: {content_text[:50]}...")
 
         # You CAN override the skip by explicitly annotating as NORMAL
-        t.annotate(reasoning_commits[0].commit_hash, Priority.NORMAL)
+        t.annotations.set(reasoning_commits[0].commit_hash, Priority.NORMAL)
         ctx2 = t.compile()
         text2 = ctx2.to_text()
         assert "Step 1" in text2, "Annotated reasoning should now appear"

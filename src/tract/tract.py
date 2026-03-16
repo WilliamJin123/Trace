@@ -497,13 +497,13 @@ class Tract:
             check_open=self._check_open,
             commit_session=self._commit_session,
             get_head=lambda: self.head,
-            log_fn=lambda **kw: self.log(**kw),
+            log_fn=lambda **kw: self.search.log(**kw),
         )
 
         self._middleware_mgr = MiddlewareManager(
             check_open=self._check_open,
-            persist_behavioral_spec=lambda *a, **kw: self.persist_behavioral_spec(*a, **kw),
-            remove_behavioral_spec=lambda *a, **kw: self.remove_behavioral_spec(*a, **kw),
+            persist_behavioral_spec=lambda *a, **kw: self._persistence_mgr.persist_behavioral_spec(*a, **kw),
+            remove_behavioral_spec=lambda *a, **kw: self._persistence_mgr.remove_behavioral_spec(*a, **kw),
             get_current_branch=lambda: self.current_branch,
             get_head=lambda: self.head,
             tract_ref=lambda: self,
@@ -520,8 +520,8 @@ class Tract:
             check_open=self._check_open,
             commit_session=self._commit_session,
             get_head=lambda: self.head,
-            log_fn=lambda **kw: self.log(**kw),
-            annotate_fn=lambda *a, **kw: self.annotate(*a, **kw),
+            log_fn=lambda **kw: self._search_mgr.log(**kw),
+            annotate_fn=lambda *a, **kw: self._annotations_mgr.set(*a, **kw),
             row_to_info=self._commit_engine._row_to_info,
         )
 
@@ -558,14 +558,14 @@ class Tract:
             config=self._config,
             custom_type_registry=self._custom_type_registry,
             check_open=self._check_open,
-            enrich=lambda entries: self._enrich_with_priorities(entries),
+            enrich=lambda entries: self._annotations_mgr._enrich_with_priorities(entries),
             get_head=lambda: self.head,
             get_ancestors=self._get_merge_aware_ancestors,
             row_to_info=self._commit_engine._row_to_info,
             compile_fn=lambda **kw: self.compile(**kw),
             compile_at_fn=lambda h: self._compile_at(h),
-            resolve_commit_fn=lambda r: self.resolve_commit(r),
-            get_config_fn=lambda k, **kw: self.get_config(k, **kw),
+            resolve_commit_fn=lambda r: self._branches_mgr.resolve(r),
+            get_config_fn=lambda k, **kw: self._config_mgr.get(k, **kw),
             commit_fn=lambda *a, **kw: self.commit(*a, **kw),
             tag_annotation_repo=self._tag_annotation_repo,
             tract_ref=self,
@@ -575,7 +575,7 @@ class Tract:
         self._templates_mgr = TemplateManager(
             check_open=self._check_open,
             directive_fn=lambda *a, **kw: self.directive(*a, **kw),
-            configure_fn=lambda **kw: self.configure(**kw),
+            configure_fn=lambda **kw: self._config_mgr.set(**kw),
             template_registry=self._template_registry,
             profile_registry=self._profile_registry,
         )
@@ -595,11 +595,12 @@ class Tract:
             commit_repo=self._commit_repo,
             check_open=self._check_open,
             commit_session=self._commit_session,
-            list_branches_fn=lambda: self.list_branches(),
-            checkout_fn=lambda t: self.checkout(t),
-            branch_fn=lambda n: self.branch(n),
-            apply_stage_fn=lambda s: self.apply_stage(s),
-            load_profile_fn=lambda n: self.load_profile(n),
+            list_branches_fn=lambda: self._branches_mgr.list(),
+            checkout_fn=lambda t: self._branches_mgr.checkout(t),
+            branch_fn=lambda n: self._branches_mgr.create(n),
+            apply_stage_fn=lambda s: self._templates_mgr.apply_stage(s),
+            load_profile_fn=lambda n: self._templates_mgr.load_profile(n),
+            tract_ref=lambda: self,
         )
 
         # Intelligence manager
@@ -641,17 +642,17 @@ class Tract:
             reasoning_fn=lambda *a, **kw: self.reasoning(*a, **kw),
             tool_result_fn=lambda *a, **kw: self.tool_result(*a, **kw),
             compile_fn=lambda **kw: self.compile(**kw),
-            annotate_fn=lambda *a, **kw: self.annotate(*a, **kw),
-            run_middleware=lambda *a, **kw: self._run_middleware(*a, **kw),
-            record_usage=lambda *a, **kw: self.record_usage(*a, **kw),
-            get_tools=lambda: self.get_tools(),
+            annotate_fn=lambda *a, **kw: self._annotations_mgr.set(*a, **kw),
+            run_middleware=lambda *a, **kw: self._middleware_mgr._run(*a, **kw),
+            record_usage=lambda *a, **kw: self._compression_mgr.record_usage(*a, **kw),
+            get_tools=lambda: self._tools_mgr.get(),
             commit_session=self._commit_session,
-            resolve_llm_config=lambda *a, **kw: self._resolve_llm_config(*a, **kw),
-            resolve_llm_client=lambda *a, **kw: self._resolve_llm_client(*a, **kw),
-            has_llm_client=lambda *a, **kw: self._has_llm_client(*a, **kw),
-            resolve_commit_fn=lambda r: self.resolve_commit(r),
+            resolve_llm_config=lambda *a, **kw: self._config_mgr._resolve_llm_config(*a, **kw),
+            resolve_llm_client=lambda *a, **kw: self._config_mgr._resolve_llm_client(*a, **kw),
+            has_llm_client=lambda *a, **kw: self._config_mgr._has_llm_client(*a, **kw),
+            resolve_commit_fn=lambda r: self._branches_mgr.resolve(r),
             get_head=lambda: self.head,
-            as_tools_fn=lambda **kw: self.as_tools(**kw),
+            as_tools_fn=lambda **kw: self._toolkit_mgr.as_tools(**kw),
             save_compile_record_fn=lambda *a, **kw: self._save_compile_record(*a, **kw),
             get_in_batch=lambda: self._in_batch,
             get_tool_profile=lambda: self._tool_profile,
@@ -677,23 +678,23 @@ class Tract:
             check_open=self._check_open,
             commit_fn=lambda *a, **kw: self.commit(*a, **kw),
             compile_fn=lambda **kw: self.compile(**kw),
-            run_middleware=lambda *a, **kw: self._run_middleware(*a, **kw),
+            run_middleware=lambda *a, **kw: self._middleware_mgr._run(*a, **kw),
             commit_session=self._commit_session,
-            resolve_llm_config=lambda *a, **kw: self._resolve_llm_config(*a, **kw),
-            resolve_llm_client=lambda *a, **kw: self._resolve_llm_client(*a, **kw),
-            has_llm_client=lambda *a, **kw: self._has_llm_client(*a, **kw),
-            annotate_fn=lambda *a, **kw: self.annotate(*a, **kw),
+            resolve_llm_config=lambda *a, **kw: self._config_mgr._resolve_llm_config(*a, **kw),
+            resolve_llm_client=lambda *a, **kw: self._config_mgr._resolve_llm_client(*a, **kw),
+            has_llm_client=lambda *a, **kw: self._config_mgr._has_llm_client(*a, **kw),
+            annotate_fn=lambda *a, **kw: self._annotations_mgr.set(*a, **kw),
             get_head=lambda: self.head,
             get_ancestors=self._get_merge_aware_ancestors,
             row_to_info=self._commit_engine._row_to_info,
             get_session=lambda: self._session,
             get_custom_type_registry=lambda: self._custom_type_registry,
-            extract_content_fn=lambda *a, **kw: self._extract_content(*a, **kw),
+            extract_content_fn=lambda *a, **kw: self._llm_mgr._extract_content(*a, **kw),
             normalize_usage_dict_fn=lambda *a, **kw: self._normalize_usage_dict(*a, **kw),
             save_compile_record_fn=lambda *a, **kw: self._save_compile_record(*a, **kw),
             tool_result_fn=lambda *a, **kw: self.tool_result(*a, **kw),
-            get_content_fn=lambda *a, **kw: self.get_content(*a, **kw),
-            find_tool_turns_fn=lambda **kw: self.find_tool_turns(**kw),
+            get_content_fn=lambda *a, **kw: self._search_mgr.get_content(*a, **kw),
+            find_tool_turns_fn=lambda **kw: self._tools_mgr.find_turns(**kw),
         )
 
         self._persistence_mgr = PersistenceManager(
@@ -712,13 +713,13 @@ class Tract:
             db_path=self._db_path,
             check_open=self._check_open,
             commit_fn=lambda *a, **kw: self.commit(*a, **kw),
-            log_fn=lambda **kw: self.log(**kw),
-            branch_fn=lambda *a, **kw: self.branch(*a, **kw),
-            switch_fn=lambda *a, **kw: self.switch(*a, **kw),
-            reset_fn=lambda *a, **kw: self.reset(*a, **kw),
-            register_tag_fn=lambda *a, **kw: self.register_tag(*a, **kw),
-            annotate_fn=lambda *a, **kw: self.annotate(*a, **kw),
-            list_branches_fn=lambda: self.list_branches(),
+            log_fn=lambda **kw: self._search_mgr.log(**kw),
+            branch_fn=lambda *a, **kw: self._branches_mgr.create(*a, **kw),
+            switch_fn=lambda *a, **kw: self._branches_mgr.switch(*a, **kw),
+            reset_fn=lambda *a, **kw: self._branches_mgr.reset(*a, **kw),
+            register_tag_fn=lambda *a, **kw: self._tags_mgr.register(*a, **kw),
+            annotate_fn=lambda *a, **kw: self._annotations_mgr.set(*a, **kw),
+            list_branches_fn=lambda: self._branches_mgr.list(),
             commit_session=self._commit_session,
             get_head=lambda: self.head,
             row_to_info=self._commit_engine._row_to_info,
@@ -754,7 +755,7 @@ class Tract:
         return self._tools_mgr
 
     @property
-    def config_mgr(self):
+    def config(self):
         """Configuration management sub-object."""
         return self._config_mgr
 
@@ -1050,7 +1051,7 @@ class Tract:
         tract._create_managers()
 
         # Seed base tags (idempotent)
-        tract._seed_base_tags()
+        tract._tags_mgr._seed_base()
 
         # Validate: model= and default_config= are mutually exclusive
         if model is not None and default_config is not None:
@@ -1086,14 +1087,14 @@ class Tract:
                     base_url=base_url,
                     default_model=model or "gpt-4o-mini",
                 )
-            tract.configure_llm(client)
+            tract.config.configure_llm(client)
             tract._llm_state.owns_llm_client = True
             if model is not None:
                 tract._llm_state.default_config = LLMConfig(model=model)
 
         # Configure externally-provided LLM client (caller owns lifecycle)
         elif llm_client is not None:
-            tract.configure_llm(llm_client)
+            tract.config.configure_llm(llm_client)
             tract._llm_state.owns_llm_client = False
 
         # Apply default_config if provided (without api_key)
@@ -1105,7 +1106,7 @@ class Tract:
             tract._llm_state.operation_configs = operations
         # Apply per-operation configs (legacy dict path)
         elif operation_configs is not None:
-            tract.configure_operations(**operation_configs)
+            tract.config.configure_operations(**operation_configs)
 
         # Reasoning commit config
         tract._llm_state.commit_reasoning = commit_reasoning
@@ -1150,7 +1151,10 @@ class Tract:
         tract._create_deferred_managers()
 
         # Load persisted state (needs persistence_mgr from deferred managers)
-        tract._load_persisted_state()
+        tract._persistence_mgr._load_persisted_state(
+            profile_registry=tract._profile_registry,
+            template_registry=tract._template_registry,
+        )
 
         return tract
 
@@ -1216,7 +1220,7 @@ class Tract:
         # Create managers (repos are set from __init__ for from_components)
         tract._create_managers()
         if llm_client is not None:
-            tract.configure_llm(llm_client)
+            tract.config.configure_llm(llm_client)
             tract._llm_state.owns_llm_client = False
         # Create deferred managers that need full LLM state
         tract._create_deferred_managers()
@@ -1235,11 +1239,6 @@ class Tract:
     def head(self) -> str | None:
         """Current HEAD commit hash, or *None* if no commits yet."""
         return self._ref_repo.get_head(self._tract_id)
-
-    @property
-    def config(self) -> TractConfig:
-        """The tract configuration."""
-        return self._config
 
     @property
     def is_detached(self) -> bool:
@@ -1269,16 +1268,6 @@ class Tract:
             )
         return self._config_index
 
-    def get_config(self, key: str, default: Any = None) -> Any:
-        """Resolve a config value from DAG.
-
-        Uses DAG precedence: closest to HEAD wins.
-        """
-        return self.config_index.get(key, default=default)
-
-    def get_all_configs(self) -> dict[str, Any]:
-        """Resolve all config key-value pairs from DAG."""
-        return self.config_index.get_all()
 
     # Well-known config key type validators
     _WELL_KNOWN_CONFIG_TYPES: dict[str, type | tuple[type, ...]] = {
@@ -1294,9 +1283,6 @@ class Tract:
         "handoff_summary_k": (int,),
     }
 
-    def configure(self, **settings: Any) -> CommitInfo:
-        """See :attr:`config` manager :meth:`set`."""
-        return self._config_mgr.set(**settings)
 
     def directive(
         self,
@@ -1332,140 +1318,22 @@ class Tract:
         # type-hint default of PINNED.
         actual_priority = priority if priority is not None else _Priority.PINNED
         if priority is not None:
-            self.annotate(info.commit_hash, actual_priority)
+            self._annotations_mgr.set(info.commit_hash, actual_priority)
         return info
 
-    def apply_template(
-        self, name: str, *, directive_name: str | None = None, **params: object
-    ) -> CommitInfo:
-        """See :attr:`templates` manager :meth:`apply`."""
-        return self._templates_mgr.apply(name=name, directive_name=directive_name, **params)
-
-    def list_templates(self) -> list:
-        """List all available directive templates from this instance's registry."""
-        return self._templates_mgr.list()
-
-    def register_template(self, template: DirectiveTemplate) -> None:
-        """See :attr:`templates` manager :meth:`register`."""
-        return self._templates_mgr.register(template=template)
-
-    def get_template(self, name: str) -> DirectiveTemplate:
-        """See :attr:`templates` manager :meth:`get`."""
-        return self._templates_mgr.get(name=name)
 
     # ------------------------------------------------------------------
     # Workflow profiles
     # ------------------------------------------------------------------
 
-    def load_profile(self, name: str, *, apply_directives: bool = True) -> None:
-        """See :attr:`templates` manager :meth:`load_profile`."""
-        return self._templates_mgr.load_profile(name=name, apply_directives=apply_directives)
-
-    def apply_stage(self, stage_name: str) -> None:
-        """See :attr:`templates` manager :meth:`apply_stage`."""
-        return self._templates_mgr.apply_stage(stage_name=stage_name)
-
-    @property
-    def active_profile(self) -> WorkflowProfile | None:
-        """The currently loaded workflow profile, or None."""
-        return self._templates_mgr.active_profile
-
-    def register_profile(self, profile: WorkflowProfile) -> None:
-        """See :attr:`templates` manager :meth:`register_profile`."""
-        return self._templates_mgr.register_profile(profile=profile)
-
-    def get_profile(self, name: str) -> WorkflowProfile:
-        """See :attr:`templates` manager :meth:`get_profile`."""
-        return self._templates_mgr.get_profile(name=name)
-
-    def list_profiles(self) -> list:
-        """List all available workflow profiles from this instance's registry."""
-        return self._templates_mgr.list_profiles()
-
-    def add_middleware(self, event: MiddlewareEvent, handler: Callable) -> str:
-        """Register middleware. Returns handler ID for removal."""
-        return self._middleware_mgr.add(event=event, handler=handler)
 
     # Backward-compatible alias
-    use = add_middleware
 
-    def remove_middleware(self, handler_id: str) -> None:
-        """Remove a registered middleware handler."""
-        return self._middleware_mgr.remove(handler_id=handler_id)
-
-    def gate(
-        self,
-        name: str,
-        *,
-        event: MiddlewareEvent,
-        check: str,
-        model: str | None = None,
-        condition: Callable | None = None,
-        temperature: float = 0.1,
-        max_log_entries: int = 30,
-    ) -> str:
-        """See :attr:`middleware` manager :meth:`gate`."""
-        return self._middleware_mgr.gate(name=name, event=event, check=check, model=model, condition=condition, temperature=temperature, max_log_entries=max_log_entries)
-
-    def remove_gate(self, name: str) -> None:
-        """See :attr:`middleware` manager :meth:`remove_gate`."""
-        return self._middleware_mgr.remove_gate(name=name)
-
-    def list_gates(self) -> list[str]:
-        """Return names of all registered semantic gates."""
-        return self._middleware_mgr.list_gates()
-
-    def maintain(
-        self,
-        name: str,
-        *,
-        event: MiddlewareEvent,
-        instructions: str,
-        actions: list[str] | None = None,
-        model: str | None = None,
-        condition: Callable | None = None,
-        temperature: float = 0.1,
-        max_log_entries: int = 30,
-        max_peeks: int = 0,
-    ) -> str:
-        """See :attr:`middleware` manager :meth:`maintain`."""
-        return self._middleware_mgr.maintain(name=name, event=event, instructions=instructions, actions=actions, model=model, condition=condition, temperature=temperature, max_log_entries=max_log_entries, max_peeks=max_peeks)
-
-    def remove_maintainer(self, name: str) -> None:
-        """See :attr:`middleware` manager :meth:`remove_maintainer`."""
-        return self._middleware_mgr.remove_maintainer(name=name)
-
-    def list_maintainers(self) -> list[str]:
-        """Return names of all registered semantic maintainers."""
-        return self._middleware_mgr.list_maintainers()
 
     # ------------------------------------------------------------------
     # Routing
     # ------------------------------------------------------------------
 
-    def add_route(
-        self,
-        name: str,
-        description: str,
-        route_type: str,
-        *,
-        keywords: list[str] | None = None,
-        pattern: str | None = None,
-    ) -> None:
-        """See :attr:`routing` manager :meth:`add`."""
-        return self._routing_mgr.add(name=name, description=description, route_type=route_type, keywords=keywords, pattern=pattern)
-
-    def remove_route(self, name: str) -> None:
-        """See :attr:`routing` manager :meth:`remove`."""
-        return self._routing_mgr.remove(name=name)
-
-    def _route_fallback(self, query: str) -> RoutingResult:
-        """Fuzzy-only routing when no SemanticRouter is provided."""
-        return self._routing_mgr._fallback(query=query)
-
-    def _route_apply(self, result: RoutingResult, apply: bool) -> RoutingResult:
-        """Optionally apply a routing result."""
-        return self._routing_mgr._apply_result(result=result, apply=apply)
 
     def route(
         self,
@@ -1492,7 +1360,7 @@ class Tract:
 
         Example::
 
-            result = t.route("time to start implementing")
+            result = t.routing.route("time to start implementing")
             print(result.route.target, result.route.confidence)
         """
         self._check_open()
@@ -1519,85 +1387,11 @@ class Tract:
     # Context intelligence (cherry-pick & deduplication)
     # ------------------------------------------------------------------
 
-    def cherry_pick(
-        self,
-        query: str,
-        *,
-        limit: int = 10,
-        **llm_kwargs: Any,
-    ) -> CherryPickResult:
-        """See :attr:`intelligence` manager :meth:`cherry_pick`."""
-        return self._intelligence_mgr.cherry_pick(query=query, limit=limit, **llm_kwargs)
-
-    async def acherry_pick(
-        self,
-        query: str,
-        *,
-        limit: int = 10,
-        **llm_kwargs: Any,
-    ) -> CherryPickResult:
-        """Async version of :meth:`cherry_pick`."""
-        return await self._intelligence_mgr.acherry_pick(query=query, limit=limit, **llm_kwargs)
-
-    def deduplicate(
-        self,
-        *,
-        threshold: float = 0.8,
-        auto_skip: bool = False,
-        **llm_kwargs: Any,
-    ) -> DedupResult:
-        """See :attr:`intelligence` manager :meth:`deduplicate`."""
-        return self._intelligence_mgr.deduplicate(threshold=threshold, auto_skip=auto_skip, **llm_kwargs)
-
-    async def adeduplicate(
-        self,
-        *,
-        threshold: float = 0.8,
-        auto_skip: bool = False,
-        **llm_kwargs: Any,
-    ) -> DedupResult:
-        """Async version of :meth:`deduplicate`."""
-        return await self._intelligence_mgr.adeduplicate(threshold=threshold, auto_skip=auto_skip, **llm_kwargs)
 
     # ------------------------------------------------------------------
     # Autonomous operations
     # ------------------------------------------------------------------
 
-    def auto_split(self, commit_hash: str, **llm_kwargs: Any) -> AutoSplitResult:
-        """See :attr:`intelligence` manager :meth:`auto_split`."""
-        return self._intelligence_mgr.auto_split(commit_hash=commit_hash, **llm_kwargs)
-
-    async def aauto_split(self, commit_hash: str, **llm_kwargs: Any) -> AutoSplitResult:
-        """Async version of :meth:`auto_split`."""
-        return await self._intelligence_mgr.aauto_split(commit_hash=commit_hash, **llm_kwargs)
-
-    def auto_rebase(self, **llm_kwargs: Any) -> AutoRebaseResult:
-        """See :attr:`intelligence` manager :meth:`auto_rebase`."""
-        return self._intelligence_mgr.auto_rebase(**llm_kwargs)
-
-    async def aauto_rebase(self, **llm_kwargs: Any) -> AutoRebaseResult:
-        """Async version of :meth:`auto_rebase`."""
-        return await self._intelligence_mgr.aauto_rebase(**llm_kwargs)
-
-    def auto_branch(self, *, context: str = "", **llm_kwargs: Any) -> AutoBranchResult:
-        """See :attr:`intelligence` manager :meth:`auto_branch`."""
-        return self._intelligence_mgr.auto_branch(context=context, **llm_kwargs)
-
-    async def aauto_branch(self, *, context: str = "", **llm_kwargs: Any) -> AutoBranchResult:
-        """Async version of :meth:`auto_branch`."""
-        return await self._intelligence_mgr.aauto_branch(context=context, **llm_kwargs)
-
-    def _ensure_routing_table(self) -> None:
-        """Lazily initialize the default routing table."""
-        return self._routing_mgr._ensure_table()
-
-    def _apply_route(self, route: Route) -> bool:
-        """See :attr:`routing` manager :meth:`_apply`."""
-        return self._routing_mgr._apply(route=route)
-
-    def _run_middleware(self, event: str, **kwargs: Any) -> None:
-        """See :attr:`middleware` manager :meth:`_run`."""
-        return self._middleware_mgr._run(event=event, **kwargs)
 
     def transition(
         self,
@@ -1617,30 +1411,30 @@ class Tract:
             CommitInfo of the handoff commit on the target, or None if no handoff.
         """
         self._check_open()
-        self._run_middleware("pre_transition", target=target)
+        self._middleware_mgr._run("pre_transition", target=target)
 
         payload = None
         if handoff == "full":
             payload = str(self.compile().to_dicts())
         elif handoff == "summary":
-            k = self.get_config("handoff_summary_k") or 3
+            k = self._config_mgr.get("handoff_summary_k") or 3
             payload = str(self.compile(strategy="adaptive", strategy_k=k).to_dicts())
         elif handoff != "none":
             payload = handoff
 
-        existing = {b.name for b in self.list_branches()}
+        existing = {b.name for b in self.branches.list()}
         if target not in existing:
             from tract.operations.branch import create_branch
 
             create_branch(target, self._tract_id, self._ref_repo, self._commit_repo)
             self._commit_session()
-        self.switch(target)
+        self.branches.switch(target)
 
         result = None
         if payload:
             result = self.system(f"Context handoff:\n{payload}", message=f"handoff to {target}")
 
-        self._run_middleware("post_transition", target=target)
+        self._middleware_mgr._run("post_transition", target=target)
         return result
 
     @property
@@ -1652,47 +1446,16 @@ class Tract:
     # Spawn relationship helpers
     # ------------------------------------------------------------------
 
-    def parent(self) -> SpawnInfo | None:
-        """See :attr:`spawn` manager :meth:`parent`."""
-        return self._spawn_mgr.parent()
-
-    def children(self) -> list[SpawnInfo]:
-        """See :attr:`spawn` manager :meth:`children`."""
-        return self._spawn_mgr.children()
 
     # ------------------------------------------------------------------
     # Subagent communication
     # ------------------------------------------------------------------
 
-    def send_to_child(self, child_tract_id: str, content: str, **kwargs) -> str:
-        """See :attr:`spawn` manager :meth:`send_to_child`."""
-        return self._spawn_mgr.send_to_child(child_tract_id=child_tract_id, content=content, **kwargs)
 
     # ------------------------------------------------------------------
     # Tool tracking
     # ------------------------------------------------------------------
 
-    def set_tools(self, tools: list[dict] | None) -> None:
-        """See :attr:`tools` manager :meth:`set`."""
-        return self._tools_mgr.set(tools=tools)
-
-    def get_tools(self) -> list[dict] | None:
-        """See :attr:`tools` manager :meth:`get`."""
-        return self._tools_mgr.get()
-
-    def get_commit_tools(self, commit_hash: str) -> list[dict]:
-        """See :attr:`tools` manager :meth:`get_for_commit`."""
-        return self._tools_mgr.get_for_commit(commit_hash=commit_hash)
-
-    def _store_and_link_tools(
-        self, commit_hash: str, tools: list[dict]
-    ) -> None:
-        """See :attr:`tools` manager :meth:`_store_and_link`."""
-        return self._tools_mgr._store_and_link(commit_hash=commit_hash, tools=tools)
-
-    def _gather_tools_for_compile(self) -> list[dict]:
-        """See :attr:`tools` manager :meth:`_gather_for_compile`."""
-        return self._tools_mgr._gather_for_compile()
 
     def _inject_tools(self, result: CompiledContext) -> CompiledContext:
         """Inject tool definitions into a compiled context.
@@ -1708,7 +1471,7 @@ class Tract:
 
         Returns the original result unchanged if no tools are found.
         """
-        tools = self._gather_tools_for_compile()
+        tools = self._tools_mgr._gather_for_compile()
         if not tools:
             return result
         # Only add tiktoken tool tokens when source is NOT API-calibrated
@@ -1794,7 +1557,7 @@ class Tract:
             message = auto_msg
         else:
             # Message provided: only classify tags (no LLM call for message)
-            auto_tags = self._classify_tags(
+            auto_tags = self._tags_mgr._classify(
                 _ctype, role=_role, operation=operation, metadata=metadata,
             )
 
@@ -1804,13 +1567,13 @@ class Tract:
 
         # Validate tags against registry in strict mode
         if all_tags:
-            self._validate_tags(all_tags)
+            self._tags_mgr._validate(all_tags)
 
         # Pre-commit middleware (can block)
-        self._run_middleware("pre_commit", pending=content)
+        self._middleware_mgr._run("pre_commit", pending=content)
 
         # Config enforcement: max_commit_tokens
-        max_commit_tokens = self.get_config("max_commit_tokens")
+        max_commit_tokens = self._config_mgr.get("max_commit_tokens")
         if max_commit_tokens is not None and _text is not None:
             _est_tokens = self._token_counter.count_text(_text) if _text else 0
             if _est_tokens > int(max_commit_tokens):
@@ -1832,9 +1595,9 @@ class Tract:
         )
 
         # Link tool schemas to this commit
-        effective_tools = tools if tools is not None else self.get_tools()
+        effective_tools = tools if tools is not None else self._tools_mgr.get()
         if effective_tools is not None and self._tool_schema_repo is not None:
-            self._store_and_link_tools(info.commit_hash, effective_tools)
+            self._tools_mgr._store_and_link(info.commit_hash, effective_tools)
 
         # Persist to database
         self._commit_session()
@@ -1862,7 +1625,7 @@ class Tract:
                 # Do NOT clear cache -- other entries at different HEADs remain valid
 
         # Fire post-commit middleware
-        self._run_middleware("post_commit", commit=info)
+        self._middleware_mgr._run("post_commit", commit=info)
 
         return info
 
@@ -1947,12 +1710,12 @@ class Tract:
         info = self.commit(content, **commit_kwargs)
 
         if priority is not None:
-            self.annotate(
+            self._annotations_mgr.set(
                 info.commit_hash, priority,
                 retain=retain, retain_match=retain_match,
             )
         if improve:
-            if not self._has_llm_client("improve"):
+            if not self._config_mgr._has_llm_client("improve"):
                 raise ValueError(
                     "improve=True requires an LLM client. "
                     "Call configure_llm() or pass api_key to Tract.open()."
@@ -2153,7 +1916,7 @@ class Tract:
 
         return self.commit(
             ReasoningContent(text=text, format=format),
-            message=message or self._auto_message("reasoning", text),
+            message=message or self._llm_mgr._auto_message("reasoning", text),
             metadata=metadata,
         )
 
@@ -2208,394 +1971,31 @@ class Tract:
             metadata=meta,
         )
 
-    def configure_tool_summarization(
-        self,
-        instructions: dict[str, str] | None = None,
-        *,
-        auto_threshold: int | None = None,
-        default_instructions: str | None = None,
-        include_context: bool = False,
-        system_prompt: str | None = None,
-    ) -> None:
-        """See :attr:`config` manager :meth:`configure_tool_summarization`."""
-        return self._config_mgr.configure_tool_summarization(instructions=instructions, auto_threshold=auto_threshold, default_instructions=default_instructions, include_context=include_context, system_prompt=system_prompt)
 
     # ------------------------------------------------------------------
     # Tool query API
     # ------------------------------------------------------------------
 
-    def find_tool_results(
-        self,
-        name: str | None = None,
-        after: str | None = None,
-        limit: int = 500,
-    ) -> list[CommitInfo]:
-        """See :attr:`tools` manager :meth:`find_results`."""
-        return self._tools_mgr.find_results(name=name, after=after, limit=limit)
-
-    def find_tool_calls(
-        self,
-        name: str | None = None,
-        limit: int = 500,
-    ) -> list[CommitInfo]:
-        """See :attr:`tools` manager :meth:`find_calls`."""
-        return self._tools_mgr.find_calls(name=name, limit=limit)
-
-    def find_tool_turns(
-        self,
-        name: str | None = None,
-        limit: int = 500,
-    ) -> list["ToolTurn"]:
-        """See :attr:`tools` manager :meth:`find_turns`."""
-        return self._tools_mgr.find_turns(name=name, limit=limit)
-
-    def drop_failed_tool_turns(
-        self,
-        name: str | None = None,
-    ) -> "ToolDropResult":
-        """See :attr:`tools` manager :meth:`drop_failed_turns`."""
-        return self._tools_mgr.drop_failed_turns(name=name)
 
     # ------------------------------------------------------------------
     # Conversation layer (chat/generate)
     # ------------------------------------------------------------------
 
-    def _resolve_llm_config(
-        self,
-        operation: str,
-        *,
-        model: str | None = None,
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-        llm_config: LLMConfig | None = None,
-        include_sources: bool = False,
-        **kwargs: Any,
-    ) -> dict:
-        """See :attr:`config` manager :meth:`_resolve_llm_config`."""
-        return self._config_mgr._resolve_llm_config(operation=operation, model=model, temperature=temperature, max_tokens=max_tokens, llm_config=llm_config, include_sources=include_sources, **kwargs)
-
-    def _build_generation_config(self, response: dict, *, resolved: dict) -> dict:
-        """See :attr:`llm` manager :meth:`_build_generation_config`."""
-        return self._llm_mgr._build_generation_config(response=response, resolved=resolved)
-
-    def _extract_content(self, response: dict, *, client: LLMClient | None = None) -> str:
-        """See :attr:`llm` manager :meth:`_extract_content`."""
-        return self._llm_mgr._extract_content(response=response, client=client)
-
-    def _extract_usage(self, response: dict, *, client: LLMClient | None = None) -> dict | None:
-        """See :attr:`llm` manager :meth:`_extract_usage`."""
-        return self._llm_mgr._extract_usage(response=response, client=client)
-
-    def _generate_pre(self) -> None:
-        """Shared guards for generate/agenerate."""
-        return self._llm_mgr._generate_pre()
-
-    def _generate_validate_loop(
-        self,
-        response: ChatResponse,
-        validator: Callable,
-        attempt: int,
-        intermediate_hashes: list[str],
-        hide_retries: bool,
-        max_retries: int,
-        retry_prompt: str | None,
-    ) -> tuple[ChatResponse | None, str | None]:
-        """See :attr:`llm` manager :meth:`_generate_validate_loop`."""
-        return self._llm_mgr._generate_validate_loop(response=response, validator=validator, attempt=attempt, intermediate_hashes=intermediate_hashes, hide_retries=hide_retries, max_retries=max_retries, retry_prompt=retry_prompt)
-
-    def generate(
-        self,
-        *,
-        model: str | None = None,
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-        llm_config: LLMConfig | None = None,
-        message: str | None = None,
-        metadata: dict | None = None,
-        reasoning: bool = True,
-        validator: Callable[[str], tuple[bool, str | None]] | None = None,
-        max_retries: int = 3,
-        hide_retries: bool = True,
-        retry_prompt: str | None = None,
-        retry: RetryConfig | None = None,
-        **kwargs: Any,
-    ) -> ChatResponse:
-        """See :attr:`llm` manager :meth:`generate`."""
-        return self._llm_mgr.generate(model=model, temperature=temperature, max_tokens=max_tokens, llm_config=llm_config, message=message, metadata=metadata, reasoning=reasoning, validator=validator, max_retries=max_retries, hide_retries=hide_retries, retry_prompt=retry_prompt, retry=retry, **kwargs)
-
-    def _generate_once_pre(
-        self,
-        *,
-        model: str | None = None,
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-        llm_config: LLMConfig | None = None,
-        **kwargs: Any,
-    ) -> tuple[Any, list[dict], dict]:
-        """See :attr:`llm` manager :meth:`_generate_once_pre`."""
-        return self._llm_mgr._generate_once_pre(model=model, temperature=temperature, max_tokens=max_tokens, llm_config=llm_config, **kwargs)
-
-    def _generate_once_post(
-        self,
-        response: Any,
-        chat_client: Any,
-        llm_kwargs: dict,
-        *,
-        message: str | None = None,
-        metadata: dict | None = None,
-        reasoning: bool = True,
-    ) -> ChatResponse:
-        """Post-LLM logic for _generate_once: extract, commit, usage."""
-        return self._llm_mgr._generate_once_post(response=response, chat_client=chat_client, llm_kwargs=llm_kwargs, message=message, metadata=metadata, reasoning=reasoning)
-
-    def _generate_once(
-        self,
-        *,
-        model: str | None = None,
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-        llm_config: LLMConfig | None = None,
-        message: str | None = None,
-        metadata: dict | None = None,
-        reasoning: bool = True,
-        retry: RetryConfig | None = None,
-        **kwargs: Any,
-    ) -> ChatResponse:
-        """Single generate attempt (no retry). Internal helper."""
-        return self._llm_mgr._generate_once(model=model, temperature=temperature, max_tokens=max_tokens, llm_config=llm_config, message=message, metadata=metadata, reasoning=reasoning, retry=retry, **kwargs)
-
-    def chat(
-        self,
-        text: str,
-        *,
-        model: str | None = None,
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-        llm_config: LLMConfig | None = None,
-        message: str | None = None,
-        name: str | None = None,
-        metadata: dict | None = None,
-        reasoning: bool = True,
-        validator: Callable[[str], tuple[bool, str | None]] | None = None,
-        max_retries: int = 3,
-        hide_retries: bool = True,
-        retry_prompt: str | None = None,
-        retry: RetryConfig | None = None,
-        **kwargs: Any,
-    ) -> ChatResponse:
-        """See :attr:`llm` manager :meth:`chat`."""
-        return self._llm_mgr.chat(text=text, model=model, temperature=temperature, max_tokens=max_tokens, llm_config=llm_config, message=message, name=name, metadata=metadata, reasoning=reasoning, validator=validator, max_retries=max_retries, hide_retries=hide_retries, retry_prompt=retry_prompt, retry=retry, **kwargs)
 
     # Shared sentinels — must be the same objects as in managers for identity checks
     from tract.managers.state import TOOLS_SENTINEL as _TOOLS_SENTINEL
     from tract.managers.state import PROFILE_SENTINEL as _PROFILE_SENTINEL
 
-    def run(
-        self,
-        task: str | None = None,
-        *,
-        max_steps: int = 50,
-        max_tokens: int | None = None,
-        system_prompt: str | None = None,
-        tools: list[dict] | None | object = _TOOLS_SENTINEL,
-        profile: str | ToolProfile | object = _PROFILE_SENTINEL,
-        tool_names: list[str] | None = None,
-        tool_handlers: dict[str, Callable] | None = None,
-        llm_client: LLMClient | None = None,
-        on_step: Callable | None = None,
-        on_token: Callable | None = None,
-        on_tool_result: Callable | None = None,
-        stream: bool = False,
-        step_budget: int | None = None,
-        tool_validator: Callable | None = None,
-        auto_compress_threshold: float | None = None,
-    ) -> LoopResult:  # noqa: F821
-        """See :attr:`llm` manager :meth:`run`."""
-        return self._llm_mgr.run(task=task, max_steps=max_steps, max_tokens=max_tokens, system_prompt=system_prompt, tools=tools, profile=profile, tool_names=tool_names, tool_handlers=tool_handlers, llm_client=llm_client, on_step=on_step, on_token=on_token, on_tool_result=on_tool_result, stream=stream, step_budget=step_budget, tool_validator=tool_validator, auto_compress_threshold=auto_compress_threshold)
-
-    def _revise_post(
-        self,
-        response: ChatResponse,
-        commit_hash: str,
-        prompt: str,
-        message: str | None,
-    ) -> ChatResponse:
-        """Shared post-chat logic for revise/arevise: resolve, edit, skip."""
-        return self._llm_mgr._revise_post(response=response, commit_hash=commit_hash, prompt=prompt, message=message)
-
-    def revise(
-        self,
-        commit_hash: str,
-        prompt: str,
-        *,
-        model: str | None = None,
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-        llm_config: LLMConfig | None = None,
-        message: str | None = None,
-        reasoning: bool = True,
-        **kwargs: Any,
-    ) -> ChatResponse:
-        """See :attr:`llm` manager :meth:`revise`."""
-        return self._llm_mgr.revise(commit_hash=commit_hash, prompt=prompt, model=model, temperature=temperature, max_tokens=max_tokens, llm_config=llm_config, message=message, reasoning=reasoning, **kwargs)
 
     # ------------------------------------------------------------------
     # Async LLM methods
     # ------------------------------------------------------------------
 
-    async def _agenerate_once(
-        self,
-        *,
-        model: str | None = None,
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-        llm_config: LLMConfig | None = None,
-        message: str | None = None,
-        metadata: dict | None = None,
-        reasoning: bool = True,
-        retry: RetryConfig | None = None,
-        **kwargs: Any,
-    ) -> ChatResponse:
-        """Async version of :meth:`_generate_once`."""
-        return await self._llm_mgr._agenerate_once(model=model, temperature=temperature, max_tokens=max_tokens, llm_config=llm_config, message=message, metadata=metadata, reasoning=reasoning, retry=retry, **kwargs)
-
-    async def agenerate(
-        self,
-        *,
-        model: str | None = None,
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-        llm_config: LLMConfig | None = None,
-        message: str | None = None,
-        metadata: dict | None = None,
-        reasoning: bool = True,
-        validator: Callable[[str], tuple[bool, str | None]] | None = None,
-        max_retries: int = 3,
-        hide_retries: bool = True,
-        retry_prompt: str | None = None,
-        retry: RetryConfig | None = None,
-        **kwargs: Any,
-    ) -> ChatResponse:
-        """See :attr:`llm` manager :meth:`agenerate`."""
-        return await self._llm_mgr.agenerate(model=model, temperature=temperature, max_tokens=max_tokens, llm_config=llm_config, message=message, metadata=metadata, reasoning=reasoning, validator=validator, max_retries=max_retries, hide_retries=hide_retries, retry_prompt=retry_prompt, retry=retry, **kwargs)
-
-    async def achat(
-        self,
-        text: str,
-        *,
-        model: str | None = None,
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-        llm_config: LLMConfig | None = None,
-        message: str | None = None,
-        name: str | None = None,
-        metadata: dict | None = None,
-        reasoning: bool = True,
-        validator: Callable[[str], tuple[bool, str | None]] | None = None,
-        max_retries: int = 3,
-        hide_retries: bool = True,
-        retry_prompt: str | None = None,
-        retry: RetryConfig | None = None,
-        **kwargs: Any,
-    ) -> ChatResponse:
-        """See :attr:`llm` manager :meth:`achat`."""
-        return await self._llm_mgr.achat(text=text, model=model, temperature=temperature, max_tokens=max_tokens, llm_config=llm_config, message=message, name=name, metadata=metadata, reasoning=reasoning, validator=validator, max_retries=max_retries, hide_retries=hide_retries, retry_prompt=retry_prompt, retry=retry, **kwargs)
-
-    async def arun(
-        self,
-        task: str | None = None,
-        *,
-        max_steps: int = 50,
-        max_tokens: int | None = None,
-        system_prompt: str | None = None,
-        tools: list[dict] | None | object = _TOOLS_SENTINEL,
-        profile: str | ToolProfile | object = _PROFILE_SENTINEL,
-        tool_names: list[str] | None = None,
-        tool_handlers: dict[str, Callable] | None = None,
-        llm_client: LLMClient | None = None,
-        on_step: Callable | None = None,
-        on_token: Callable | None = None,
-        on_tool_result: Callable | None = None,
-        stream: bool = False,
-        step_budget: int | None = None,
-        tool_validator: Callable | None = None,
-        auto_compress_threshold: float | None = None,
-    ) -> LoopResult:
-        """See :attr:`llm` manager :meth:`arun`."""
-        return await self._llm_mgr.arun(task=task, max_steps=max_steps, max_tokens=max_tokens, system_prompt=system_prompt, tools=tools, profile=profile, tool_names=tool_names, tool_handlers=tool_handlers, llm_client=llm_client, on_step=on_step, on_token=on_token, on_tool_result=on_tool_result, stream=stream, step_budget=step_budget, tool_validator=tool_validator, auto_compress_threshold=auto_compress_threshold)
-
-    async def arevise(
-        self,
-        commit_hash: str,
-        prompt: str,
-        *,
-        model: str | None = None,
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-        llm_config: LLMConfig | None = None,
-        message: str | None = None,
-        reasoning: bool = True,
-        **kwargs: Any,
-    ) -> ChatResponse:
-        """Async version of :meth:`revise`."""
-        return await self._llm_mgr.arevise(commit_hash=commit_hash, prompt=prompt, model=model, temperature=temperature, max_tokens=max_tokens, llm_config=llm_config, message=message, reasoning=reasoning, **kwargs)
-
-    async def acompress(
-        self,
-        *,
-        commits: list[str] | None = None,
-        from_commit: str | None = None,
-        to_commit: str | None = None,
-        target_tokens: int | None = None,
-        preserve: list[str] | None = None,
-        content: str | None = None,
-        instructions: str | None = None,
-        system_prompt: str | None = None,
-        model: str | None = None,
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-        llm_config: LLMConfig | None = None,
-        two_stage: bool | None = None,
-        triggered_by: str | None = None,
-        strategy: str = "default",
-        window_size: int = 5,
-    ) -> CompressResult:
-        """See :attr:`compression` manager :meth:`acompress`."""
-        return await self._compression_mgr.acompress(commits=commits, from_commit=from_commit, to_commit=to_commit, target_tokens=target_tokens, preserve=preserve, content=content, instructions=instructions, system_prompt=system_prompt, model=model, temperature=temperature, max_tokens=max_tokens, llm_config=llm_config, two_stage=two_stage, triggered_by=triggered_by, strategy=strategy, window_size=window_size)
-
-    async def acompress_tool_calls(
-        self,
-        commits: list[str] | None = None,
-        *,
-        name: str | None = None,
-        target_tokens: int | None = None,
-        instructions: str | None = None,
-        system_prompt: str | None = None,
-        include_context: bool = False,
-        model: str | None = None,
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-        llm_config: LLMConfig | None = None,
-        triggered_by: str | None = None,
-    ) -> ToolCompactResult:
-        """Async version of :meth:`compress_tool_calls`."""
-        return await self._compression_mgr.acompress_tool_calls(commits=commits, name=name, target_tokens=target_tokens, instructions=instructions, system_prompt=system_prompt, include_context=include_context, model=model, temperature=temperature, max_tokens=max_tokens, llm_config=llm_config, triggered_by=triggered_by)
 
     # ------------------------------------------------------------------
     # Compile record accessors
     # ------------------------------------------------------------------
 
-    def compile_records(self, limit: int = 100) -> list:
-        """See :attr:`persistence` manager :meth:`compile_records`."""
-        return self._persistence_mgr.compile_records(limit=limit)
-
-    def compile_record_commits(self, record_id: str) -> list[str]:
-        """See :attr:`persistence` manager :meth:`compile_record_commits`."""
-        return self._persistence_mgr.compile_record_commits(record_id=record_id)
-
-    def token_checkpoints(self, limit: int = 100) -> list:
-        """See :attr:`persistence` manager :meth:`token_checkpoints`."""
-        return self._persistence_mgr.token_checkpoints(limit=limit)
 
     @overload
     def compile(
@@ -2679,7 +2079,7 @@ class Tract:
             return empty
 
         # Pre-compile middleware (can block via BlockedError)
-        self._run_middleware("pre_compile")
+        self._middleware_mgr._run("pre_compile")
 
         # Strategy kwargs to forward to the compiler
         _strategy_kw = dict(strategy=strategy, strategy_k=strategy_k, recent_ratio=recent_ratio)
@@ -2846,95 +2246,11 @@ class Tract:
             priorities=new_priorities,
         )
 
-    def get_commit(self, commit_hash: str) -> CommitInfo | None:
-        """See :attr:`search` manager :meth:`get_commit`."""
-        return self._search_mgr.get_commit(commit_hash=commit_hash)
-
-    def get_content(self, commit_or_hash: CommitInfo | str) -> str | dict | None:
-        """See :attr:`search` manager :meth:`get_content`."""
-        return self._search_mgr.get_content(commit_or_hash=commit_or_hash)
-
-    def get_metadata(self, commit_or_hash: CommitInfo | str) -> dict | None:
-        """See :attr:`search` manager :meth:`get_metadata`."""
-        return self._search_mgr.get_metadata(commit_or_hash=commit_or_hash)
-
-    def show(self, commit_or_hash: CommitInfo | str) -> None:
-        """See :attr:`search` manager :meth:`show`."""
-        return self._search_mgr.show(commit_or_hash=commit_or_hash)
-
-    def annotate(
-        self,
-        target_hash: str,
-        priority: Priority,
-        *,
-        reason: str | None = None,
-        retain: str | None = None,
-        retain_match: list[str] | None = None,
-        retain_match_mode: str = "substring",
-    ) -> PriorityAnnotation:
-        """See :attr:`annotations` manager :meth:`set`."""
-        return self._annotations_mgr.set(target_hash=target_hash, priority=priority, reason=reason, retain=retain, retain_match=retain_match, retain_match_mode=retain_match_mode)
-
-    def get_annotations(self, target_hash: str) -> list[PriorityAnnotation]:
-        """See :attr:`annotations` manager :meth:`get`."""
-        return self._annotations_mgr.get(target_hash=target_hash)
-
-    def annotation_counts(self, limit: int = 500) -> dict[str, int]:
-        """See :attr:`annotations` manager :meth:`counts`."""
-        return self._annotations_mgr.counts(limit=limit)
 
     # ------------------------------------------------------------------
     # Tag system
     # ------------------------------------------------------------------
 
-    def tag(self, target_hash: str, tag_name: str) -> None:
-        """See :attr:`tags` manager :meth:`add`."""
-        return self._tags_mgr.add(target_hash=target_hash, tag_name=tag_name)
-
-    def untag(self, target_hash: str, tag_name: str) -> bool:
-        """See :attr:`tags` manager :meth:`remove`."""
-        return self._tags_mgr.remove(target_hash=target_hash, tag_name=tag_name)
-
-    def get_tags(self, target_hash: str) -> list[str]:
-        """See :attr:`tags` manager :meth:`get`."""
-        return self._tags_mgr.get(target_hash=target_hash)
-
-    def register_tag(self, name: str, description: str | None = None) -> None:
-        """See :attr:`tags` manager :meth:`register`."""
-        return self._tags_mgr.register(name=name, description=description)
-
-    def list_tags(self) -> list[dict]:
-        """See :attr:`tags` manager :meth:`list`."""
-        return self._tags_mgr.list()
-
-    def query_by_tags(
-        self,
-        tags: list[str],
-        *,
-        match: str = "any",
-        limit: int = 100,
-    ) -> list[CommitInfo]:
-        """See :attr:`tags` manager :meth:`query`."""
-        return self._tags_mgr.query(tags=tags, match=match, limit=limit)
-
-    def _seed_base_tags(self) -> None:
-        """Seed the tag registry with base tags (idempotent)."""
-        return self._tags_mgr._seed_base()
-
-    def _validate_tags(self, tags: list[str]) -> None:
-        """See :attr:`tags` manager :meth:`_validate`."""
-        return self._tags_mgr._validate(tags=tags)
-
-    def _classify_tags(
-        self,
-        content_type: str,
-        *,
-        role: str | None = None,
-        operation: CommitOperation | None = None,
-        metadata: dict | None = None,
-    ) -> list[str]:
-        """See :attr:`tags` manager :meth:`_classify`."""
-        return self._tags_mgr._classify(content_type=content_type, role=role, operation=operation, metadata=metadata)
 
     def _auto_classify(
         self,
@@ -2960,15 +2276,12 @@ class Tract:
         Returns:
             Tuple of (message, tags).
         """
-        tags = self._classify_tags(
+        tags = self._tags_mgr._classify(
             content_type, role=role, operation=operation, metadata=metadata,
         )
-        message = self._auto_message(content_type, text)
+        message = self._llm_mgr._auto_message(content_type, text)
         return message, tags
 
-    def _enrich_with_priorities(self, entries: list[CommitInfo]) -> list[CommitInfo]:
-        """See :attr:`annotations` manager :meth:`_enrich_with_priorities`."""
-        return self._annotations_mgr._enrich_with_priorities(entries=entries)
 
     def _get_merge_aware_ancestors(
         self,
@@ -3005,65 +2318,6 @@ class Tract:
 
         return all_rows
 
-    def log(
-        self,
-        limit: int = 20,
-        *,
-        op_filter: CommitOperation | None = None,
-        tags: list[str] | None = None,
-        tag_match: str = "any",
-    ) -> list[CommitInfo]:
-        """See :attr:`search` manager :meth:`log`."""
-        return self._search_mgr.log(limit=limit, op_filter=op_filter, tags=tags, tag_match=tag_match)
-
-    def find(
-        self,
-        *,
-        content: str | None = None,
-        pattern: str | None = None,
-        tag: str | None = None,
-        content_type: str | None = None,
-        metadata_key: str | None = None,
-        metadata_value: str | None = None,
-        branch: str | None = None,
-        limit: int = 50,
-    ) -> list[CommitInfo]:
-        """See :attr:`search` manager :meth:`find`."""
-        return self._search_mgr.find(content=content, pattern=pattern, tag=tag, content_type=content_type, metadata_key=metadata_key, metadata_value=metadata_value, branch=branch, limit=limit)
-
-    def find_one(
-        self,
-        *,
-        content: str | None = None,
-        pattern: str | None = None,
-        tag: str | None = None,
-        content_type: str | None = None,
-        metadata_key: str | None = None,
-        metadata_value: str | None = None,
-        branch: str | None = None,
-    ) -> CommitInfo | None:
-        """See :attr:`search` manager :meth:`find_one`."""
-        return self._search_mgr.find_one(content=content, pattern=pattern, tag=tag, content_type=content_type, metadata_key=metadata_key, metadata_value=metadata_value, branch=branch)
-
-    def skipped(self, limit: int = 100) -> list[CommitInfo]:
-        """See :attr:`search` manager :meth:`skipped`."""
-        return self._search_mgr.skipped(limit=limit)
-
-    def pinned(self, limit: int = 100) -> list[CommitInfo]:
-        """See :attr:`search` manager :meth:`pinned`."""
-        return self._search_mgr.pinned(limit=limit)
-
-    def manifest(self, max_log_entries: int = 30) -> str:
-        """See :attr:`search` manager :meth:`manifest`."""
-        return self._search_mgr.manifest(max_log_entries=max_log_entries)
-
-    def status(self) -> StatusInfo:
-        """See :attr:`search` manager :meth:`status`."""
-        return self._search_mgr.status()
-
-    def health(self) -> HealthReport:
-        """See :attr:`search` manager :meth:`health`."""
-        return self._search_mgr.health()
 
     def _compile_at(self, commit_hash: str) -> CompiledContext:
         """Compile at a specific commit, using LRU cache if available.
@@ -3085,248 +2339,52 @@ class Tract:
             self._cache.put(commit_hash, snapshot)
         return result
 
-    def diff(
-        self,
-        commit_a: str | None = None,
-        commit_b: str | None = None,
-    ) -> DiffResult:
-        """See :attr:`search` manager :meth:`diff`."""
-        return self._search_mgr.diff(commit_a=commit_a, commit_b=commit_b)
-
-    def compare(
-        self,
-        branch_a: str | None = None,
-        branch_b: str | None = None,
-        *,
-        commit_a: str | None = None,
-        commit_b: str | None = None,
-    ) -> "DiffResult":
-        """See :attr:`search` manager :meth:`compare`."""
-        return self._search_mgr.compare(branch_a=branch_a, branch_b=branch_b, commit_a=commit_a, commit_b=commit_b)
-
-    def edit_history(self, commit_hash: str) -> list[CommitInfo]:
-        """See :attr:`search` manager :meth:`edit_history`."""
-        return self._search_mgr.edit_history(commit_hash=commit_hash)
-
-    def restore(
-        self,
-        commit_hash: str,
-        version: int = 0,
-        *,
-        message: str | None = None,
-    ) -> CommitInfo:
-        """See :attr:`search` manager :meth:`restore`."""
-        return self._search_mgr.restore(commit_hash=commit_hash, version=version, message=message)
-
-    def query_by_config(
-        self,
-        field_or_config: str | LLMConfig | None = None,
-        operator: Operator | None = None,
-        value: Any = None,
-        *,
-        conditions: list[tuple[str, Operator, Any]] | None = None,
-    ) -> list[CommitInfo]:
-        """See :attr:`search` manager :meth:`query_by_config`."""
-        return self._search_mgr.query_by_config(field_or_config=field_or_config, operator=operator, value=value, conditions=conditions)
-
-    def resolve_commit(self, ref_or_prefix: str) -> str:
-        """See :attr:`branches` manager :meth:`resolve`."""
-        return self._branches_mgr.resolve(ref_or_prefix=ref_or_prefix)
-
-    def reset(
-        self,
-        target: str,
-        *,
-        mode: str = "soft",
-    ) -> str:
-        """See :attr:`branches` manager :meth:`reset`."""
-        return self._branches_mgr.reset(target=target, mode=mode)
-
-    def checkout(self, target: str) -> str:
-        """See :attr:`branches` manager :meth:`checkout`."""
-        return self._branches_mgr.checkout(target=target)
-
-    def branch(
-        self,
-        name: str,
-        *,
-        source: str | None = None,
-        switch: bool = True,
-    ) -> str:
-        """See :attr:`branches` manager :meth:`create`."""
-        return self._branches_mgr.create(name=name, source=source, switch=switch)
-
-    def switch(self, target: str) -> str:
-        """See :attr:`branches` manager :meth:`switch`."""
-        return self._branches_mgr.switch(target=target)
-
-    def list_branches(self) -> list[BranchInfo]:
-        """See :attr:`branches` manager :meth:`list`."""
-        return self._branches_mgr.list()
-
-    def delete_branch(self, name: str, *, force: bool = False) -> None:
-        """See :attr:`branches` manager :meth:`delete`."""
-        return self._branches_mgr.delete(name=name, force=force)
 
     # ------------------------------------------------------------------
     # Snapshot system
     # ------------------------------------------------------------------
 
-    def snapshot(self, label: str = "", *, metadata: dict | None = None) -> str:
-        """See :attr:`persistence` manager :meth:`snapshot`."""
-        return self._persistence_mgr.snapshot(label=label, metadata=metadata)
-
-    def list_snapshots(self) -> list[dict]:
-        """See :attr:`persistence` manager :meth:`list_snapshots`."""
-        return self._persistence_mgr.list_snapshots()
-
-    def restore_snapshot(
-        self,
-        tag_or_label: str,
-        *,
-        create_branch: bool = True,
-    ) -> str:
-        """See :attr:`persistence` manager :meth:`restore_snapshot`."""
-        return self._persistence_mgr.restore_snapshot(tag_or_label=tag_or_label, create_branch=create_branch)
-
-    def export_state(self, *, include_blobs: bool = True) -> dict:
-        """See :attr:`persistence` manager :meth:`export_state`."""
-        return self._persistence_mgr.export_state(include_blobs=include_blobs)
-
-    def load_state(self, state: dict) -> int:
-        """See :attr:`persistence` manager :meth:`load_state`."""
-        return self._persistence_mgr.load_state(state=state)
 
     @property
     def llm_client(self) -> LLMClient | None:
         """The configured LLM client, or ``None``."""
-        s = getattr(self, '_llm_state', None)
-        return s.llm_client if s is not None else self._llm_client
+        return self._llm_state.llm_client
 
     @property
     def default_config(self) -> LLMConfig | None:
         """The default LLM configuration, or ``None``."""
-        s = getattr(self, '_llm_state', None)
-        return s.default_config if s is not None else self._default_config
+        return self._llm_state.default_config
 
     @property
     def retry_config(self) -> RetryConfig | None:
         """The retry configuration for LLM calls, or ``None``."""
-        s = getattr(self, '_llm_state', None)
-        return s.retry_config if s is not None else self._retry_config
+        return self._llm_state.retry_config
 
     @property
     def commit_reasoning(self) -> bool:
         """Whether reasoning traces are committed during agent loops."""
-        s = getattr(self, '_llm_state', None)
-        return s.commit_reasoning if s is not None else self._commit_reasoning
+        return self._llm_state.commit_reasoning
 
     @property
     def tool_summarization_config(self) -> ToolSummarizationConfig | None:
         """Tool summarization configuration, or ``None`` if disabled."""
-        s = getattr(self, '_llm_state', None)
-        return s.tool_summarization_config if s is not None else self._tool_summarization_config
-
-    def configure_llm(
-        self,
-        client: LLMClient,
-        *,
-        resolver: ResolverCallable | None = None,
-    ) -> None:
-        """See :attr:`config` manager :meth:`configure_llm`."""
-        return self._config_mgr.configure_llm(client=client, resolver=resolver)
-
-    def configure_operations(
-        self,
-        _configs: OperationConfigs | None = None,
-        /,
-        **operation_configs: LLMConfig,
-    ) -> None:
-        """See :attr:`config` manager :meth:`configure_operations`."""
-        return self._config_mgr.configure_operations(_configs, **operation_configs)
+        return self._llm_state.tool_summarization_config
 
     @property
     def operation_configs(self) -> OperationConfigs:
         """Current per-operation LLM configurations (read-only, frozen)."""
-        s = getattr(self, '_llm_state', None)
-        return s.operation_configs if s is not None else self._operation_configs
-
-    def configure_clients(
-        self,
-        _clients: OperationClients | None = None,
-        /,
-        **operation_clients: LLMClient,
-    ) -> None:
-        """See :attr:`config` manager :meth:`configure_clients`."""
-        return self._config_mgr.configure_clients(_clients, **operation_clients)
+        return self._llm_state.operation_configs
 
     @property
     def operation_clients(self) -> OperationClients:
         """Current per-operation LLM client overrides (read-only, frozen)."""
-        s = getattr(self, '_llm_state', None)
-        return s.operation_clients if s is not None else self._operation_clients
-
-    def _log_config_change(
-        self,
-        change_type: str,
-        *,
-        change_key: str | None = None,
-        config_json: str | None = None,
-        previous_json: str | None = None,
-        source: str | None = None,
-    ) -> None:
-        """See :attr:`config` manager :meth:`_log_change`."""
-        return self._config_mgr._log_change(change_type=change_type, change_key=change_key, config_json=config_json, previous_json=previous_json, source=source)
-
-    def _serialize_operation_configs(self) -> str | None:
-        """Serialize current operation configs to JSON string."""
-        return self._config_mgr._serialize_operation_configs()
-
-    def config_history(
-        self,
-        *,
-        change_type: str | None = None,
-        limit: int = 100,
-    ) -> list[dict]:
-        """See :attr:`config` manager :meth:`history`."""
-        return self._config_mgr.history(change_type=change_type, limit=limit)
-
-    def configure_prompts(
-        self,
-        _prompts: OperationPrompts | None = None,
-        /,
-        **prompt_overrides: str,
-    ) -> None:
-        """See :attr:`config` manager :meth:`configure_prompts`."""
-        return self._config_mgr.configure_prompts(_prompts, **prompt_overrides)
+        return self._llm_state.operation_clients
 
     @property
     def operation_prompts(self) -> OperationPrompts:
         """Current per-operation prompt overrides (read-only, frozen)."""
-        s = getattr(self, '_llm_state', None)
-        return s.operation_prompts if s is not None else self._operation_prompts
+        return self._llm_state.operation_prompts
 
-    def _serialize_prompts(self) -> str | None:
-        """Serialize current operation prompts to JSON string."""
-        return self._config_mgr._serialize_prompts()
-
-    def _resolve_llm_client(self, operation: str) -> LLMClient:
-        """See :attr:`config` manager :meth:`_resolve_llm_client`."""
-        return self._config_mgr._resolve_llm_client(operation=operation)
-
-    def _has_llm_client(self, operation: str | None = None) -> bool:
-        """See :attr:`config` manager :meth:`_has_llm_client`."""
-        return self._config_mgr._has_llm_client(operation=operation)
-
-    def _resolve_resolver(
-        self, resolver: ResolverCallable | str | None, operation: str = "merge",
-    ) -> ResolverCallable | None:
-        """See :attr:`config` manager :meth:`_resolve_resolver`."""
-        return self._config_mgr._resolve_resolver(resolver=resolver, operation=operation)
-
-    def _auto_message(self, content_type: str, text: str) -> str:
-        """See :attr:`llm` manager :meth:`_auto_message`."""
-        return self._llm_mgr._auto_message(content_type=content_type, text=text)
 
     def merge(
         self,
@@ -3372,30 +2430,30 @@ class Tract:
 
         # Resolve delete_branch from config default
         if delete_branch is None:
-            delete_branch = self.config.delete_branch_on_merge
+            delete_branch = self._config.delete_branch_on_merge
 
         # Determine resolver (handles "llm" string, None -> default, callables)
-        effective_resolver = self._resolve_resolver(resolver, "merge")
+        effective_resolver = self._config_mgr._resolve_resolver(resolver, "merge")
 
         # If using default resolver AND per-call config overrides exist,
         # create a tailored resolver with those overrides.
         if effective_resolver is self._default_resolver:
-            merge_config = self._resolve_llm_config(
+            merge_config = self._config_mgr._resolve_llm_config(
                 "merge", model=model, temperature=temperature,
                 max_tokens=max_tokens, llm_config=llm_config,
             )
-            if merge_config and self._has_llm_client("merge"):
+            if merge_config and self._config_mgr._has_llm_client("merge"):
                 from tract.llm.resolver import OpenAIResolver
 
                 effective_resolver = OpenAIResolver(
-                    self._resolve_llm_client("merge"),
+                    self._config_mgr._resolve_llm_client("merge"),
                     model=merge_config.get("model"),
                     temperature=merge_config.get("temperature", 0.3),
                     max_tokens=merge_config.get("max_tokens", 2048),
                 )
 
         # Pre-merge middleware (can block)
-        self._run_middleware("pre_merge")
+        self._middleware_mgr._run("pre_merge")
 
         result = merge_branches(
             tract_id=self._tract_id,
@@ -3548,10 +2606,10 @@ class Tract:
         from tract.operations.rebase import import_commit as _import_commit
 
         # Resolve commit hash (supports prefixes and branch names)
-        resolved = self.resolve_commit(commit_hash)
+        resolved = self.branches.resolve(commit_hash)
 
         # Determine resolver (handles "llm" string, None -> default, callables)
-        effective_resolver = self._resolve_resolver(resolver, "merge")
+        effective_resolver = self._config_mgr._resolve_resolver(resolver, "merge")
 
         result = _import_commit(
             commit_hash=resolved,
@@ -3601,7 +2659,7 @@ class Tract:
         from tract.operations.rebase import execute_rebase, plan_rebase
 
         # Determine resolver (handles "llm" string, None -> default, callables)
-        effective_resolver = self._resolve_resolver(resolver, "merge")
+        effective_resolver = self._config_mgr._resolve_resolver(resolver, "merge")
 
         # Plan phase: determine what to replay and check safety
         plan = plan_rebase(
@@ -3640,147 +2698,6 @@ class Tract:
             self._config_mgr.invalidate_cache()
         return result
 
-    def _compress_pre(
-        self,
-        *,
-        model: str | None = None,
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-        llm_config: LLMConfig | None = None,
-        content: str | None = None,
-        system_prompt: str | None = None,
-    ) -> tuple[Any, dict, str | None]:
-        """See :attr:`compression` manager :meth:`_compress_pre`."""
-        return self._compression_mgr._compress_pre(model=model, temperature=temperature, max_tokens=max_tokens, llm_config=llm_config, content=content, system_prompt=system_prompt)
-
-    def _compress_finalize(
-        self,
-        range_result: Any,
-        *,
-        commits: list[str] | None = None,
-        from_commit: str | None = None,
-        to_commit: str | None = None,
-        target_tokens: int | None = None,
-        preserve: list[str] | None = None,
-        instructions: str | None = None,
-        effective_system_prompt: str | None = None,
-        llm_kwargs: dict,
-    ) -> CompressResult:
-        """Shared post-LLM finalization for compress/acompress default strategy."""
-        return self._compression_mgr._compress_finalize(range_result=range_result, commits=commits, from_commit=from_commit, to_commit=to_commit, target_tokens=target_tokens, preserve=preserve, instructions=instructions, effective_system_prompt=effective_system_prompt, llm_kwargs=llm_kwargs)
-
-    def compress(
-        self,
-        *,
-        commits: list[str] | None = None,
-        from_commit: str | None = None,
-        to_commit: str | None = None,
-        target_tokens: int | None = None,
-        preserve: list[str] | None = None,
-        content: str | None = None,
-        instructions: str | None = None,
-        system_prompt: str | None = None,
-        model: str | None = None,
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-        llm_config: LLMConfig | None = None,
-        two_stage: bool | None = None,
-        triggered_by: str | None = None,
-        strategy: str = "default",
-        window_size: int = 5,
-    ) -> CompressResult:
-        """See :attr:`compression` manager :meth:`compress`."""
-        return self._compression_mgr.compress(commits=commits, from_commit=from_commit, to_commit=to_commit, target_tokens=target_tokens, preserve=preserve, content=content, instructions=instructions, system_prompt=system_prompt, model=model, temperature=temperature, max_tokens=max_tokens, llm_config=llm_config, two_stage=two_stage, triggered_by=triggered_by, strategy=strategy, window_size=window_size)
-
-    def _compress_sliding_window(
-        self,
-        *,
-        window_size: int,
-        target_tokens: int | None,
-        preserve: list[str] | None,
-        content: str | None,
-        instructions: str | None,
-        system_prompt: str | None,
-        llm_client,
-        llm_kwargs: dict,
-        two_stage: bool | None,
-        sliding_window_compress_fn,
-        _classify_by_priority_fn,
-        _commit_compression_fn,
-        _partition_around_pinned_fn,
-        _reconstruct_content_fn,
-    ) -> CompressResult:
-        """See :attr:`compression` manager :meth:`_compress_sliding_window`."""
-        return self._compression_mgr._compress_sliding_window(window_size=window_size, target_tokens=target_tokens, preserve=preserve, content=content, instructions=instructions, system_prompt=system_prompt, llm_client=llm_client, llm_kwargs=llm_kwargs, two_stage=two_stage, sliding_window_compress_fn=sliding_window_compress_fn, _classify_by_priority_fn=_classify_by_priority_fn, _commit_compression_fn=_commit_compression_fn, _partition_around_pinned_fn=_partition_around_pinned_fn, _reconstruct_content_fn=_reconstruct_content_fn)
-
-    def _compress_tool_calls_pre(
-        self,
-        commits: list[str] | None = None,
-        *,
-        name: str | None = None,
-        target_tokens: int | None = None,
-        instructions: str | None = None,
-        system_prompt: str | None = None,
-        include_context: bool = False,
-        model: str | None = None,
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-        llm_config: LLMConfig | None = None,
-    ) -> tuple[Any, list[dict], dict, list, list]:
-        """See :attr:`compression` manager :meth:`_compress_tool_calls_pre`."""
-        return self._compression_mgr._compress_tool_calls_pre(commits=commits, name=name, target_tokens=target_tokens, instructions=instructions, system_prompt=system_prompt, include_context=include_context, model=model, temperature=temperature, max_tokens=max_tokens, llm_config=llm_config)
-
-    def _compress_tool_calls_post(
-        self,
-        response: Any,
-        llm: Any,
-        results_to_compact: list,
-        turns: list,
-        *,
-        model: str | None = None,
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-        llm_config: LLMConfig | None = None,
-    ) -> ToolCompactResult:
-        """Shared post-LLM logic for compress_tool_calls/acompress_tool_calls."""
-        return self._compression_mgr._compress_tool_calls_post(response=response, llm=llm, results_to_compact=results_to_compact, turns=turns, model=model, temperature=temperature, max_tokens=max_tokens, llm_config=llm_config)
-
-    def compress_tool_calls(
-        self,
-        commits: list[str] | None = None,
-        *,
-        name: str | None = None,
-        target_tokens: int | None = None,
-        instructions: str | None = None,
-        system_prompt: str | None = None,
-        include_context: bool = False,
-        model: str | None = None,
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-        llm_config: LLMConfig | None = None,
-        triggered_by: str | None = None,
-    ) -> "ToolCompactResult":
-        """See :attr:`compression` manager :meth:`compress_tool_calls`."""
-        return self._compression_mgr.compress_tool_calls(commits=commits, name=name, target_tokens=target_tokens, instructions=instructions, system_prompt=system_prompt, include_context=include_context, model=model, temperature=temperature, max_tokens=max_tokens, llm_config=llm_config, triggered_by=triggered_by)
-
-    def gc(
-        self,
-        *,
-        orphan_retention_days: int = 7,
-        archive_retention_days: int | None = None,
-        branch: str | None = None,
-    ) -> GCResult:
-        """See :attr:`compression` manager :meth:`gc`."""
-        return self._compression_mgr.gc(orphan_retention_days=orphan_retention_days, archive_retention_days=archive_retention_days, branch=branch)
-
-    def record_usage(
-        self,
-        usage: TokenUsage | dict,
-        *,
-        head_hash: str | None = None,
-    ) -> CompiledContext:
-        """See :attr:`compression` manager :meth:`record_usage`."""
-        return self._compression_mgr.record_usage(usage=usage, head_hash=head_hash)
 
     def _save_compile_record(
         self,
@@ -3889,144 +2806,16 @@ class Tract:
     # Agent toolkit
     # ------------------------------------------------------------------
 
-    def _resolve_tools(
-        self,
-        *,
-        profile: ProfileName | ToolProfile | str = "self",
-        tool_names: list[ToolName | str] | None = None,
-        overrides: dict[ToolName | str, str] | None = None,
-    ) -> list:
-        """See :attr:`toolkit` manager :meth:`_resolve_tools`."""
-        return self._toolkit_mgr._resolve_tools(profile=profile, tool_names=tool_names, overrides=overrides)
-
-    def as_tools(
-        self,
-        *,
-        profile: ProfileName | ToolProfile | str | object = _PROFILE_SENTINEL,
-        tool_names: list[ToolName | str] | None = None,
-        overrides: dict[ToolName | str, str] | None = None,
-        format: Literal["openai", "anthropic"] = "openai",
-    ) -> list[dict]:
-        """See :attr:`toolkit` manager :meth:`as_tools`."""
-        return self._toolkit_mgr.as_tools(profile=profile, tool_names=tool_names, overrides=overrides, format=format)
-
-    def as_callable_tools(
-        self,
-        *,
-        profile: ProfileName | ToolProfile | str | object = _PROFILE_SENTINEL,
-        tool_names: list[ToolName | str] | None = None,
-        overrides: dict[ToolName | str, str] | None = None,
-    ) -> list:
-        """See :attr:`toolkit` manager :meth:`as_callable_tools`."""
-        return self._toolkit_mgr.as_callable_tools(profile=profile, tool_names=tool_names, overrides=overrides)
-
-    def switch_profile(self, profile: ProfileName | ToolProfile | str) -> None:
-        """See :attr:`toolkit` manager :meth:`switch_profile`."""
-        return self._toolkit_mgr.switch_profile(profile=profile)
-
-    def unlock_tool(self, tool_name: ToolName | str) -> None:
-        """See :attr:`toolkit` manager :meth:`unlock_tool`."""
-        return self._toolkit_mgr.unlock_tool(tool_name=tool_name)
-
-    def lock_tool(self, tool_name: ToolName | str) -> None:
-        """See :attr:`toolkit` manager :meth:`lock_tool`."""
-        return self._toolkit_mgr.lock_tool(tool_name=tool_name)
-
-    def tool(
-        self,
-        fn: Any | None = None,
-        *,
-        name: str | None = None,
-        description: str | None = None,
-    ) -> Any:
-        """See :attr:`toolkit` manager :meth:`tool`."""
-        return self._toolkit_mgr.tool(fn=fn, name=name, description=description)
-
-    def remove_tool(self, tool_name: str) -> None:
-        """See :attr:`toolkit` manager :meth:`remove_tool`."""
-        return self._toolkit_mgr.remove_tool(tool_name=tool_name)
-
-    @property
-    def custom_tools(self) -> dict[str, Any]:
-        """Read-only view of registered custom tools (name -> ToolDefinition)."""
-        mgr = getattr(self, '_toolkit_mgr', None)
-        if mgr is not None:
-            return mgr.custom_tools
-        return dict(self._custom_tools)
 
     # ------------------------------------------------------------------
     # File-based persistence (.tract/ directory)
     # ------------------------------------------------------------------
 
-    @property
-    def tract_dir(self) -> "Path | None":
-        """Path to .tract/ directory, or None for in-memory databases."""
-        mgr = getattr(self, '_persistence_mgr', None)
-        if mgr is not None:
-            return mgr.tract_dir
-        from pathlib import Path
-        if self._db_path == ":memory:":
-            return None
-        return Path(self._db_path).parent / ".tract"
-
-    @property
-    def quarantined(self) -> list[str]:
-        """List of modules that failed to load on startup."""
-        mgr = getattr(self, '_persistence_mgr', None)
-        if mgr is not None:
-            return mgr.quarantined
-        return list(self._quarantined)
-
-    def _ensure_tract_dir(self, subdir: str | None = None) -> "Path":
-        """See :attr:`persistence` manager :meth:`_ensure_tract_dir`."""
-        return self._persistence_mgr._ensure_tract_dir(subdir=subdir)
-
-    def _load_persisted_state(self) -> None:
-        """See :attr:`persistence` manager :meth:`_load_persisted_state`."""
-        return self._persistence_mgr._load_persisted_state(self._profile_registry, self._template_registry)
 
     # ------------------------------------------------------------------
     # Behavioral spec persistence (gates, maintainers, profiles, templates)
     # ------------------------------------------------------------------
 
-    def persist_behavioral_spec(
-        self,
-        spec_type: str,
-        spec_name: str,
-        spec_data: dict,
-    ) -> None:
-        """See :attr:`persistence` manager :meth:`persist_behavioral_spec`."""
-        return self._persistence_mgr.persist_behavioral_spec(spec_type=spec_type, spec_name=spec_name, spec_data=spec_data)
-
-    def load_behavioral_specs(
-        self,
-        *,
-        spec_type: str | None = None,
-    ) -> list[dict]:
-        """See :attr:`persistence` manager :meth:`load_behavioral_specs`."""
-        return self._persistence_mgr.load_behavioral_specs(spec_type=spec_type)
-
-    def list_behavioral_specs(
-        self,
-        *,
-        spec_type: str | None = None,
-    ) -> list[dict]:
-        """See :attr:`persistence` manager :meth:`list_behavioral_specs`."""
-        return self._persistence_mgr.list_behavioral_specs(spec_type=spec_type)
-
-    def remove_behavioral_spec(self, spec_type: str, spec_name: str) -> bool:
-        """See :attr:`persistence` manager :meth:`remove_behavioral_spec`."""
-        return self._persistence_mgr.remove_behavioral_spec(spec_type=spec_type, spec_name=spec_name)
-
-    def save_workflow(
-        self,
-        name: str,
-        code: str,
-        *,
-        description: str = "",
-    ) -> "Path":
-        """See :attr:`persistence` manager :meth:`save_workflow`."""
-        return self._persistence_mgr.save_workflow(name=name, code=code, description=description)
 
     def close(self) -> None:
         """Close the session and dispose the engine."""
@@ -4034,9 +2823,8 @@ class Tract:
             return
         self._closed = True
         # Close internally-created LLM client (not externally-provided ones)
-        s = getattr(self, '_llm_state', None)
-        owns = s.owns_llm_client if s else self._owns_llm_client
-        client = s.llm_client if s else self._llm_client
+        owns = self._llm_state.owns_llm_client
+        client = self._llm_state.llm_client
         if owns and client is not None:
             try:
                 client.close()
@@ -4072,9 +2860,8 @@ class Tract:
         if self._closed:
             return
         # Async-close the LLM client if it supports it
-        s = getattr(self, '_llm_state', None)
-        owns = s.owns_llm_client if s else self._owns_llm_client
-        client = s.llm_client if s else self._llm_client
+        owns = self._llm_state.owns_llm_client
+        client = self._llm_state.llm_client
         if owns and client is not None:
             _aclose = getattr(client, "aclose", None)
             if _aclose is not None:

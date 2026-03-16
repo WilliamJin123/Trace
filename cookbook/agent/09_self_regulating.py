@@ -69,7 +69,7 @@ def main() -> None:
                     return
                 if isinstance(pending, (ConfigContent, InstructionContent, ReasoningContent)):
                     return
-            mode = ctx.tract.get_config("mode")
+            mode = ctx.tract.config.get("mode")
             if not mode:
                 raise BlockedError(
                     "pre_commit",
@@ -77,7 +77,7 @@ def main() -> None:
                      "configure(mode='critic')"],
                 )
 
-        t.use("pre_commit", mode_gate)
+        t.middleware.add("pre_commit", mode_gate)
 
         log = StepLogger()
         _tool_names = [
@@ -88,7 +88,7 @@ def main() -> None:
 
         # Phase 1: Marketing copy (enthusiastic, positive)
         print("=== Phase 1: Marketing copy ===\n")
-        result = t.run(
+        result = t.llm.run(
             "Write short marketing copy for 'Nexus' API framework. "
             "Selling points: 1M req/sec, built-in auth, auto OpenAPI docs.",
             profile="full",
@@ -102,7 +102,7 @@ def main() -> None:
         # The behavioral shift is dramatic — the agent just wrote glowing
         # marketing copy and now must tear the same product apart.
         print("\n\n=== Phase 2: Security audit ===\n")
-        result = t.run(
+        result = t.llm.run(
             "Now write a security audit of Nexus as a penetration tester. "
             "Be ruthlessly critical — find gaps in the auth claims, "
             "question the performance numbers, flag what was left out.",
@@ -116,9 +116,9 @@ def main() -> None:
         # Report
         print("\n\n=== Self-Regulation Report ===\n")
         print(f"  Branch: {t.current_branch}")
-        print(f"  Commits: {len(t.log())}")
+        print(f"  Commits: {len(t.search.log())}")
 
-        configs = t.get_all_configs()
+        configs = t.config.get_all()
         if configs:
             print(f"  Configs set: {configs}")
         else:

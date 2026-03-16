@@ -9,7 +9,7 @@ class TestExportState:
     def test_empty_tract_export(self):
         """Empty tract exports with no commits."""
         with Tract.open() as t:
-            state = t.export_state()
+            state = t.persistence.export_state()
             assert state["version"] == 1
             assert state["head"] is None
             assert state["commits"] == []
@@ -20,7 +20,7 @@ class TestExportState:
             t.system("You are helpful.")
             t.user("Hello")
             t.assistant("Hi there!")
-            state = t.export_state()
+            state = t.persistence.export_state()
             assert state["version"] == 1
             assert state["head"] is not None
             assert len(state["commits"]) == 3
@@ -30,7 +30,7 @@ class TestExportState:
         """Export with include_blobs=True includes content payloads."""
         with Tract.open() as t:
             t.user("Test message")
-            state = t.export_state(include_blobs=True)
+            state = t.persistence.export_state(include_blobs=True)
             # walk_ancestry returns root-first, so the only commit is index 0
             commit = state["commits"][0]
             assert "payload" in commit
@@ -40,7 +40,7 @@ class TestExportState:
         """Export with include_blobs=False excludes payloads."""
         with Tract.open() as t:
             t.user("Test message")
-            state = t.export_state(include_blobs=False)
+            state = t.persistence.export_state(include_blobs=False)
             commit = state["commits"][0]
             assert "payload" not in commit or commit.get("payload") is None
 
@@ -50,7 +50,7 @@ class TestExportState:
             t.system("System")
             t.user("User")
             t.assistant("Assistant")
-            state = t.export_state()
+            state = t.persistence.export_state()
             # Should not raise
             json_str = json.dumps(state)
             assert len(json_str) > 0
@@ -59,9 +59,9 @@ class TestExportState:
         """Export includes branch information."""
         with Tract.open() as t:
             t.system("Base")
-            t.branch("feature")
-            t.branch("experiment")
-            state = t.export_state()
+            t.branches.create("feature")
+            t.branches.create("experiment")
+            state = t.persistence.export_state()
             assert "main" in state["branches"]
             assert "feature" in state["branches"]
             assert "experiment" in state["branches"]
@@ -70,7 +70,7 @@ class TestExportState:
         """Export captures priority annotations."""
         with Tract.open() as t:
             t.system("Important", priority="pinned")
-            state = t.export_state()
+            state = t.persistence.export_state()
             commit = state["commits"][0]
             assert commit.get("priority") == "pinned"
 
@@ -78,7 +78,7 @@ class TestExportState:
         """Export captures commit metadata."""
         with Tract.open() as t:
             t.user("Hello", metadata={"source": "test"})
-            state = t.export_state()
+            state = t.persistence.export_state()
             # Check that metadata is present in at least one commit
             has_metadata = any(c.get("metadata") for c in state["commits"])
             assert has_metadata
@@ -86,9 +86,9 @@ class TestExportState:
     def test_export_with_config(self):
         """Export captures config commits."""
         with Tract.open() as t:
-            t.configure(model="gpt-4", temperature=0.7)
+            t.config.set(model="gpt-4", temperature=0.7)
             t.user("Hello")
-            state = t.export_state()
+            state = t.persistence.export_state()
             config_commits = [c for c in state["commits"] if c["content_type"] == "config"]
             assert len(config_commits) >= 1
 
@@ -97,7 +97,7 @@ class TestExportState:
         with Tract.open() as t:
             t.user("Message 1")
             t.user("Message 2")
-            state = t.export_state()
+            state = t.persistence.export_state()
             for commit in state["commits"]:
                 assert "hash" in commit
                 assert commit["hash"] is not None
@@ -108,7 +108,7 @@ class TestExportState:
         with Tract.open() as t:
             t.user("First")
             t.user("Second")
-            state = t.export_state()
+            state = t.persistence.export_state()
             # Root commit should have no parents
             root = state["commits"][0]
             assert root["parents"] == [] or root["parents"] == [None]
@@ -120,7 +120,7 @@ class TestExportState:
         """Export includes the tract ID."""
         with Tract.open() as t:
             t.user("Hello")
-            state = t.export_state()
+            state = t.persistence.export_state()
             assert "tract_id" in state
             assert state["tract_id"] == t.tract_id
 
@@ -128,7 +128,7 @@ class TestExportState:
         """Export includes an exported_at timestamp."""
         with Tract.open() as t:
             t.user("Hello")
-            state = t.export_state()
+            state = t.persistence.export_state()
             assert "exported_at" in state
             assert state["exported_at"] is not None
 
@@ -138,20 +138,20 @@ class TestLoadState:
         """Loading empty state returns 0."""
         with Tract.open() as t:
             state = {"version": 1, "commits": []}
-            loaded = t.load_state(state)
+            loaded = t.persistence.load_state(state)
             assert loaded == 0
 
     def test_load_invalid_version(self):
         """Loading invalid version raises ValueError."""
         with Tract.open() as t:
             with pytest.raises(ValueError):
-                t.load_state({"version": 99})
+                t.persistence.load_state({"version": 99})
 
     def test_load_invalid_dict(self):
         """Loading non-dict raises ValueError."""
         with Tract.open() as t:
             with pytest.raises(ValueError):
-                t.load_state("not a dict")
+                t.persistence.load_state("not a dict")
 
     def test_round_trip(self):
         """Export then load preserves message content."""
@@ -159,10 +159,10 @@ class TestLoadState:
             t1.system("You are helpful.")
             t1.user("What is 2+2?")
             t1.assistant("4")
-            state = t1.export_state()
+            state = t1.persistence.export_state()
 
         with Tract.open() as t2:
-            loaded = t2.load_state(state)
+            loaded = t2.persistence.load_state(state)
             assert loaded == 3
             compiled = t2.compile()
             text = compiled.to_text()
@@ -174,13 +174,13 @@ class TestLoadState:
         with Tract.open() as t1:
             t1.system("Important", priority="pinned")
             t1.user("Normal")
-            state = t1.export_state()
+            state = t1.persistence.export_state()
 
         with Tract.open() as t2:
-            loaded = t2.load_state(state)
+            loaded = t2.persistence.load_state(state)
             assert loaded == 2
             # Check the imported commits have the right priorities
-            log = t2.log()
+            log = t2.search.log()
             # At least one should be pinned
             found_pinned = False
             for entry in log:
@@ -193,10 +193,10 @@ class TestLoadState:
         """Loading state exported without blobs skips commits."""
         with Tract.open() as t1:
             t1.user("Test")
-            state = t1.export_state(include_blobs=False)
+            state = t1.persistence.export_state(include_blobs=False)
 
         with Tract.open() as t2:
-            loaded = t2.load_state(state)
+            loaded = t2.persistence.load_state(state)
             assert loaded == 0  # no payloads to load
 
     def test_cross_tract_transfer(self):
@@ -205,11 +205,11 @@ class TestLoadState:
             t1.system("Source system prompt")
             t1.user("Source question")
             t1.assistant("Source answer")
-            state = t1.export_state()
+            state = t1.persistence.export_state()
 
         with Tract.open() as t2:
             t2.system("Destination base")
-            loaded = t2.load_state(state)
+            loaded = t2.persistence.load_state(state)
             assert loaded == 3
             # Both destination base AND loaded content should be present
             compiled = t2.compile()
@@ -222,17 +222,17 @@ class TestLoadState:
         with Tract.open() as t1:
             for i in range(5):
                 t1.user(f"Message {i}")
-            state = t1.export_state()
+            state = t1.persistence.export_state()
 
         with Tract.open() as t2:
-            loaded = t2.load_state(state)
+            loaded = t2.persistence.load_state(state)
             assert loaded == 5
 
     def test_load_none_raises(self):
         """Loading None raises ValueError."""
         with Tract.open() as t:
             with pytest.raises(ValueError):
-                t.load_state(None)
+                t.persistence.load_state(None)
 
 
 class TestExportImportEdgeCases:
@@ -242,18 +242,18 @@ class TestExportImportEdgeCases:
             for i in range(10):
                 t.user(f"Message {i}")
                 t.assistant(f"Response {i}")
-            t.compress(content="Summary of 10 exchanges")
-            state = t.export_state()
+            t.compression.compress(content="Summary of 10 exchanges")
+            state = t.persistence.export_state()
             assert len(state["commits"]) > 0
 
     def test_export_after_branch_switch(self):
         """Export captures current branch state."""
         with Tract.open() as t:
             t.system("Base")
-            t.branch("feature")
-            t.switch("feature")
+            t.branches.create("feature")
+            t.branches.switch("feature")
             t.user("Feature work")
-            state = t.export_state()
+            state = t.persistence.export_state()
             assert state["branch"] == "feature"
             # Should include base + feature commits
             assert len(state["commits"]) >= 2
@@ -263,7 +263,7 @@ class TestExportImportEdgeCases:
         with Tract.open() as t:
             for i in range(100):
                 t.user(f"Message {i}")
-            state = t.export_state()
+            state = t.persistence.export_state()
             assert len(state["commits"]) == 100
             assert json.dumps(state)  # serializable
 
@@ -275,14 +275,14 @@ class TestExportImportEdgeCases:
         with Tract.open() as t1:
             t1.system("System prompt")
             t1.user("Hello world")
-            state = t1.export_state()
+            state = t1.persistence.export_state()
 
         # Serialize to JSON string and back
         json_str = json.dumps(state)
         parsed = json.loads(json_str)
 
         with Tract.open() as t2:
-            loaded = t2.load_state(parsed)
+            loaded = t2.persistence.load_state(parsed)
             assert loaded == 2
             compiled = t2.compile()
             text = compiled.to_text()
@@ -295,7 +295,7 @@ class TestExportImportEdgeCases:
             t.system("System")
             t.user("User")
             t.assistant("Assistant")
-            state = t.export_state()
+            state = t.persistence.export_state()
             types = {c["content_type"] for c in state["commits"]}
             assert "instruction" in types or "system" in types  # system prompt type
             assert "dialogue" in types  # user/assistant are dialogue

@@ -35,7 +35,7 @@ def main() -> None:
 
     t = Tract.open(default_config=tract_default)
 
-    t.configure_operations(
+    t.config.configure_operations(
         chat=LLMConfig(temperature=0.8),             # creative chat
         compress=LLMConfig(temperature=0.1, seed=42), # deterministic compression
         # merge and message inherit tract_default
@@ -54,19 +54,19 @@ def main() -> None:
     # Pass llm_config= to chat()/generate() for one-off overrides.
 
     precise = LLMConfig(temperature=0.2, seed=123)
-    # t.chat("Explain X.", llm_config=precise)
-    # t.generate(llm_config=precise)
+    # t.llm.chat("Explain X.", llm_config=precise)
+    # t.llm.generate(llm_config=precise)
 
     # =================================================================
     # 4. LEVEL 1 — Sugar params (highest priority)
     # =================================================================
     # Pass temperature=, model=, max_tokens= directly on chat()/generate().
 
-    # t.chat("Hello", temperature=0.9)
-    # t.generate(temperature=0.1, max_tokens=100)
+    # t.llm.chat("Hello", temperature=0.9)
+    # t.llm.generate(temperature=0.1, max_tokens=100)
 
     # Sugar overrides llm_config for the same field:
-    # t.chat("Hello", llm_config=LLMConfig(temperature=0.3), temperature=0.8)
+    # t.llm.chat("Hello", llm_config=LLMConfig(temperature=0.3), temperature=0.8)
     # -> temperature=0.8 (sugar wins), other fields from llm_config
 
     # =================================================================
@@ -109,7 +109,7 @@ def main() -> None:
     t = Tract.open(config=budget_config)
     t.system("You are helpful.")
 
-    status = t.status()
+    status = t.search.status()
     if status.token_budget_max:
         pct = status.token_count / status.token_budget_max * 100
         if pct > 80:
@@ -121,12 +121,12 @@ def main() -> None:
     # 8. PROVENANCE — generation_config on commits
     # =================================================================
     # After chat()/generate(), the response carries the resolved config:
-    #   r = t.chat("Hello")
+    #   r = t.llm.chat("Hello")
     #   r.generation_config          # LLMConfig used for this call
     #   r.generation_config.to_dict()  # serializable dict
     #
     # Query by config later:
-    #   t.log() -> entry.generation_config  # LLMConfig or None
+    #   t.search.log() -> entry.generation_config  # LLMConfig or None
 
     print("Config resolution reference complete.")
 

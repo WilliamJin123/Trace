@@ -1,7 +1,7 @@
 """Semantic maintainers for tract middleware.
 
 A SemanticMaintainer is a callable that plugs into tract's middleware system
-via ``t.use(event, maintainer_instance)``.  When fired, it builds a lightweight
+via ``t.middleware.add(event, maintainer_instance)``.  When fired, it builds a lightweight
 manifest from the commit log and active config, sends it to an LLM with
 maintenance instructions, and executes returned actions against existing
 tract primitives.
@@ -25,7 +25,7 @@ Example::
         actions=["annotate", "compress"],
         max_peeks=3,  # allow inspecting up to 3 commits
     )
-    t.use("post_commit", maintainer)
+    t.middleware.add("post_commit", maintainer)
 """
 
 from __future__ import annotations
@@ -126,7 +126,7 @@ class MaintainResult:
 class SemanticMaintainer:
     """LLM-powered context maintenance for tract middleware.
 
-    Register with ``t.use(event, maintainer)`` or ``t.maintain()``.
+    Register with ``t.middleware.add(event, maintainer)`` or ``t.middleware.maintain()``.
     When triggered, builds a manifest, makes one LLM call with
     maintenance instructions, and executes returned actions against
     existing tract primitives.
@@ -276,7 +276,7 @@ class SemanticMaintainer:
         # 2. Resolve LLM client
         tract = ctx.tract
         try:
-            client = tract._resolve_llm_client("maintain")
+            client = tract.config._resolve_llm_client("maintain")
         except RuntimeError as exc:
             self.last_result = MaintainResult(
                 maintainer_name=self.name,
@@ -287,7 +287,7 @@ class SemanticMaintainer:
             )
             raise RuntimeError(
                 f"SemanticMaintainer '{self.name}' requires an LLM client but none "
-                f"is configured.  Call t.configure_llm() or pass api_key= to "
+                f"is configured.  Call t.config.configure_llm() or pass api_key= to "
                 f"Tract.open()."
             ) from exc
 
@@ -441,8 +441,8 @@ class SemanticMaintainer:
         peeked_content: dict[str, str] = {}
         for h in peek_hashes:
             try:
-                full_hash = tract.resolve_commit(h)
-                content = tract.get_content(full_hash)
+                full_hash = tract.branches.resolve(h)
+                content = tract.search.get_content(full_hash)
                 if content is None:
                     peeked_content[h] = "(content not found)"
                 elif isinstance(content, dict):
@@ -686,7 +686,7 @@ class SemanticMaintainer:
 
     @staticmethod
     def _exec_annotate(tract: Tract, action: dict[str, Any]) -> None:
-        """Execute an annotate action: t.annotate(hash, priority)."""
+        """Execute an annotate action: t.annotations.set(hash, priority)."""
         from tract.models.annotations import Priority
 
         target = action.get("target", "")
@@ -705,32 +705,32 @@ class SemanticMaintainer:
                 f"Valid values: {list(priority_map.keys())}"
             )
 
-        full_hash = tract.resolve_commit(target)
+        full_hash = tract.branches.resolve(target)
         reason = action.get("reason")
-        tract.annotate(full_hash, priority, reason=reason)
+        tract.annotations.set(full_hash, priority, reason=reason)
 
     @staticmethod
     def _exec_compress(tract: Tract, action: dict[str, Any]) -> None:
-        """Execute a compress action: t.compress(commits=..., instructions=...)."""
+        """Execute a compress action: t.compression.compress(commits=..., instructions=...)."""
         commits = action.get("commits", [])
         instructions = action.get("instructions")
 
         if not commits:
             raise ValueError("Compress action requires 'commits' list.")
 
-        resolved = [tract.resolve_commit(c) for c in commits]
-        tract.compress(commits=resolved, instructions=instructions)
+        resolved = [tract.branches.resolve(c) for c in commits]
+        tract.compression.compress(commits=resolved, instructions=instructions)
 
     @staticmethod
     def _exec_configure(tract: Tract, action: dict[str, Any]) -> None:
-        """Execute a configure action: t.configure(**{key: value})."""
+        """Execute a configure action: t.config.set(**{key: value})."""
         key = action.get("key", "")
         value = action.get("value")
 
         if not key:
             raise ValueError("Configure action requires a 'key'.")
 
-        tract.configure(**{key: value})
+        tract.config.set(**{key: value})
 
     @staticmethod
     def _exec_directive(tract: Tract, action: dict[str, Any]) -> None:
@@ -746,7 +746,7 @@ class SemanticMaintainer:
         tract.directive(name, text)
 
     def _exec_tag(self, tract: Tract, action: dict[str, Any]) -> None:
-        """Execute a tag action: t.tag(hash, tag_name)."""
+        """Execute a tag action: t.tags.add(hash, tag_name)."""
         target = action.get("target", "")
         tag_name = action.get("tag", "")
 
@@ -755,13 +755,13 @@ class SemanticMaintainer:
         if not tag_name:
             raise ValueError("Tag action requires a 'tag'.")
 
-        full_hash = tract.resolve_commit(target)
+        full_hash = tract.branches.resolve(target)
 
         # Auto-register the tag (idempotent — no-ops if already registered).
-        tract.register_tag(tag_name, f"Auto-registered by maintainer '{self.name}'")
-        tract.tag(full_hash, tag_name)
+        tract.tags.register(tag_name, f"Auto-registered by maintainer '{self.name}'")
+        tract.tags.add(full_hash, tag_name)
 
     @staticmethod
     def _exec_gc(tract: Tract, action: dict[str, Any]) -> None:
-        """Execute a gc action: t.gc()."""
-        tract.gc()
+        """Execute a gc action: t.compression.gc()."""
+        tract.compression.gc()

@@ -109,9 +109,9 @@ def test_complete_workflow_without_llm():
         t.user("Research the AI chip market for 2025.")
 
         # Register custom tags before using them (tract enforces strict tags)
-        t.register_tag("research", "Research findings")
-        t.register_tag("market-size", "Market sizing data")
-        t.register_tag("competition", "Competitive analysis")
+        t.tags.register("research", "Research findings")
+        t.tags.register("market-size", "Market sizing data")
+        t.tags.register("competition", "Competitive analysis")
 
         # Stage 2: Simulate assistant findings (no LLM call)
         t.assistant(
@@ -130,7 +130,7 @@ def test_complete_workflow_without_llm():
         )
 
         # Stage 3: Verify commit history
-        log = t.log()
+        log = t.search.log()
         assert len(log) >= 4, f"Expected at least 4 commits, got {len(log)}"
 
         # Stage 4: Verify tag filtering
@@ -167,7 +167,7 @@ def test_complete_workflow_without_llm():
 # 3. Testing Chat + Generate with Mock LLM
 # =====================================================================
 #
-# When you need to test code that calls t.chat() or t.generate(), pass
+# When you need to test code that calls t.llm.chat() or t.llm.generate(), pass
 # a MockLLMClient. This lets you verify that your application logic
 # handles LLM responses correctly without spending tokens or dealing
 # with network flakiness.
@@ -185,13 +185,13 @@ def test_chat_with_mock_llm():
         t.system("You are a financial analyst.")
 
         # First chat round
-        response1 = t.chat("Analyze Q3 revenue trends.")
+        response1 = t.llm.chat("Analyze Q3 revenue trends.")
         assert response1.text == "Based on the data, revenue grew 15% QoQ."
         assert response1.usage is not None
         assert response1.commit_info is not None
 
         # Second chat round
-        response2 = t.chat("What were the main drivers?")
+        response2 = t.llm.chat("What were the main drivers?")
         assert "top 3 drivers" in response2.text
 
         # Verify the mock was called correctly
@@ -205,7 +205,7 @@ def test_chat_with_mock_llm():
         )
 
         # Verify commits were created for both user and assistant messages
-        log = t.log()
+        log = t.search.log()
         # system + user1 + assistant1 + user2 + assistant2
         assert len(log) >= 5
 
@@ -226,7 +226,7 @@ def test_chat_with_mock_llm():
 # 4. Testing Tool Execution with Mock LLM
 # =====================================================================
 #
-# t.run() supports custom tool_handlers: a dict mapping tool names to
+# t.llm.run() supports custom tool_handlers: a dict mapping tool names to
 # callables. Combined with a mock LLM that returns tool_calls, you can
 # test the full tool execution loop without any real LLM or real tools.
 #
@@ -351,7 +351,7 @@ def test_tool_execution_with_mock():
     with Tract.open(llm_client=mock) as t:
         t.system("You are a financial analyst with calculator and data tools.")
 
-        result = t.run(
+        result = t.llm.run(
             "Calculate projected Q4 revenue based on Q3 data.",
             tools=tool_defs,
             tool_handlers={
@@ -408,35 +408,35 @@ def test_branching_and_merge():
         main_head = t.head
 
         # Register custom tags before using them
-        t.register_tag("research", "Research findings")
-        t.register_tag("ai-chips", "AI chip market data")
-        t.register_tag("quantum", "Quantum computing data")
+        t.tags.register("research", "Research findings")
+        t.tags.register("ai-chips", "AI chip market data")
+        t.tags.register("quantum", "Quantum computing data")
 
         # --- Branch 1: AI chips research ---
-        t.branch("ai_chips")
+        t.branches.create("ai_chips")
         t.user("Focus on AI chip market size and key players.")
         t.assistant(
             "AI chip market: $120B TAM. Key players: NVIDIA, AMD, Intel.",
             tags=["research", "ai-chips"],
         )
         ai_chips_head = t.head
-        ai_chips_log = t.log()
+        ai_chips_log = t.search.log()
 
         # --- Switch back and create Branch 2: quantum research ---
-        t.switch("main")
+        t.branches.switch("main")
         assert t.head == main_head, "Switching back should restore main HEAD"
 
-        t.branch("quantum")
+        t.branches.create("quantum")
         t.user("Focus on quantum computing timeline and investment.")
         t.assistant(
             "Quantum computing: $2B current market, projected $65B by 2030. "
             "IBM, Google, IonQ leading.",
             tags=["research"],
         )
-        quantum_log = t.log()
+        quantum_log = t.search.log()
 
         # --- Merge both branches ---
-        t.switch("main")
+        t.branches.switch("main")
 
         merge1 = t.merge("ai_chips")
         assert merge1.merge_type in ("fast_forward", "clean"), (
@@ -457,7 +457,7 @@ def test_branching_and_merge():
         assert len(ai_chips_log) != len(quantum_log) or True  # different content at minimum
 
         # List branches
-        branches = t.list_branches()
+        branches = t.branches.list()
         branch_names = [b.name for b in branches]
         assert "main" in branch_names
         assert "ai_chips" in branch_names
@@ -494,7 +494,7 @@ def test_middleware_fires_on_commit():
         })
 
     with Tract.open() as t:
-        handler_id = t.use("post_commit", track_commits)
+        handler_id = t.middleware.add("post_commit", track_commits)
 
         t.system("Test system prompt.")
         t.user("First user message.")
@@ -510,7 +510,7 @@ def test_middleware_fires_on_commit():
             assert entry["has_commit"] is True
 
         # Clean up
-        t.remove_middleware(handler_id)
+        t.middleware.remove(handler_id)
 
         # Verify middleware no longer fires after removal
         t.user("This should not trigger middleware.")
@@ -538,7 +538,7 @@ def test_middleware_blocks_operations():
                 )
 
     with Tract.open() as t:
-        t.use("pre_commit", content_filter)
+        t.middleware.add("pre_commit", content_filter)
 
         # Normal commit should succeed
         t.user("This is a normal message.")
@@ -577,7 +577,7 @@ def test_middleware_on_compile():
         })
 
     with Tract.open() as t:
-        t.use("pre_compile", track_compiles)
+        t.middleware.add("pre_compile", track_compiles)
 
         t.system("Test system.")
         t.user("Test user message.")
@@ -743,9 +743,9 @@ def research_tract():
     t.system("You are a research assistant specializing in market analysis.")
 
     # Register custom tags before using them
-    t.register_tag("research", "Research findings")
-    t.register_tag("market-size", "Market sizing data")
-    t.register_tag("adoption", "Adoption metrics")
+    t.tags.register("research", "Research findings")
+    t.tags.register("market-size", "Market sizing data")
+    t.tags.register("adoption", "Adoption metrics")
 
     t.assistant(
         "Initial findings: The global AI market reached $196B in 2023, "
@@ -788,11 +788,11 @@ def test_fixture_research_tract(research_tract: Tract) -> None:
     t = research_tract
 
     # Fixture provides a ready-to-use tract with research data
-    log = t.log()
+    log = t.search.log()
     assert len(log) >= 3  # system + 2 research commits
 
     # Test compression on pre-populated data
-    t.compress(
+    t.compression.compress(
         content=(
             "[Summary] AI market: $196B (2023), 37% CAGR. "
             "Key: ML platforms, NLP, CV. 72% Fortune 500 using AI, 3.5x ROI."
@@ -813,7 +813,7 @@ def test_fixture_coding_tract(coding_tract: Tract) -> None:
     t = coding_tract
 
     # Continue the conversation with the mock LLM
-    response = t.chat("Now add unit tests for this function.")
+    response = t.llm.chat("Now add unit tests for this function.")
     assert response.text is not None
     assert len(response.text) > 0
 
@@ -851,15 +851,15 @@ def test_replay_client_sequential():
     with Tract.open(llm_client=replay) as t:
         t.system("You are a project planner.")
 
-        r1 = t.chat("What should we do first?")
+        r1 = t.llm.chat("What should we do first?")
         assert r1.text == "Step 1: Gather requirements."
 
-        r2 = t.chat("And then?")
+        r2 = t.llm.chat("And then?")
         assert r2.text == "Step 2: Design the architecture."
 
         # Third call should raise -- responses are exhausted
         with pytest.raises(IndexError, match="ReplayLLMClient exhausted"):
-            t.chat("What next?")
+            t.llm.chat("What next?")
 
     assert replay.call_count == 3  # all 3 attempts recorded
     print("9. ReplayLLMClient: sequential playback + exhaustion")
@@ -880,7 +880,7 @@ def test_replay_client_dict_responses():
 
     with Tract.open(llm_client=replay) as t:
         t.system("Test.")
-        r = t.chat("Hi")
+        r = t.llm.chat("Hi")
         assert r.text == "Custom format!"
         # Usage from the custom dict should flow through
         assert r.usage is not None
@@ -922,10 +922,10 @@ def test_function_client_basic():
     with Tract.open(llm_client=fn_client) as t:
         t.system("You are a helpful assistant.")
 
-        r1 = t.chat("What is the weather forecast?")
+        r1 = t.llm.chat("What is the weather forecast?")
         assert r1.text == "It will be sunny tomorrow."
 
-        r2 = t.chat("Tell me something else.")
+        r2 = t.llm.chat("Tell me something else.")
         assert r2.text == "Generic response #2"
 
     assert fn_client.call_count == 2
@@ -947,7 +947,7 @@ def test_function_client_dict_return():
 
     with Tract.open(llm_client=fn_client) as t:
         t.system("Test.")
-        r = t.chat("Hi")
+        r = t.llm.chat("Hi")
         assert r.text == "With custom usage"
         assert r.usage is not None
 
@@ -975,8 +975,8 @@ def test_annotations_affect_compilation():
         info3 = t.user("This is critical and must be pinned.")
 
         # Annotate
-        t.annotate(info2.commit_hash, Priority.SKIP)
-        t.annotate(info3.commit_hash, Priority.PINNED)
+        t.annotations.set(info2.commit_hash, Priority.SKIP)
+        t.annotations.set(info3.commit_hash, Priority.PINNED)
 
         # Compile and verify
         ctx = t.compile()
@@ -1019,28 +1019,28 @@ def test_full_application_pattern():
                     f"{ctx.event}:{ctx.commit.content_type}:{ctx.branch}"
                 )
 
-        t.use("post_commit", audit_middleware)
+        t.middleware.add("post_commit", audit_middleware)
         t.system("You are a semiconductor industry analyst.")
 
         # --- Research phase ---
-        t.branch("research")
-        r1 = t.chat("What is the current semiconductor market size?")
-        r2 = t.chat("What are the key supply chain risks?")
+        t.branches.create("research")
+        r1 = t.llm.chat("What is the current semiconductor market size?")
+        r2 = t.llm.chat("What are the key supply chain risks?")
 
         # Verify research results
         assert "580B" in r1.text
         assert "Taiwan" in r2.text
 
         # --- Analysis phase ---
-        t.switch("main")
+        t.branches.switch("main")
         t.merge("research")
 
-        t.branch("analysis")
-        r3 = t.chat("Based on the research, what do you recommend?")
+        t.branches.create("analysis")
+        r3 = t.llm.chat("Based on the research, what do you recommend?")
         assert "diversify" in r3.text
 
         # Merge analysis back
-        t.switch("main")
+        t.branches.switch("main")
         t.merge("analysis")
 
         # --- Verify final state ---

@@ -346,7 +346,7 @@ class TestReasoningShorthand:
         info = t.reasoning("thinking...", format="think_tags")
 
         # Verify content was stored correctly
-        content = t.get_content(info.commit_hash)
+        content = t.search.get_content(info.commit_hash)
         assert content["format"] == "think_tags"
         t.close()
 
@@ -367,7 +367,7 @@ class TestReasoningShorthand:
     def test_reasoning_with_metadata(self):
         t = Tract.open()
         info = t.reasoning("thinking...", metadata={"source": "o1"})
-        meta = t.get_metadata(info.commit_hash)
+        meta = t.search.get_metadata(info.commit_hash)
         assert meta["source"] == "o1"
         t.close()
 
@@ -428,7 +428,7 @@ class TestCompileIncludeReasoning:
         t = Tract.open()
         t.user("Hello")
         info = t.reasoning("Important thinking")
-        t.annotate(info.commit_hash, Priority.PINNED, reason="keep this")
+        t.annotations.set(info.commit_hash, Priority.PINNED, reason="keep this")
         t.assistant("Response")
 
         # Even without include_reasoning, PINNED reasoning should appear
@@ -442,7 +442,7 @@ class TestCompileIncludeReasoning:
         t = Tract.open()
         t.user("Hello")
         info = t.reasoning("Thinking")
-        t.annotate(info.commit_hash, Priority.SKIP, reason="exclude this")
+        t.annotations.set(info.commit_hash, Priority.SKIP, reason="exclude this")
         t.assistant("Response")
 
         # Even with include_reasoning, explicit SKIP should be respected
@@ -467,11 +467,11 @@ class TestGenerateReasoning:
             "content": "The answer is 42.",
             "reasoning": "I need to calculate...",
         }])
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
         t.system("System")
         t.user("Question")
 
-        resp = t.generate()
+        resp = t.llm.generate()
 
         assert resp.text == "The answer is 42."
         assert resp.reasoning == "I need to calculate..."
@@ -486,13 +486,13 @@ class TestGenerateReasoning:
             "content": "Answer",
             "reasoning": "Thinking...",
         }])
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
         t.user("Question")
 
-        resp = t.generate()
+        resp = t.llm.generate()
 
         # Chain should be: user -> reasoning -> assistant
-        log = t.log(limit=10)
+        log = t.search.log(limit=10)
         # log is newest-first, so: [assistant, reasoning, user]
         assert log[0].content_type == "dialogue"  # assistant
         assert log[1].content_type == "reasoning"
@@ -508,10 +508,10 @@ class TestGenerateReasoning:
         mock = MockLLMClient(responses=[{
             "content": "Just a response",
         }])
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
         t.user("Question")
 
-        resp = t.generate()
+        resp = t.llm.generate()
 
         assert resp.text == "Just a response"
         assert resp.reasoning is None
@@ -525,10 +525,10 @@ class TestGenerateReasoning:
             "content": "Answer",
             "reasoning": "Thinking...",
         }])
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
         t.user("Question")
 
-        resp = t.generate(reasoning=False)
+        resp = t.llm.generate(reasoning=False)
 
         # Reasoning text should still be available
         assert resp.reasoning == "Thinking..."
@@ -536,7 +536,7 @@ class TestGenerateReasoning:
         assert resp.reasoning_commit is None
 
         # Log should only have user + assistant (no reasoning)
-        log = t.log(limit=10)
+        log = t.search.log(limit=10)
         assert len(log) == 2
         content_types = [e.content_type for e in log]
         assert "reasoning" not in content_types
@@ -546,10 +546,10 @@ class TestGenerateReasoning:
         """Client without extract_reasoning should skip reasoning silently."""
         t = Tract.open()
         mock = MockLLMClientNoReasoning(responses=["Response"])
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
         t.user("Question")
 
-        resp = t.generate()
+        resp = t.llm.generate()
 
         assert resp.text == "Response"
         assert resp.reasoning is None
@@ -579,9 +579,9 @@ class TestGenerateReasoning:
             def extract_content(response):
                 return response["choices"][0]["message"].get("content") or ""
 
-        t.configure_llm(ThinkTagClient())
+        t.config.configure_llm(ThinkTagClient())
         t.user("Question")
-        resp = t.generate()
+        resp = t.llm.generate()
 
         assert resp.reasoning == "Deep thoughts..."
         assert "<think>" not in resp.text
@@ -603,9 +603,9 @@ class TestChatReasoning:
             "content": "The answer is 42.",
             "reasoning": "Let me calculate...",
         }])
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
 
-        resp = t.chat("What is 6*7?")
+        resp = t.llm.chat("What is 6*7?")
 
         assert resp.reasoning == "Let me calculate..."
         assert resp.reasoning_commit is not None
@@ -618,9 +618,9 @@ class TestChatReasoning:
             "content": "Answer",
             "reasoning": "Thinking...",
         }])
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
 
-        resp = t.chat("Question", reasoning=False)
+        resp = t.llm.chat("Question", reasoning=False)
 
         assert resp.reasoning == "Thinking..."
         assert resp.reasoning_commit is None
@@ -641,17 +641,17 @@ class TestCommitReasoningConfig:
             "content": "Answer",
             "reasoning": "Thinking...",
         }])
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
         t.user("Question")
 
-        resp = t.generate()
+        resp = t.llm.generate()
 
         # Reasoning extracted but not committed
         assert resp.reasoning == "Thinking..."
         assert resp.reasoning_commit is None
 
         # No reasoning commit in log
-        log = t.log(limit=10)
+        log = t.search.log(limit=10)
         content_types = [e.content_type for e in log]
         assert "reasoning" not in content_types
         t.close()

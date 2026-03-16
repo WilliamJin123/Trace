@@ -81,13 +81,13 @@ def main() -> None:
         base_url=llm.base_url,
         default_model=MODEL_ID,
     )
-    parent_tract.configure_llm(parent_client)
+    parent_tract.config.configure_llm(parent_client)
     parent_tract._llm_state.owns_llm_client = True
     parent_tract._llm_state.default_config = LLMConfig(model=MODEL_ID)
 
     # Enable LLM-generated commit messages (using the small model)
     parent_tract._llm_state.auto_message_enabled = True
-    parent_tract.configure_operations(message=LLMConfig(model=llm.small, temperature=0.0))
+    parent_tract.config.configure_operations(message=LLMConfig(model=llm.small, temperature=0.0))
 
     parent_tract.system(
         "You are a coordinator evaluating caching for microservices."
@@ -105,7 +105,7 @@ def main() -> None:
 
     # Create research branch and deploy child
     print("\n=== Child agent researches ===\n")
-    parent_tract.branch("research-caching", switch=False)
+    parent_tract.branches.create("research-caching", switch=False)
 
     child = session.deploy(
         parent_tract,
@@ -118,14 +118,14 @@ def main() -> None:
         base_url=llm.base_url,
         default_model=MODEL_ID,
     )
-    child.configure_llm(child_client)
+    child.config.configure_llm(child_client)
     child._llm_state.owns_llm_client = True
     child._llm_state.default_config = LLMConfig(model=MODEL_ID)
     child._llm_state.auto_message_enabled = True
-    child.configure_operations(message=LLMConfig(model=llm.small, temperature=0.0))
+    child.config.configure_operations(message=LLMConfig(model=llm.small, temperature=0.0))
 
     # Research task — more content than budget comfortably holds
-    result = child.run(
+    result = child.llm.run(
         "Research 3 caching patterns: write-through, cache-aside, "
         "and write-back. For each: how it works, pros/cons, best use case.",
         profile=CHILD_PROFILE,
@@ -134,7 +134,7 @@ def main() -> None:
     )
     result.pprint()
 
-    child_status = child.status()
+    child_status = child.search.status()
     child_pct = child_status.token_count / child_status.token_budget_max * 100
     print(f"\n  Child: {child_status.token_count} tokens "
           f"({child_pct:.0f}% of {child_status.token_budget_max}), "
@@ -144,7 +144,7 @@ def main() -> None:
 
     # Check if child used compress
     child_compressed = any(
-        "compress" in (e.message or "") for e in child.log(limit=50)
+        "compress" in (e.message or "") for e in child.search.log(limit=50)
     )
     if child_compressed:
         print("  Child compressed its context for handoff.")
@@ -156,7 +156,7 @@ def main() -> None:
     merge_result = parent_tract.merge("research-caching")
     merge_result.pprint()
 
-    result = parent_tract.run(
+    result = parent_tract.llm.run(
         "Research complete. Which caching strategy and why? "
         "Give a concrete recommendation.",
         profile=PARENT_PROFILE,
@@ -167,9 +167,9 @@ def main() -> None:
 
     # Final state
     print("\n\n=== Final State ===\n")
-    branches = [b.name for b in parent_tract.list_branches()]
+    branches = [b.name for b in parent_tract.branches.list()]
     print(f"  Branches: {branches}")
-    print(f"  Parent commits: {len(parent_tract.log())}")
+    print(f"  Parent commits: {len(parent_tract.search.log())}")
 
     print("\n  Final context:")
     parent_tract.compile().pprint(style="compact")

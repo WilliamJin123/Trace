@@ -155,11 +155,11 @@ class TestGateSpecRoundTrip:
         gate = SemanticGate(name="persist-test", check="criterion")
         spec_data = gate.to_spec()
         spec_data["event"] = "pre_commit"
-        t.persist_behavioral_spec("gate", "persist-test", spec_data)
+        t.persistence.persist_behavioral_spec("gate", "persist-test", spec_data)
         t.close()
 
         t2 = _reopen_tract(tmp_path)
-        specs = t2.load_behavioral_specs(spec_type="gate")
+        specs = t2.persistence.load_behavioral_specs(spec_type="gate")
         assert len(specs) == 1
         assert specs[0]["spec_name"] == "persist-test"
         assert specs[0]["spec_data"]["check"] == "criterion"
@@ -250,11 +250,11 @@ class TestMaintainerSpecRoundTrip:
         m = SemanticMaintainer(name="persist-m", instructions="test", actions=["gc"])
         spec_data = m.to_spec()
         spec_data["event"] = "post_commit"
-        t.persist_behavioral_spec("maintainer", "persist-m", spec_data)
+        t.persistence.persist_behavioral_spec("maintainer", "persist-m", spec_data)
         t.close()
 
         t2 = _reopen_tract(tmp_path)
-        specs = t2.load_behavioral_specs(spec_type="maintainer")
+        specs = t2.persistence.load_behavioral_specs(spec_type="maintainer")
         assert len(specs) == 1
         assert specs[0]["spec_name"] == "persist-m"
         assert specs[0]["spec_data"]["instructions"] == "test"
@@ -327,12 +327,12 @@ class TestProfileSpecRoundTrip:
             config={"temperature": 0.4},
             stages={"phase1": {"temperature": 0.1}},
         )
-        t.persist_behavioral_spec("profile", profile.name, profile.to_spec())
+        t.persistence.persist_behavioral_spec("profile", profile.name, profile.to_spec())
         t.close()
 
         t2 = _reopen_tract(tmp_path)
         # Should be in the registry
-        restored = t2.get_profile("my-custom")
+        restored = t2.templates.get_profile("my-custom")
         assert restored.name == "my-custom"
         assert restored.description == "Persisted custom profile"
         assert restored.config["temperature"] == 0.4
@@ -395,12 +395,12 @@ class TestTemplateSpecRoundTrip:
             content="Do {thing}",
             parameters={"thing": "What to do"},
         )
-        t.persist_behavioral_spec("template", tmpl.name, tmpl.to_spec())
+        t.persistence.persist_behavioral_spec("template", tmpl.name, tmpl.to_spec())
         t.close()
 
         t2 = _reopen_tract(tmp_path)
         # Should be in the registry
-        restored = t2.get_template("my-tmpl")
+        restored = t2.templates.get("my-tmpl")
         assert restored.name == "my-tmpl"
         assert restored.content == "Do {thing}"
         assert restored.render(thing="work") == "Do work"
@@ -413,18 +413,18 @@ class TestTemplateSpecRoundTrip:
 
 
 class TestAutoPersist:
-    """Calling t.gate() or t.maintain() auto-persists the spec."""
+    """Calling t.middleware.gate() or t.middleware.maintain() auto-persists the spec."""
 
     def test_gate_auto_persists(self, tmp_path: Path) -> None:
         t = _make_file_tract(tmp_path)
-        t.gate(
+        t.middleware.gate(
             "auto-gate",
             event="pre_commit",
             check="Something must be true",
             model="gpt-4o-mini",
             temperature=0.3,
         )
-        specs = t.load_behavioral_specs(spec_type="gate")
+        specs = t.persistence.load_behavioral_specs(spec_type="gate")
         assert len(specs) == 1
         assert specs[0]["spec_name"] == "auto-gate"
         data = specs[0]["spec_data"]
@@ -436,14 +436,14 @@ class TestAutoPersist:
 
     def test_maintain_auto_persists(self, tmp_path: Path) -> None:
         t = _make_file_tract(tmp_path)
-        t.maintain(
+        t.middleware.maintain(
             "auto-maintain",
             event="post_commit",
             instructions="Clean up old stuff",
             actions=["annotate", "gc"],
             max_peeks=2,
         )
-        specs = t.load_behavioral_specs(spec_type="maintainer")
+        specs = t.persistence.load_behavioral_specs(spec_type="maintainer")
         assert len(specs) == 1
         assert specs[0]["spec_name"] == "auto-maintain"
         data = specs[0]["spec_data"]
@@ -455,18 +455,18 @@ class TestAutoPersist:
 
     def test_remove_gate_removes_spec(self, tmp_path: Path) -> None:
         t = _make_file_tract(tmp_path)
-        t.gate("rm-gate", event="pre_commit", check="test")
-        assert len(t.load_behavioral_specs(spec_type="gate")) == 1
-        t.remove_gate("rm-gate")
-        assert len(t.load_behavioral_specs(spec_type="gate")) == 0
+        t.middleware.gate("rm-gate", event="pre_commit", check="test")
+        assert len(t.persistence.load_behavioral_specs(spec_type="gate")) == 1
+        t.middleware.remove_gate("rm-gate")
+        assert len(t.persistence.load_behavioral_specs(spec_type="gate")) == 0
         t.close()
 
     def test_remove_maintainer_removes_spec(self, tmp_path: Path) -> None:
         t = _make_file_tract(tmp_path)
-        t.maintain("rm-m", event="post_commit", instructions="test", actions=["gc"])
-        assert len(t.load_behavioral_specs(spec_type="maintainer")) == 1
-        t.remove_maintainer("rm-m")
-        assert len(t.load_behavioral_specs(spec_type="maintainer")) == 0
+        t.middleware.maintain("rm-m", event="post_commit", instructions="test", actions=["gc"])
+        assert len(t.persistence.load_behavioral_specs(spec_type="maintainer")) == 1
+        t.middleware.remove_maintainer("rm-m")
+        assert len(t.persistence.load_behavioral_specs(spec_type="maintainer")) == 0
         t.close()
 
 
@@ -480,15 +480,15 @@ class TestListAndRemove:
 
     def test_list_all_types(self, tmp_path: Path) -> None:
         t = _make_file_tract(tmp_path)
-        t.persist_behavioral_spec("gate", "g1", {"name": "g1", "check": "c"})
-        t.persist_behavioral_spec("maintainer", "m1", {"name": "m1", "instructions": "i"})
-        t.persist_behavioral_spec("profile", "p1", {"name": "p1"})
-        t.persist_behavioral_spec("template", "t1", {"name": "t1", "content": "c"})
+        t.persistence.persist_behavioral_spec("gate", "g1", {"name": "g1", "check": "c"})
+        t.persistence.persist_behavioral_spec("maintainer", "m1", {"name": "m1", "instructions": "i"})
+        t.persistence.persist_behavioral_spec("profile", "p1", {"name": "p1"})
+        t.persistence.persist_behavioral_spec("template", "t1", {"name": "t1", "content": "c"})
 
-        all_specs = t.list_behavioral_specs()
+        all_specs = t.persistence.list_behavioral_specs()
         assert len(all_specs) == 4
 
-        gate_specs = t.list_behavioral_specs(spec_type="gate")
+        gate_specs = t.persistence.list_behavioral_specs(spec_type="gate")
         assert len(gate_specs) == 1
         assert gate_specs[0]["spec_name"] == "g1"
 
@@ -496,25 +496,25 @@ class TestListAndRemove:
 
     def test_remove_spec(self, tmp_path: Path) -> None:
         t = _make_file_tract(tmp_path)
-        t.persist_behavioral_spec("gate", "g1", {"name": "g1"})
-        assert len(t.list_behavioral_specs()) == 1
+        t.persistence.persist_behavioral_spec("gate", "g1", {"name": "g1"})
+        assert len(t.persistence.list_behavioral_specs()) == 1
 
-        removed = t.remove_behavioral_spec("gate", "g1")
+        removed = t.persistence.remove_behavioral_spec("gate", "g1")
         assert removed is True
-        assert len(t.list_behavioral_specs()) == 0
+        assert len(t.persistence.list_behavioral_specs()) == 0
 
         # Remove non-existent
-        removed = t.remove_behavioral_spec("gate", "nonexistent")
+        removed = t.persistence.remove_behavioral_spec("gate", "nonexistent")
         assert removed is False
 
         t.close()
 
     def test_upsert_overwrites(self, tmp_path: Path) -> None:
         t = _make_file_tract(tmp_path)
-        t.persist_behavioral_spec("gate", "g1", {"check": "v1"})
-        t.persist_behavioral_spec("gate", "g1", {"check": "v2"})
+        t.persistence.persist_behavioral_spec("gate", "g1", {"check": "v1"})
+        t.persistence.persist_behavioral_spec("gate", "g1", {"check": "v2"})
 
-        specs = t.load_behavioral_specs(spec_type="gate")
+        specs = t.persistence.load_behavioral_specs(spec_type="gate")
         assert len(specs) == 1
         assert specs[0]["spec_data"]["check"] == "v2"
         t.close()
@@ -522,7 +522,7 @@ class TestListAndRemove:
     def test_invalid_spec_type_raises(self, tmp_path: Path) -> None:
         t = _make_file_tract(tmp_path)
         with pytest.raises(ValueError, match="Invalid spec_type"):
-            t.persist_behavioral_spec("invalid_type", "test", {})
+            t.persistence.persist_behavioral_spec("invalid_type", "test", {})
         t.close()
 
 
@@ -541,11 +541,11 @@ class TestLoadOnOpen:
             description="Test",
             config={"temperature": 0.5},
         )
-        t.persist_behavioral_spec("profile", profile.name, profile.to_spec())
+        t.persistence.persist_behavioral_spec("profile", profile.name, profile.to_spec())
         t.close()
 
         t2 = _reopen_tract(tmp_path)
-        restored = t2.get_profile("restored-profile")
+        restored = t2.templates.get_profile("restored-profile")
         assert restored.name == "restored-profile"
         assert restored.config["temperature"] == 0.5
         t2.close()
@@ -558,11 +558,11 @@ class TestLoadOnOpen:
             content="Template {x}",
             parameters={"x": "param"},
         )
-        t.persist_behavioral_spec("template", tmpl.name, tmpl.to_spec())
+        t.persistence.persist_behavioral_spec("template", tmpl.name, tmpl.to_spec())
         t.close()
 
         t2 = _reopen_tract(tmp_path)
-        restored = t2.get_template("restored-tmpl")
+        restored = t2.templates.get("restored-tmpl")
         assert restored.name == "restored-tmpl"
         assert restored.render(x="hello") == "Template hello"
         t2.close()
@@ -570,29 +570,29 @@ class TestLoadOnOpen:
     def test_gate_spec_not_auto_wired(self, tmp_path: Path) -> None:
         """Gate specs are loaded but NOT auto-wired as middleware (callables not restorable)."""
         t = _make_file_tract(tmp_path)
-        t.gate("test-gate", event="pre_commit", check="test criterion")
+        t.middleware.gate("test-gate", event="pre_commit", check="test criterion")
         t.close()
 
         t2 = _reopen_tract(tmp_path)
         # Spec is in the DB
-        specs = t2.load_behavioral_specs(spec_type="gate")
+        specs = t2.persistence.load_behavioral_specs(spec_type="gate")
         assert len(specs) == 1
         assert specs[0]["spec_name"] == "test-gate"
         # But NOT in active gates (not auto-wired)
-        assert "test-gate" not in t2.list_gates()
+        assert "test-gate" not in t2.middleware.list_gates()
         t2.close()
 
     def test_maintainer_spec_not_auto_wired(self, tmp_path: Path) -> None:
         """Maintainer specs are loaded but NOT auto-wired as middleware."""
         t = _make_file_tract(tmp_path)
-        t.maintain("test-m", event="post_commit", instructions="test", actions=["gc"])
+        t.middleware.maintain("test-m", event="post_commit", instructions="test", actions=["gc"])
         t.close()
 
         t2 = _reopen_tract(tmp_path)
-        specs = t2.load_behavioral_specs(spec_type="maintainer")
+        specs = t2.persistence.load_behavioral_specs(spec_type="maintainer")
         assert len(specs) == 1
         assert specs[0]["spec_name"] == "test-m"
-        assert "test-m" not in t2.list_maintainers()
+        assert "test-m" not in t2.middleware.list_maintainers()
         t2.close()
 
     def test_corrupted_spec_quarantined(self, tmp_path: Path) -> None:
@@ -617,11 +617,11 @@ class TestLoadOnOpen:
 
         # Reopen -- the corrupted spec should be quarantined
         t2 = _reopen_tract(tmp_path)
-        quarantined = t2.quarantined
+        quarantined = t2.persistence.quarantined
         assert any("spec:profile:broken" in q for q in quarantined)
         # The profile should NOT be in the registry
         with pytest.raises(KeyError):
-            t2.get_profile("broken")
+            t2.templates.get_profile("broken")
         t2.close()
 
 
@@ -635,15 +635,15 @@ class TestMemoryTract:
 
     def test_persist_and_load_in_memory(self) -> None:
         t = Tract.open()
-        t.persist_behavioral_spec("gate", "mem-gate", {"check": "test"})
-        specs = t.load_behavioral_specs(spec_type="gate")
+        t.persistence.persist_behavioral_spec("gate", "mem-gate", {"check": "test"})
+        specs = t.persistence.load_behavioral_specs(spec_type="gate")
         assert len(specs) == 1
         assert specs[0]["spec_name"] == "mem-gate"
         t.close()
 
     def test_remove_in_memory(self) -> None:
         t = Tract.open()
-        t.persist_behavioral_spec("gate", "mem-gate", {"check": "test"})
-        assert t.remove_behavioral_spec("gate", "mem-gate") is True
-        assert len(t.list_behavioral_specs()) == 0
+        t.persistence.persist_behavioral_spec("gate", "mem-gate", {"check": "test"})
+        assert t.persistence.remove_behavioral_spec("gate", "mem-gate") is True
+        assert len(t.persistence.list_behavioral_specs()) == 0
         t.close()

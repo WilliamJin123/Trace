@@ -11,8 +11,8 @@ Patterns shown:
   4. Circuit Breaker           -- middleware tracks failures, blocks after N
   5. Multi-Strategy Fallback   -- try primary/secondary/minimal strategies
 
-Demonstrates: t.tag(), t.reset(), t.branch(), t.switch(), t.merge(),
-              t.compress(), t.use(), BlockedError, CompressionError
+Demonstrates: t.tags.add(), t.branches.reset(), t.branches.create(), t.branches.switch(), t.merge(),
+              t.compression.compress(), t.middleware.add(), BlockedError, CompressionError
 
 No LLM required.
 """
@@ -45,9 +45,9 @@ def main() -> None:
         t.assistant("I see the data. Ready for analysis.")
 
         # Register and apply a checkpoint tag
-        t.register_tag("checkpoint", "Safe rollback point before risky operations")
+        t.tags.register("checkpoint", "Safe rollback point before risky operations")
         checkpoint_hash = t.head
-        t.tag(checkpoint_hash, "checkpoint")
+        t.tags.add(checkpoint_hash, "checkpoint")
         print(f"  Checkpoint tagged at [{checkpoint_hash[:8]}]")
 
         # Simulate a risky multi-step operation that fails partway through
@@ -56,13 +56,13 @@ def main() -> None:
         t.user("Include interaction terms and polynomial features.")
 
         # Simulate failure: the analysis went off the rails
-        commits_before_reset = len(t.log())
+        commits_before_reset = len(t.search.log())
         print(f"  Commits before failure: {commits_before_reset}")
         print("  Simulated failure: analysis produced garbage results")
 
         # Reset to checkpoint -- HEAD moves back, failed commits stay in DAG
-        t.reset(checkpoint_hash)
-        commits_after_reset = len(t.log())
+        t.branches.reset(checkpoint_hash)
+        commits_after_reset = len(t.search.log())
         print(f"  Reset to checkpoint [{checkpoint_hash[:8]}]")
         print(f"  Commits visible after reset: {commits_after_reset}")
 
@@ -110,7 +110,7 @@ def main() -> None:
 
         # --- Attempt 1: branch for deep analysis (will fail) ---
 
-        t.branch("deep_analysis")
+        t.branches.create("deep_analysis")
         print(f"  Created branch 'deep_analysis', switched to it")
 
         t.assistant("Analyzing competitor A: enterprise pricing at $500/seat...")
@@ -118,18 +118,18 @@ def main() -> None:
         t.assistant("Cross-referencing with market reports... found inconsistency.")
 
         # Simulate failure: analysis hit a dead end
-        deep_commits = len(t.log())
+        deep_commits = len(t.search.log())
         print(f"  Deep analysis produced {deep_commits} commits, then failed")
         print("  Simulated failure: data sources contradicted each other")
 
         # Abandon the branch -- switch back to main
-        t.switch("main")
-        main_commits = len(t.log())
+        t.branches.switch("main")
+        main_commits = len(t.search.log())
         print(f"  Switched back to main: {main_commits} commits (clean)")
 
         # --- Attempt 2: branch for simpler analysis (will succeed) ---
 
-        t.branch("simple_analysis")
+        t.branches.create("simple_analysis")
         print(f"  Created branch 'simple_analysis', switched to it")
 
         t.assistant(
@@ -141,10 +141,10 @@ def main() -> None:
             "5. Competitor E: per-seat + usage hybrid"
         )
 
-        print(f"  Simple analysis succeeded with {len(t.log())} commits")
+        print(f"  Simple analysis succeeded with {len(t.search.log())} commits")
 
         # Merge the successful branch back to main
-        t.switch("main")
+        t.branches.switch("main")
         result = t.merge("simple_analysis")
         print(f"  Merged 'simple_analysis' into main: {result.merge_type}")
 
@@ -199,7 +199,7 @@ def main() -> None:
         for target_tokens, label in targets:
             try:
                 # Manual compression -- provide a summary ourselves
-                t.compress(
+                t.compression.compress(
                     content=(
                         f"[{label} summary] Sprint tracking data compressed. "
                         f"15 sprints completed. Average velocity: 24 points/sprint. "
@@ -257,7 +257,7 @@ def main() -> None:
                     f"consecutive failures (threshold: {FAILURE_THRESHOLD})",
                 )
 
-        breaker_id = t.use("pre_commit", circuit_breaker)
+        breaker_id = t.middleware.add("pre_commit", circuit_breaker)
         print(f"  Registered circuit breaker middleware: {breaker_id}")
         print(f"  Threshold: {FAILURE_THRESHOLD} consecutive failures")
 
@@ -308,7 +308,7 @@ def main() -> None:
         print("  OK: Review REST API (after circuit breaker reset)")
 
         # Clean up
-        t.remove_middleware(breaker_id)
+        t.middleware.remove(breaker_id)
         print(f"  Removed circuit breaker middleware: {breaker_id}")
 
     # =================================================================
@@ -365,9 +365,9 @@ def main() -> None:
         ]
 
         # Tag checkpoint before attempting strategies
-        t.register_tag("checkpoint", "Safe rollback point")
+        t.tags.register("checkpoint", "Safe rollback point")
         checkpoint = t.head
-        t.tag(checkpoint, "checkpoint")
+        t.tags.add(checkpoint, "checkpoint")
         succeeded_strategy = None
 
         for i, strategy in enumerate(strategies):
@@ -379,10 +379,10 @@ def main() -> None:
 
             # Branch for each strategy attempt
             branch_name = f"strategy_{name}"
-            t.branch(branch_name)
+            t.branches.create(branch_name)
 
             # Apply strategy-specific config
-            t.configure(**strategy["config"])
+            t.config.set(**strategy["config"])
 
             if strategy["simulate_failure"]:
                 # Simulate failure
@@ -393,7 +393,7 @@ def main() -> None:
                 print(f"    FAILED: strategy '{name}'")
 
                 # Abandon this branch
-                t.switch("main")
+                t.branches.switch("main")
                 continue
 
             # Strategy succeeded
@@ -409,7 +409,7 @@ def main() -> None:
             print(f"    SUCCESS: strategy '{name}'")
 
             # Merge successful branch back to main
-            t.switch("main")
+            t.branches.switch("main")
             t.merge(branch_name)
             break
 

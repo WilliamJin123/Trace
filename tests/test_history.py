@@ -131,34 +131,34 @@ class TestStatusEmptyTract:
 
     def test_empty_tract_head_is_none(self):
         t = make_tract()
-        info = t.status()
+        info = t.search.status()
         assert info.head_hash is None
 
     def test_empty_tract_branch_is_none(self):
         t = make_tract()
-        info = t.status()
+        info = t.search.status()
         # No commits yet, so no branch resolution
         assert info.branch_name is None
 
     def test_empty_tract_not_detached(self):
         t = make_tract()
-        info = t.status()
+        info = t.search.status()
         assert info.is_detached is False
 
     def test_empty_tract_zero_counts(self):
         t = make_tract()
-        info = t.status()
+        info = t.search.status()
         assert info.commit_count == 0
         assert info.token_count == 0
 
     def test_empty_tract_no_budget(self):
         t = make_tract()
-        info = t.status()
+        info = t.search.status()
         assert info.token_budget_max is None
 
     def test_empty_tract_no_recent_commits(self):
         t = make_tract()
-        info = t.status()
+        info = t.search.status()
         assert info.recent_commits == []
 
 
@@ -173,7 +173,7 @@ class TestStatusWithCommits:
         """Status after one commit."""
         t = make_tract()
         h = t.commit(InstructionContent(text="System")).commit_hash
-        info = t.status()
+        info = t.search.status()
         assert info.head_hash == h
         assert info.commit_count == 1
         assert info.branch_name == "main"
@@ -184,7 +184,7 @@ class TestStatusWithCommits:
         """Head tracks the latest commit."""
         t = make_tract()
         hashes = populate_tract(t, 5)
-        info = t.status()
+        info = t.search.status()
         assert info.head_hash == hashes[-1]
         assert info.commit_count == 5
 
@@ -192,14 +192,14 @@ class TestStatusWithCommits:
         """recent_commits never exceeds 3 entries."""
         t = make_tract()
         populate_tract(t, 10)
-        info = t.status()
+        info = t.search.status()
         assert len(info.recent_commits) == 3
 
     def test_recent_commits_newest_first(self):
         """recent_commits are in reverse chronological order."""
         t = make_tract()
         hashes = populate_tract(t, 5)
-        info = t.status()
+        info = t.search.status()
         assert info.recent_commits[0].commit_hash == hashes[4]
         assert info.recent_commits[1].commit_hash == hashes[3]
         assert info.recent_commits[2].commit_hash == hashes[2]
@@ -209,14 +209,14 @@ class TestStatusWithCommits:
         t = make_tract()
         populate_tract(t, 3)
         compiled = t.compile()
-        info = t.status()
+        info = t.search.status()
         assert info.token_count == compiled.token_count
 
     def test_token_source_populated(self):
         """Token source is set after commits."""
         t = make_tract()
         populate_tract(t, 1)
-        info = t.status()
+        info = t.search.status()
         assert info.token_source != ""
 
 
@@ -231,9 +231,9 @@ class TestStatusBranches:
         """After checking out a new branch, status reflects it."""
         t = make_tract()
         populate_tract(t, 2)
-        t.branch("feature")
-        t.checkout("feature")
-        info = t.status()
+        t.branches.create("feature")
+        t.branches.checkout("feature")
+        info = t.search.status()
         assert info.branch_name == "feature"
         assert info.is_detached is False
 
@@ -241,8 +241,8 @@ class TestStatusBranches:
         """Checking out a specific commit enters detached HEAD state."""
         t = make_tract()
         hashes = populate_tract(t, 3)
-        t.checkout(hashes[0])
-        info = t.status()
+        t.branches.checkout(hashes[0])
+        info = t.search.status()
         assert info.is_detached is True
         assert info.branch_name is None
         assert info.head_hash == hashes[0]
@@ -251,8 +251,8 @@ class TestStatusBranches:
         """In detached state, commit count reflects the detached position."""
         t = make_tract()
         hashes = populate_tract(t, 5)
-        t.checkout(hashes[1])
-        info = t.status()
+        t.branches.checkout(hashes[1])
+        info = t.search.status()
         # Should count commits reachable from hashes[1]
         assert info.commit_count == 2
         assert info.head_hash == hashes[1]
@@ -261,11 +261,11 @@ class TestStatusBranches:
         """Checking out a branch after detached HEAD reattaches."""
         t = make_tract()
         hashes = populate_tract(t, 3)
-        t.checkout(hashes[0])
-        assert t.status().is_detached is True
+        t.branches.checkout(hashes[0])
+        assert t.search.status().is_detached is True
 
-        t.checkout("main")
-        info = t.status()
+        t.branches.checkout("main")
+        info = t.search.status()
         assert info.is_detached is False
         assert info.branch_name == "main"
         assert info.head_hash == hashes[-1]
@@ -274,13 +274,13 @@ class TestStatusBranches:
         """Commits on a branch update status correctly."""
         t = make_tract()
         populate_tract(t, 2)
-        t.branch("feature")
-        t.checkout("feature")
+        t.branches.create("feature")
+        t.branches.checkout("feature")
         feat_h = t.commit(
             DialogueContent(role="user", text="Feature work")
         ).commit_hash
 
-        info = t.status()
+        info = t.search.status()
         assert info.head_hash == feat_h
         assert info.branch_name == "feature"
         assert info.commit_count == 3  # 2 from main + 1 on feature
@@ -300,14 +300,14 @@ class TestStatusTokenBudget:
         )
         t = Tract.open(":memory:", config=config)
         populate_tract(t, 1)
-        info = t.status()
+        info = t.search.status()
         assert info.token_budget_max == 8000
 
     def test_no_budget_is_none(self):
         """token_budget_max is None without budget config."""
         t = make_tract()
         populate_tract(t, 1)
-        info = t.status()
+        info = t.search.status()
         assert info.token_budget_max is None
 
     def test_str_format_with_budget(self):
@@ -317,7 +317,7 @@ class TestStatusTokenBudget:
         )
         t = Tract.open(":memory:", config=config)
         populate_tract(t, 2)
-        info = t.status()
+        info = t.search.status()
         s = str(info)
         assert "10000" in s
         # Should show percentage
@@ -335,19 +335,19 @@ class TestStatusPprint:
         """pprint() should execute without error."""
         t = make_tract()
         populate_tract(t, 2)
-        info = t.status()
+        info = t.search.status()
         # Should not raise
         info.pprint()
 
     def test_pprint_empty_status_does_not_raise(self, capsys):
         """pprint() on empty tract should not raise."""
         t = make_tract()
-        info = t.status()
+        info = t.search.status()
         info.pprint()
 
     def test_pprint_with_max_chars(self, capsys):
         """pprint() with max_chars should not raise."""
         t = make_tract()
         populate_tract(t, 3)
-        info = t.status()
+        info = t.search.status()
         info.pprint(max_chars=50)

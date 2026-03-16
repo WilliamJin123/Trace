@@ -178,7 +178,7 @@ def full_workflow() -> None:
         t.assistant("Three consecutive quarters of acceleration.")
 
         # Compress old research into a stable summary
-        t.compress(
+        t.compression.compress(
             content="Revenue trend: Q1 $10M (+15%), Q2 $11.5M (+20%), "
             "Q3 $13M (+22%). Three quarters of accelerating growth."
         )

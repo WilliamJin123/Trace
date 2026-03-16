@@ -198,13 +198,13 @@ class TestSC2CommitsAndAnnotations:
 
     def test_get_commit_by_hash(self, tract: Tract):
         info = tract.commit(InstructionContent(text="findme"))
-        retrieved = tract.get_commit(info.commit_hash)
+        retrieved = tract.search.get_commit(info.commit_hash)
         assert retrieved is not None
         assert retrieved.commit_hash == info.commit_hash
         assert retrieved.message == "findme"  # auto-generated
 
     def test_get_commit_nonexistent(self, tract: Tract):
-        result = tract.get_commit("0000000000000000000000000000000000000000")
+        result = tract.search.get_commit("0000000000000000000000000000000000000000")
         assert result is None
 
     def test_commit_chain(self, tract_with_commits):
@@ -217,14 +217,14 @@ class TestSC2CommitsAndAnnotations:
         tract, c1, c2, c3 = tract_with_commits
 
         # Annotate c2 with SKIP
-        tract.annotate(c2.commit_hash, Priority.SKIP, reason="not needed")
+        tract.annotations.set(c2.commit_hash, Priority.SKIP, reason="not needed")
         result = tract.compile()
         # Should have system + assistant only (c2 user skipped)
         roles = [m.role for m in result.messages]
         assert "user" not in roles
 
         # Restore to NORMAL
-        tract.annotate(c2.commit_hash, Priority.NORMAL, reason="restored")
+        tract.annotations.set(c2.commit_hash, Priority.NORMAL, reason="restored")
         result2 = tract.compile()
         roles2 = [m.role for m in result2.messages]
         assert "user" in roles2
@@ -237,7 +237,7 @@ class TestSC2CommitsAndAnnotations:
                     message=f"msg-{i}",
                 )
         # All 10 should be committed
-        history = tract.log(limit=20)
+        history = tract.search.log(limit=20)
         assert len(history) == 10
 
 
@@ -297,7 +297,7 @@ class TestSC3ContentTypes:
         tract.register_content_type("custom_note", CustomContent)
         tract.commit({"content_type": "custom_note", "note": "My custom note"})
         # Should not raise -- custom type registered and validated
-        info = tract.get_commit(tract.head)
+        info = tract.search.get_commit(tract.head)
         assert info is not None
         assert info.content_type == "custom_note"
 
@@ -444,11 +444,11 @@ class TestSC5TokenCounting:
 
 
 class TestHistory:
-    """tract.log() returns commit history."""
+    """tract.search.log() returns commit history."""
 
     def test_log_returns_commits_newest_first(self, tract_with_commits):
         tract, c1, c2, c3 = tract_with_commits
-        history = tract.log()
+        history = tract.search.log()
         assert len(history) == 3
         assert history[0].commit_hash == c3.commit_hash
         assert history[1].commit_hash == c2.commit_hash
@@ -457,11 +457,11 @@ class TestHistory:
     def test_log_respects_limit(self, tract: Tract):
         for i in range(5):
             tract.commit(DialogueContent(role="user", text=f"msg {i}"))
-        history = tract.log(limit=2)
+        history = tract.search.log(limit=2)
         assert len(history) == 2
 
     def test_log_empty_tract_returns_empty_list(self, tract: Tract):
-        assert tract.log() == []
+        assert tract.search.log() == []
 
 
 # ===========================================================================
@@ -497,10 +497,10 @@ class TestEdgeCases:
 
     def test_annotation_history(self, tract: Tract):
         c1 = tract.commit(DialogueContent(role="user", text="test"))
-        tract.annotate(c1.commit_hash, Priority.SKIP, reason="hide")
-        tract.annotate(c1.commit_hash, Priority.NORMAL, reason="show")
+        tract.annotations.set(c1.commit_hash, Priority.SKIP, reason="hide")
+        tract.annotations.set(c1.commit_hash, Priority.NORMAL, reason="show")
 
-        history = tract.get_annotations(c1.commit_hash)
+        history = tract.annotations.get(c1.commit_hash)
         # instruction auto-annotation from PINNED default not applicable here,
         # but we get the 2 manual annotations at minimum
         assert len(history) >= 2
@@ -669,7 +669,7 @@ class TestIncrementalCompileCache:
 
 
 class TestRecordUsage:
-    """Tests for tract.record_usage() -- post-call API token recording."""
+    """Tests for tract.compression.record_usage() -- post-call API token recording."""
 
     @pytest.mark.parametrize("usage_input,expected_count,expected_source", [
         ({"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150}, 150, "api:100+50"),
@@ -679,7 +679,7 @@ class TestRecordUsage:
         with Tract.open() as t:
             t.commit(InstructionContent(text="System prompt"))
             t.compile()
-            result = t.record_usage(usage_input)
+            result = t.compression.record_usage(usage_input)
             assert result.token_count == expected_count
             assert result.token_source == expected_source
 
@@ -691,7 +691,7 @@ class TestRecordUsage:
             t.commit(InstructionContent(text="System prompt"))
             t.compile()
 
-            result = t.record_usage(TokenUsage(
+            result = t.compression.record_usage(TokenUsage(
                 prompt_tokens=300,
                 completion_tokens=100,
                 total_tokens=400,
@@ -705,7 +705,7 @@ class TestRecordUsage:
             t.commit(InstructionContent(text="System prompt"))
             t.compile()
 
-            t.record_usage({
+            t.compression.record_usage({
                 "prompt_tokens": 500,
                 "completion_tokens": 200,
                 "total_tokens": 700,
@@ -722,7 +722,7 @@ class TestRecordUsage:
 
         with Tract.open() as t:
             with pytest.raises(TraceError, match="Cannot record usage: no commits exist"):
-                t.record_usage({
+                t.compression.record_usage({
                     "prompt_tokens": 100,
                     "completion_tokens": 50,
                     "total_tokens": 150,
@@ -737,7 +737,7 @@ class TestRecordUsage:
             t.compile()
 
             with pytest.raises(ContentValidationError, match="Unrecognized usage dict format"):
-                t.record_usage({"foo": 42})
+                t.compression.record_usage({"foo": 42})
 
     def test_record_usage_no_prior_compile(self):
         """record_usage works even if compile() has not been called yet."""
@@ -745,7 +745,7 @@ class TestRecordUsage:
             t.commit(InstructionContent(text="System prompt"))
             # Do NOT call compile()
 
-            result = t.record_usage({
+            result = t.compression.record_usage({
                 "prompt_tokens": 100,
                 "completion_tokens": 50,
                 "total_tokens": 150,
@@ -763,14 +763,14 @@ class TestRecordUsage:
             c3 = t.commit(DialogueContent(role="assistant", text="C"))
             t.compile()
 
-            result = t.record_usage(
+            result = t.compression.record_usage(
                 {"prompt_tokens": 500, "completion_tokens": 200, "total_tokens": 700},
                 head_hash=c3.commit_hash,
             )
             assert result.token_count == 700
 
             with pytest.raises(TraceError, match="does not match current HEAD"):
-                t.record_usage(
+                t.compression.record_usage(
                     {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
                     head_hash="nonexistent",
                 )
@@ -806,7 +806,7 @@ class TestTwoTierTokenTracking:
                 "completion_tokens": 42,
                 "total_tokens": tiktoken_count + 47,
             }
-            updated = t.record_usage(api_usage)
+            updated = t.compression.record_usage(api_usage)
             assert updated.token_source == f"api:{tiktoken_count + 5}+42"
             assert updated.token_count == tiktoken_count + 47  # prompt + completion
 
@@ -841,14 +841,14 @@ class TestGenerationConfig:
         )
         assert info.generation_config == expected
         # Retrieve via get_commit
-        fetched = tract.get_commit(info.commit_hash)
+        fetched = tract.search.get_commit(info.commit_hash)
         assert fetched is not None
         assert fetched.generation_config == expected
 
     def test_commit_without_generation_config(self, tract: Tract):
         info = tract.commit(DialogueContent(role="user", text="Hi"))
         assert info.generation_config is None
-        fetched = tract.get_commit(info.commit_hash)
+        fetched = tract.search.get_commit(info.commit_hash)
         assert fetched is not None
         assert fetched.generation_config is None
 
@@ -859,7 +859,7 @@ class TestGenerationConfig:
             DialogueContent(role="user", text="Hello"),
             generation_config=config,
         )
-        entries = tract.log(limit=1)
+        entries = tract.search.log(limit=1)
         assert entries[0].generation_config == expected
 
     # SC2: Flexible schema -- any provider params work
@@ -950,12 +950,12 @@ class TestGenerationConfig:
             DialogueContent(role="user", text="c"),
             generation_config={"model": "gpt-4o", "temperature": 0.7},
         )
-        results = tract.query_by_config(key, op, value)
+        results = tract.search.query_by_config(key, op, value)
         assert len(results) == expected_count
 
     def test_query_by_config_invalid_operator(self, tract: Tract):
         with pytest.raises(ValueError, match="Unsupported operator"):
-            tract.query_by_config("temperature", "LIKE", 0.5)
+            tract.search.query_by_config("temperature", "LIKE", 0.5)
 
     def test_query_by_config_commits_without_config_excluded(self, tract: Tract):
         tract.commit(DialogueContent(role="user", text="no config"))
@@ -963,7 +963,7 @@ class TestGenerationConfig:
             DialogueContent(role="user", text="with config"),
             generation_config={"temperature": 0.7},
         )
-        results = tract.query_by_config("temperature", "=", 0.7)
+        results = tract.search.query_by_config("temperature", "=", 0.7)
         assert len(results) == 1
 
     # Cache safety: copy-on-output prevents corruption
@@ -1098,7 +1098,7 @@ class TestLRUCompileCacheAndPatching:
             c3 = t.commit(DialogueContent(role="assistant", text="Hi"))
             t.compile()
 
-            t.annotate(c2.commit_hash, Priority.SKIP)
+            t.annotations.set(c2.commit_hash, Priority.SKIP)
             result = t.compile()
             assert result.commit_count == 2  # c1 and c3 only
             assert not any("Hello" in m.content for m in result.messages)
@@ -1108,10 +1108,10 @@ class TestLRUCompileCacheAndPatching:
         with Tract.open(verify_cache=True) as t:
             c1 = t.commit(InstructionContent(text="System"))
             c2 = t.commit(DialogueContent(role="user", text="Hello"))
-            t.annotate(c2.commit_hash, Priority.SKIP)
+            t.annotations.set(c2.commit_hash, Priority.SKIP)
             t.compile()
 
-            t.annotate(c2.commit_hash, Priority.NORMAL)
+            t.annotations.set(c2.commit_hash, Priority.NORMAL)
             result = t.compile()
             assert result.commit_count == 2
             assert any("Hello" in m.content for m in result.messages)
@@ -1129,7 +1129,7 @@ class TestLRUCompileCacheAndPatching:
             assert t._cache.get(h2) is not None
 
             # Annotate a commit -- should clear h1 (stale), keep patched h2
-            t.annotate(h1, Priority.SKIP)
+            t.annotations.set(h1, Priority.SKIP)
             assert t._cache.get(h1) is None  # Cleared
             assert t._cache.get(h2) is not None  # Patched and re-added
 
@@ -1149,7 +1149,7 @@ class TestLRUCompileCacheAndPatching:
             t.commit(InstructionContent(text="hello"))
             t.compile()
 
-            updated = t.record_usage({"prompt_tokens": 42, "completion_tokens": 10, "total_tokens": 52})
+            updated = t.compression.record_usage({"prompt_tokens": 42, "completion_tokens": 10, "total_tokens": 52})
             assert updated.token_count == 52
             assert "api:" in updated.token_source
 
@@ -1274,7 +1274,7 @@ class TestPerMessageTokenCounts:
             snapshot_before = t._cache.get(t.head)
             assert len(snapshot_before.message_token_counts) == 2
 
-            t.annotate(c1.commit_hash, Priority.SKIP)
+            t.annotations.set(c1.commit_hash, Priority.SKIP)
             snapshot_after = t._cache.get(t.head)
             assert snapshot_after is not None
             assert len(snapshot_after.message_token_counts) == 1
@@ -1290,7 +1290,7 @@ class TestAPITokenPersistence:
             t.compile()
 
             # Calibrate with API-reported tokens (prompt + completion)
-            t.record_usage({"prompt_tokens": 150, "completion_tokens": 20, "total_tokens": 170})
+            t.compression.record_usage({"prompt_tokens": 150, "completion_tokens": 20, "total_tokens": 170})
             api_total = 170  # context token count = prompt + completion
             cached = t._cache.get(t.head)
             assert cached.token_count == api_total
@@ -1311,7 +1311,7 @@ class TestAPITokenPersistence:
             c1 = t.commit(InstructionContent(text="Short text"))
             t.compile()
 
-            t.record_usage({"prompt_tokens": 100, "completion_tokens": 10, "total_tokens": 110})
+            t.compression.record_usage({"prompt_tokens": 100, "completion_tokens": 10, "total_tokens": 110})
             api_total = 110  # context token count = prompt + completion
 
             # Edit with slightly different text -- delta should be small
@@ -1334,10 +1334,10 @@ class TestAPITokenPersistence:
             c2 = t.commit(DialogueContent(role="user", text="Hello world"))
             t.compile()
 
-            t.record_usage({"prompt_tokens": 200, "completion_tokens": 30, "total_tokens": 230})
+            t.compression.record_usage({"prompt_tokens": 200, "completion_tokens": 30, "total_tokens": 230})
             api_total = 230  # context token count = prompt + completion
 
-            t.annotate(c2.commit_hash, Priority.SKIP)
+            t.annotations.set(c2.commit_hash, Priority.SKIP)
             cached = t._cache.get(t.head)
             assert cached is not None
             # Total decreased from API base by the skipped message's tokens
@@ -1419,7 +1419,7 @@ class TestVerifyCacheAllFields:
             t.commit(InstructionContent(text="System"))
             t.compile()
             # Calibrate with API tokens (different from tiktoken)
-            t.record_usage({"prompt_tokens": 999, "completion_tokens": 10, "total_tokens": 1009})
+            t.compression.record_usage({"prompt_tokens": 999, "completion_tokens": 10, "total_tokens": 1009})
             # This compile should not raise even though token_count differs
             result = t.compile()
             assert result.token_count == 1009
@@ -1434,7 +1434,7 @@ class TestCompileAtCaching:
             c1 = t.commit(InstructionContent(text="System"))
             c2 = t.commit(DialogueContent(role="user", text="Hello"))
             # diff triggers _compile_at for both commits
-            t.diff(c1.commit_hash, c2.commit_hash)
+            t.search.diff(c1.commit_hash, c2.commit_hash)
             # Both commits should now be cached
             assert t._cache.get(c1.commit_hash) is not None
             assert t._cache.get(c2.commit_hash) is not None
@@ -1456,7 +1456,7 @@ class TestAnnotateNoOpSkipsClear:
             assert t._cache.get(h2) is not None
 
             # Annotate PINNED on already-included commit -- should be no-op
-            t.annotate(c1.commit_hash, Priority.PINNED)
+            t.annotations.set(c1.commit_hash, Priority.PINNED)
             # Both cache entries should still exist
             assert t._cache.get(h1) is not None
             assert t._cache.get(h2) is not None
@@ -1469,7 +1469,7 @@ class TestAnnotateNoOpSkipsClear:
             h = t.head
             cache_size_before = len(t._cache._cache)
 
-            t.annotate(c1.commit_hash, Priority.NORMAL)
+            t.annotations.set(c1.commit_hash, Priority.NORMAL)
             assert len(t._cache._cache) == cache_size_before
             assert t._cache.get(h) is not None
 
@@ -1485,7 +1485,7 @@ class TestLogEffectivePriority:
     def test_log_default_priorities(self, tract_with_commits):
         """Commits without explicit annotations get type-based defaults."""
         tract, c1, c2, c3 = tract_with_commits
-        entries = tract.log()
+        entries = tract.search.log()
         by_hash = {e.commit_hash: e for e in entries}
 
         # instruction defaults to pinned
@@ -1497,32 +1497,32 @@ class TestLogEffectivePriority:
     def test_log_explicit_annotation_overrides_default(self, tract_with_commits):
         """Explicit SKIP annotation overrides type-based default."""
         tract, c1, c2, c3 = tract_with_commits
-        tract.annotate(c2.commit_hash, Priority.SKIP, reason="not needed")
+        tract.annotations.set(c2.commit_hash, Priority.SKIP, reason="not needed")
 
-        entries = tract.log()
+        entries = tract.search.log()
         by_hash = {e.commit_hash: e for e in entries}
         assert by_hash[c2.commit_hash].effective_priority == "skip"
 
     def test_log_explicit_pinned_annotation(self, tract_with_commits):
         """Explicit PINNED annotation on a dialogue commit."""
         tract, c1, c2, c3 = tract_with_commits
-        tract.annotate(c3.commit_hash, Priority.PINNED, reason="important")
+        tract.annotations.set(c3.commit_hash, Priority.PINNED, reason="important")
 
-        entries = tract.log()
+        entries = tract.search.log()
         by_hash = {e.commit_hash: e for e in entries}
         assert by_hash[c3.commit_hash].effective_priority == "pinned"
 
     def test_log_with_tag_filter_still_enriched(self):
         """Tag-filtered log path also enriches with priorities."""
         with Tract.open() as t:
-            t.register_tag("important")
+            t.tags.register("important")
             c1 = t.commit(
                 InstructionContent(text="System"),
                 message="system",
                 tags=["important"],
             )
             t.commit(DialogueContent(role="user", text="Hi"), message="user")
-            entries = t.log(tags=["important"])
+            entries = t.search.log(tags=["important"])
             assert len(entries) == 1
             assert entries[0].effective_priority == "pinned"
 
@@ -1531,7 +1531,7 @@ class TestLogEffectivePriority:
         with Tract.open() as t:
             t.commit(InstructionContent(text="System"))
             t.commit(ReasoningContent(text="thinking..."), message="think")
-            entries = t.log()
+            entries = t.search.log()
             reasoning = [e for e in entries if e.content_type == "reasoning"]
             assert len(reasoning) == 1
             assert reasoning[0].effective_priority == "skip"
@@ -1542,9 +1542,9 @@ class TestSkippedAndPinned:
 
     def test_skipped_returns_skip_commits(self, tract_with_commits):
         tract, c1, c2, c3 = tract_with_commits
-        tract.annotate(c2.commit_hash, Priority.SKIP)
+        tract.annotations.set(c2.commit_hash, Priority.SKIP)
 
-        skipped = tract.skipped()
+        skipped = tract.search.skipped()
         assert len(skipped) == 1
         assert skipped[0].commit_hash == c2.commit_hash
         assert skipped[0].effective_priority == "skip"
@@ -1554,27 +1554,27 @@ class TestSkippedAndPinned:
         with Tract.open() as t:
             t.commit(InstructionContent(text="System"))
             t.commit(ReasoningContent(text="thinking..."))
-            skipped = t.skipped()
+            skipped = t.search.skipped()
             assert len(skipped) == 1
             assert skipped[0].content_type == "reasoning"
 
     def test_skipped_empty_when_none(self, tract_with_commits):
         tract, c1, c2, c3 = tract_with_commits
-        assert tract.skipped() == []
+        assert tract.search.skipped() == []
 
     def test_pinned_returns_pinned_commits(self, tract_with_commits):
         tract, c1, c2, c3 = tract_with_commits
         # c1 is instruction, defaults to PINNED
-        pinned = tract.pinned()
+        pinned = tract.search.pinned()
         assert len(pinned) == 1
         assert pinned[0].commit_hash == c1.commit_hash
         assert pinned[0].effective_priority == "pinned"
 
     def test_pinned_includes_explicit_annotations(self, tract_with_commits):
         tract, c1, c2, c3 = tract_with_commits
-        tract.annotate(c3.commit_hash, Priority.PINNED)
+        tract.annotations.set(c3.commit_hash, Priority.PINNED)
 
-        pinned = tract.pinned()
+        pinned = tract.search.pinned()
         hashes = {e.commit_hash for e in pinned}
         assert c1.commit_hash in hashes  # default pinned (instruction)
         assert c3.commit_hash in hashes  # explicit pinned
@@ -1584,7 +1584,7 @@ class TestSkippedAndPinned:
         """Tract with no pinned commits returns empty list."""
         with Tract.open() as t:
             t.commit(DialogueContent(role="user", text="Hi"))
-            assert t.pinned() == []
+            assert t.search.pinned() == []
 
     def test_skipped_respects_limit(self):
         """limit param controls how many commits are scanned."""
@@ -1593,5 +1593,5 @@ class TestSkippedAndPinned:
             for i in range(5):
                 t.commit(ReasoningContent(text=f"thought {i}"))
             # Scan only 3 commits => at most 3 skipped
-            skipped = t.skipped(limit=3)
+            skipped = t.search.skipped(limit=3)
             assert len(skipped) == 3

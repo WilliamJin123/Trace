@@ -331,7 +331,7 @@ class SemanticRouter:
     ) -> tuple[_RouteCtx | None, RoutingResult | None]:
         """Shared pre-LLM logic for route/aroute."""
         try:
-            client = tract._resolve_llm_client("route")
+            client = tract.config._resolve_llm_client("route")
         except RuntimeError:
             logger.debug(
                 "Router '%s': no LLM client configured; using fuzzy fallback.",

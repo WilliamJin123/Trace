@@ -196,7 +196,7 @@ class TestSemanticRouter:
             "reasoning": "The query is about investigation, which matches the research branch."
         })
         mock = MockLLMClient([llm_response])
-        tract_instance.configure_llm(mock)
+        tract_instance.config.configure_llm(mock)
 
         router = SemanticRouter(name="test-router", routes=table)
         result = router.route("I want to investigate this topic deeply", tract_instance)
@@ -218,7 +218,7 @@ class TestSemanticRouter:
             "reasoning": "Best match"
         })
         mock = MockLLMClient([llm_response])
-        tract_instance.configure_llm(mock)
+        tract_instance.config.configure_llm(mock)
 
         router = SemanticRouter(name="test-router", routes=table)
         result = router.route("investigate", tract_instance)
@@ -241,7 +241,7 @@ class TestSemanticRouter:
             def extract_usage(self, response):
                 return response.get("usage")
 
-        tract_instance.configure_llm(FailingClient())
+        tract_instance.config.configure_llm(FailingClient())
 
         router = SemanticRouter(name="test-router", routes=table)
         result = router.route("research topic", tract_instance)
@@ -264,7 +264,7 @@ class TestSemanticRouter:
     ):
         """If LLM returns garbage, fall back to fuzzy."""
         mock = MockLLMClient(["this is not json at all"])
-        tract_instance.configure_llm(mock)
+        tract_instance.config.configure_llm(mock)
 
         router = SemanticRouter(name="test-router", routes=table)
         result = router.route("research", tract_instance)
@@ -281,7 +281,7 @@ class TestSemanticRouter:
             "reasoning": "User wants to code"
         })
         mock = MockLLMClient([llm_response])
-        tract_instance.configure_llm(mock)
+        tract_instance.config.configure_llm(mock)
 
         router = SemanticRouter(
             name="test-router",
@@ -303,7 +303,7 @@ class TestSemanticRouter:
             "reasoning": "very confident"
         })
         mock = MockLLMClient([llm_response])
-        tract_instance.configure_llm(mock)
+        tract_instance.config.configure_llm(mock)
 
         router = SemanticRouter(name="test-router", routes=table)
         result = router.route("design", tract_instance)
@@ -318,7 +318,7 @@ class TestSemanticRouter:
             "reasoning": "User wants to test"
         })
         mock = MockLLMClient([llm_response])
-        tract_instance.configure_llm(mock)
+        tract_instance.config.configure_llm(mock)
 
         router = SemanticRouter(name="test-router", routes=table)
         result = asyncio.run(
@@ -336,7 +336,7 @@ class TestSemanticRouter:
             "reasoning": "match"
         })
         mock = MockLLMClient([llm_response])
-        tract_instance.configure_llm(mock)
+        tract_instance.config.configure_llm(mock)
 
         router = SemanticRouter(name="test-router", routes=table)
         assert router.last_result is None
@@ -353,7 +353,7 @@ class TestSemanticRouter:
         })
         llm_response = f"```json\n{inner}\n```"
         mock = MockLLMClient([llm_response])
-        tract_instance.configure_llm(mock)
+        tract_instance.config.configure_llm(mock)
 
         router = SemanticRouter(name="test-router", routes=table)
         result = router.route("investigate", tract_instance)
@@ -362,38 +362,38 @@ class TestSemanticRouter:
 
 
 # ===================================================================
-# Tract.route() / add_route() / remove_route() integration
+# Tract.routing.route() / add_route() / remove_route() integration
 # ===================================================================
 
 
 class TestTractRoutingIntegration:
     def test_add_and_remove_route(self):
         t = Tract.open()
-        t.add_route("feature", "Feature branch", "branch",
+        t.routing.add("feature", "Feature branch", "branch",
                      keywords=["feature", "new"])
-        result = t.route("new feature")
+        result = t.routing.route("new feature")
         assert result.route.target == "feature"
 
-        t.remove_route("feature")
-        result = t.route("new feature")
+        t.routing.remove("feature")
+        result = t.routing.route("new feature")
         # After removal, should not match "feature" anymore
         assert result.route.target != "feature" or result.route.confidence == 0.0
 
     def test_route_fuzzy_no_router(self):
-        """t.route() without a router should use fuzzy matching on default table."""
+        """t.routing.route() without a router should use fuzzy matching on default table."""
         t = Tract.open()
-        t.add_route("design", "Design phase", "stage",
+        t.routing.add("design", "Design phase", "stage",
                      keywords=["design", "plan"])
-        t.add_route("build", "Build phase", "stage",
+        t.routing.add("build", "Build phase", "stage",
                      keywords=["build", "implement"])
 
-        result = t.route("let's plan the design")
+        result = t.routing.route("let's plan the design")
         assert isinstance(result, RoutingResult)
         assert result.method == "fuzzy"
         assert result.route.target == "design"
 
     def test_route_with_semantic_router(self):
-        """t.route() with a SemanticRouter should use LLM."""
+        """t.routing.route() with a SemanticRouter should use LLM."""
         t = Tract.open()
         table = RoutingTable()
         table.add_route("alpha", "Alpha branch", "branch",
@@ -405,10 +405,10 @@ class TestTractRoutingIntegration:
             "reasoning": "direct match"
         })
         mock = MockLLMClient([llm_response])
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
 
         router = SemanticRouter(name="r", routes=table)
-        result = t.route("go to alpha", router=router)
+        result = t.routing.route("go to alpha", router=router)
 
         assert result.route.target == "alpha"
         assert result.method == "semantic"
@@ -416,7 +416,7 @@ class TestTractRoutingIntegration:
     def test_route_empty_table_returns_zero_confidence(self):
         """Route with empty table should return confidence 0."""
         t = Tract.open()
-        result = t.route("anything at all")
+        result = t.routing.route("anything at all")
         assert result.route.confidence == 0.0
         assert result.route.target == ""
 
@@ -424,16 +424,16 @@ class TestTractRoutingIntegration:
         """Removing a route before any routes are added should raise."""
         t = Tract.open()
         with pytest.raises(ValueError, match="not found"):
-            t.remove_route("nonexistent")
+            t.routing.remove("nonexistent")
 
     def test_aroute_async(self):
         """Async route should work."""
         t = Tract.open()
-        t.add_route("research", "Research", "branch",
+        t.routing.add("research", "Research", "branch",
                      keywords=["research"])
 
         result = asyncio.run(
-            t.aroute("research topic")
+            t.routing.aroute("research topic")
         )
         assert result.method == "fuzzy"
         assert result.route.target == "research"

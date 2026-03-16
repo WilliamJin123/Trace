@@ -34,6 +34,7 @@ class RoutingManager:
         branch_fn: Callable[[str], None],
         apply_stage_fn: Callable[[str], None],
         load_profile_fn: Callable[[str], None],
+        tract_ref: Callable | None = None,
     ) -> None:
         self._tract_id = tract_id
         self._ref_repo = ref_repo
@@ -45,6 +46,7 @@ class RoutingManager:
         self._branch_fn = branch_fn
         self._apply_stage_fn = apply_stage_fn
         self._load_profile_fn = load_profile_fn
+        self._tract_ref = tract_ref
 
         # Lazy-initialised state
         self._routing_table: RoutingTable | None = None
@@ -131,7 +133,8 @@ class RoutingManager:
         from tract.routing import SemanticRouter
 
         if router is not None and isinstance(router, SemanticRouter):
-            result = router.route(query, self)
+            tract = self._tract_ref() if self._tract_ref else self
+            result = router.route(query, tract)
         else:
             result = self._fallback(query)
 
@@ -152,7 +155,8 @@ class RoutingManager:
         from tract.routing import SemanticRouter
 
         if router is not None and isinstance(router, SemanticRouter):
-            result = await router.aroute(query, self)
+            tract = self._tract_ref() if self._tract_ref else self
+            result = await router.aroute(query, tract)
         else:
             result = self._fallback(query)
 

@@ -100,7 +100,7 @@ class TestConfigureClients:
     def test_keyword_args(self):
         t = Tract.open()
         client = MockLLMClient()
-        t.configure_clients(chat=client)
+        t.config.configure_clients(chat=client)
         assert t.operation_clients.chat is client
         assert t.operation_clients.merge is None
         t.close()
@@ -109,26 +109,26 @@ class TestConfigureClients:
         t = Tract.open()
         client = MockLLMClient()
         oc = OperationClients(merge=client)
-        t.configure_clients(oc)
+        t.config.configure_clients(oc)
         assert t.operation_clients.merge is client
         t.close()
 
     def test_mixed_raises_type_error(self):
         t = Tract.open()
         with pytest.raises(TypeError, match="Cannot mix"):
-            t.configure_clients(OperationClients(), chat=MockLLMClient())
+            t.config.configure_clients(OperationClients(), chat=MockLLMClient())
         t.close()
 
     def test_invalid_operation_raises_value_error(self):
         t = Tract.open()
         with pytest.raises(ValueError, match="Unknown operation 'bogus'"):
-            t.configure_clients(bogus=MockLLMClient())
+            t.config.configure_clients(bogus=MockLLMClient())
         t.close()
 
     def test_wrong_positional_type_raises_type_error(self):
         t = Tract.open()
         with pytest.raises(TypeError, match="Expected OperationClients"):
-            t.configure_clients("not a client")  # type: ignore[arg-type]
+            t.config.configure_clients("not a client")  # type: ignore[arg-type]
         t.close()
 
     def test_merge_with_existing(self):
@@ -136,8 +136,8 @@ class TestConfigureClients:
         t = Tract.open()
         client_a = MockLLMClient(name="a")
         client_b = MockLLMClient(name="b")
-        t.configure_clients(chat=client_a)
-        t.configure_clients(compress=client_b)
+        t.config.configure_clients(chat=client_a)
+        t.config.configure_clients(compress=client_b)
         assert t.operation_clients.chat is client_a  # preserved
         assert t.operation_clients.compress is client_b  # added
         t.close()
@@ -146,8 +146,8 @@ class TestConfigureClients:
         t = Tract.open()
         client_a = MockLLMClient(name="a")
         client_b = MockLLMClient(name="b")
-        t.configure_clients(chat=client_a)
-        t.configure_clients(chat=client_b)
+        t.config.configure_clients(chat=client_a)
+        t.config.configure_clients(chat=client_b)
         assert t.operation_clients.chat is client_b
         t.close()
 
@@ -158,40 +158,40 @@ class TestConfigureClients:
 
 
 class TestResolveLLMClient:
-    """Tests for Tract._resolve_llm_client()."""
+    """Tests for Tract.config._resolve_llm_client()."""
 
     def test_returns_operation_client_when_set(self):
         t = Tract.open()
         default = MockLLMClient(name="default")
         chat_client = MockLLMClient(name="chat")
-        t.configure_llm(default)
-        t.configure_clients(chat=chat_client)
-        assert t._resolve_llm_client("chat") is chat_client
+        t.config.configure_llm(default)
+        t.config.configure_clients(chat=chat_client)
+        assert t.config._resolve_llm_client("chat") is chat_client
         t.close()
 
     def test_falls_back_to_default(self):
         t = Tract.open()
         default = MockLLMClient(name="default")
-        t.configure_llm(default)
-        assert t._resolve_llm_client("chat") is default
-        assert t._resolve_llm_client("merge") is default
+        t.config.configure_llm(default)
+        assert t.config._resolve_llm_client("chat") is default
+        assert t.config._resolve_llm_client("merge") is default
         t.close()
 
     def test_raises_when_no_client_at_all(self):
         t = Tract.open()
         with pytest.raises(RuntimeError):
-            t._resolve_llm_client("chat")
+            t.config._resolve_llm_client("chat")
         t.close()
 
     def test_operation_client_without_default(self):
         """Per-operation client works even without a tract-level default."""
         t = Tract.open()
         chat_client = MockLLMClient(name="chat")
-        t.configure_clients(chat=chat_client)
-        assert t._resolve_llm_client("chat") is chat_client
+        t.config.configure_clients(chat=chat_client)
+        assert t.config._resolve_llm_client("chat") is chat_client
         # Other operations still raise
         with pytest.raises(RuntimeError):
-            t._resolve_llm_client("merge")
+            t.config._resolve_llm_client("merge")
         t.close()
 
 
@@ -201,27 +201,27 @@ class TestResolveLLMClient:
 
 
 class TestHasLLMClient:
-    """Tests for Tract._has_llm_client()."""
+    """Tests for Tract.config._has_llm_client()."""
 
     def test_no_client_at_all(self):
         t = Tract.open()
-        assert t._has_llm_client() is False
-        assert t._has_llm_client("chat") is False
+        assert t.config._has_llm_client() is False
+        assert t.config._has_llm_client("chat") is False
         t.close()
 
     def test_default_only(self):
         t = Tract.open()
-        t.configure_llm(MockLLMClient())
-        assert t._has_llm_client() is True
-        assert t._has_llm_client("chat") is True
+        t.config.configure_llm(MockLLMClient())
+        assert t.config._has_llm_client() is True
+        assert t.config._has_llm_client("chat") is True
         t.close()
 
     def test_operation_only(self):
         t = Tract.open()
-        t.configure_clients(chat=MockLLMClient())
-        assert t._has_llm_client() is False  # no default
-        assert t._has_llm_client("chat") is True
-        assert t._has_llm_client("merge") is False
+        t.config.configure_clients(chat=MockLLMClient())
+        assert t.config._has_llm_client() is False  # no default
+        assert t.config._has_llm_client("chat") is True
+        assert t.config._has_llm_client("merge") is False
         t.close()
 
 
@@ -237,11 +237,11 @@ class TestChatUsesOperationClient:
         t = Tract.open()
         default = MockLLMClient(name="default")
         chat_client = MockLLMClient(name="chat", response_text="Chat response")
-        t.configure_llm(default)
-        t.configure_clients(chat=chat_client)
+        t.config.configure_llm(default)
+        t.config.configure_clients(chat=chat_client)
 
         t.system("Hello")
-        response = t.chat("Question")
+        response = t.llm.chat("Question")
 
         assert response.text == "Chat response"
         assert chat_client.call_count == 1
@@ -252,12 +252,12 @@ class TestChatUsesOperationClient:
         t = Tract.open()
         default = MockLLMClient(name="default")
         chat_client = MockLLMClient(name="chat", response_text="Gen response")
-        t.configure_llm(default)
-        t.configure_clients(chat=chat_client)
+        t.config.configure_llm(default)
+        t.config.configure_clients(chat=chat_client)
 
         t.system("Hello")
         t.user("Question")
-        response = t.generate()
+        response = t.llm.generate()
 
         assert response.text == "Gen response"
         assert chat_client.call_count == 1
@@ -267,10 +267,10 @@ class TestChatUsesOperationClient:
     def test_chat_falls_back_to_default(self):
         t = Tract.open()
         default = MockLLMClient(name="default", response_text="Default response")
-        t.configure_llm(default)
+        t.config.configure_llm(default)
 
         t.system("Hello")
-        response = t.chat("Question")
+        response = t.llm.chat("Question")
 
         assert response.text == "Default response"
         assert default.call_count == 1
@@ -280,10 +280,10 @@ class TestChatUsesOperationClient:
         """chat() works with only an operation client, no default."""
         t = Tract.open()
         chat_client = MockLLMClient(name="chat", response_text="Op only")
-        t.configure_clients(chat=chat_client)
+        t.config.configure_clients(chat=chat_client)
 
         t.system("Hello")
-        response = t.chat("Question")
+        response = t.llm.chat("Question")
 
         assert response.text == "Op only"
         assert chat_client.call_count == 1
@@ -304,8 +304,8 @@ class TestCompressUsesOperationClient:
         compress_client = MockLLMClient(
             name="compress", response_text="Compressed summary"
         )
-        t.configure_llm(default)
-        t.configure_clients(compress=compress_client)
+        t.config.configure_llm(default)
+        t.config.configure_clients(compress=compress_client)
 
         # Build up some commits to compress
         t.system("System prompt")
@@ -314,11 +314,11 @@ class TestCompressUsesOperationClient:
         t.user("Question 2")
         t.assistant("Answer 2")
 
-        log = t.log(limit=10)
+        log = t.search.log(limit=10)
         first_hash = log[-1].commit_hash
         third_hash = log[-3].commit_hash
 
-        result = t.compress(
+        result = t.compression.compress(
             from_commit=first_hash,
             to_commit=third_hash,
             target_tokens=100,
@@ -337,11 +337,11 @@ class TestCompressUsesOperationClient:
         t.user("Question")
         t.assistant("Answer")
 
-        log = t.log(limit=10)
+        log = t.search.log(limit=10)
         first_hash = log[-1].commit_hash
         last_hash = log[0].commit_hash
 
-        result = t.compress(
+        result = t.compression.compress(
             from_commit=first_hash,
             to_commit=last_hash,
             content="Summary of everything",
@@ -365,8 +365,8 @@ class TestCloseDoesNotCloseOperationClients:
         chat_client = MockLLMClient(name="chat")
         compress_client = MockLLMClient(name="compress")
 
-        t.configure_llm(default)
-        t.configure_clients(chat=chat_client, compress=compress_client)
+        t.config.configure_llm(default)
+        t.config.configure_clients(chat=chat_client, compress=compress_client)
 
         t.close()
 
@@ -378,9 +378,9 @@ class TestCloseDoesNotCloseOperationClients:
         """Internally-created clients (via open(api_key=)) ARE closed."""
         t = Tract.open()
         default = MockLLMClient(name="default")
-        t.configure_llm(default)
+        t.config.configure_llm(default)
         # Simulate ownership (normally set by Tract.open when it creates the client)
-        t._llm_state.owns_llm_client = True
+        t.config._llm_state.owns_llm_client = True
 
         t.close()
         assert default.closed
@@ -400,11 +400,11 @@ class TestMixedOperationClients:
         compress_client = MockLLMClient(
             name="compress", response_text="Compressed"
         )
-        t.configure_clients(chat=chat_client, compress=compress_client)
+        t.config.configure_clients(chat=chat_client, compress=compress_client)
 
         # Chat uses chat_client
         t.system("Hello")
-        response = t.chat("Question")
+        response = t.llm.chat("Question")
         assert response.text == "Chat reply"
         assert chat_client.call_count == 1
         assert compress_client.call_count == 0
@@ -416,17 +416,17 @@ class TestMixedOperationClients:
         t = Tract.open()
         default = MockLLMClient(name="default", response_text="Default")
         chat_client = MockLLMClient(name="chat", response_text="Chat only")
-        t.configure_llm(default)
-        t.configure_clients(chat=chat_client)
+        t.config.configure_llm(default)
+        t.config.configure_clients(chat=chat_client)
 
         # Chat uses operation client
         t.system("Hello")
-        response = t.chat("Question 1")
+        response = t.llm.chat("Question 1")
         assert response.text == "Chat only"
 
         # Generate (also uses "chat" operation) uses operation client too
         t.user("Question 2")
-        response = t.generate()
+        response = t.llm.generate()
         assert response.text == "Chat only"
         assert chat_client.call_count == 2
         assert default.call_count == 0

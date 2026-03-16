@@ -25,7 +25,7 @@ class TestHealthyTract:
     def test_empty_tract_is_healthy(self):
         """An empty tract with no commits should be healthy."""
         t = Tract.open()
-        report = t.health()
+        report = t.search.health()
 
         assert isinstance(report, HealthReport)
         assert report.healthy is True
@@ -41,7 +41,7 @@ class TestHealthyTract:
         """A tract with one commit is healthy."""
         t = Tract.open()
         t.commit(InstructionContent(text="System prompt"))
-        report = t.health()
+        report = t.search.health()
 
         assert report.healthy is True
         assert report.commit_count == 1
@@ -50,7 +50,7 @@ class TestHealthyTract:
     def test_multiple_commits_healthy(self):
         """A tract with a linear chain of commits is healthy."""
         t, hashes = make_tract_with_commits(5)
-        report = t.health()
+        report = t.search.health()
 
         assert report.healthy is True
         assert report.commit_count == 5
@@ -61,10 +61,10 @@ class TestHealthyTract:
     def test_correct_branch_count(self):
         """Branch count reflects all branches in the tract."""
         t, hashes = make_tract_with_commits(3)
-        t.branch("feature-a", switch=False)
-        t.branch("feature-b", switch=False)
+        t.branches.create("feature-a", switch=False)
+        t.branches.create("feature-b", switch=False)
 
-        report = t.health()
+        report = t.search.health()
 
         assert report.healthy is True
         assert report.branch_count == 3  # main + feature-a + feature-b
@@ -72,7 +72,7 @@ class TestHealthyTract:
     def test_correct_commit_count(self):
         """Commit count reflects total commits in the tract."""
         t, hashes = make_tract_with_commits(7)
-        report = t.health()
+        report = t.search.health()
         assert report.commit_count == 7
 
 
@@ -89,9 +89,9 @@ class TestOrphanDetection:
         t, hashes = make_tract_with_commits(5)
 
         # Reset to first commit, orphaning commits 2-5
-        t.reset(hashes[0], mode="hard")
+        t.branches.reset(hashes[0], mode="hard")
 
-        report = t.health()
+        report = t.search.health()
 
         assert report.healthy is True  # orphans produce warnings, not errors
         assert report.orphan_count == 4
@@ -104,10 +104,10 @@ class TestOrphanDetection:
         t, hashes = make_tract_with_commits(5)
 
         # Create branch at tip, then reset main
-        t.branch("feature", switch=False)
-        t.reset(hashes[0], mode="hard")
+        t.branches.create("feature", switch=False)
+        t.branches.reset(hashes[0], mode="hard")
 
-        report = t.health()
+        report = t.search.health()
 
         # All commits reachable from 'feature' branch
         assert report.orphan_count == 0
@@ -116,9 +116,9 @@ class TestOrphanDetection:
     def test_orphan_hashes_are_correct(self):
         """Unreachable_commits list contains the correct orphan hashes."""
         t, hashes = make_tract_with_commits(5)
-        t.reset(hashes[1], mode="hard")
+        t.branches.reset(hashes[1], mode="hard")
 
-        report = t.health()
+        report = t.search.health()
 
         orphan_set = set(report.unreachable_commits)
         expected_orphans = set(hashes[2:])
@@ -136,7 +136,7 @@ class TestBlobIntegrity:
     def test_no_missing_blobs_normal(self):
         """Normal tract has no missing blobs."""
         t, hashes = make_tract_with_commits(3)
-        report = t.health()
+        report = t.search.health()
         assert report.missing_blobs == []
 
     def test_detect_missing_blob(self):
@@ -157,7 +157,7 @@ class TestBlobIntegrity:
         t._session.execute(text("PRAGMA foreign_keys = ON"))
         t._session.flush()
 
-        report = t.health()
+        report = t.search.health()
 
         assert report.healthy is False
         assert hashes[1] in report.missing_blobs
@@ -174,7 +174,7 @@ class TestParentIntegrity:
     def test_no_missing_parents_normal(self):
         """Normal tract has no missing parent references."""
         t, hashes = make_tract_with_commits(5)
-        report = t.health()
+        report = t.search.health()
         assert report.missing_parents == []
 
     def test_detect_missing_parent(self):
@@ -194,7 +194,7 @@ class TestParentIntegrity:
         # Clear SQLAlchemy cache so the repo sees the raw update
         t._session.expire_all()
 
-        report = t.health()
+        report = t.search.health()
 
         assert report.healthy is False
         assert len(report.missing_parents) == 1
@@ -212,8 +212,8 @@ class TestBranchHeadValidity:
     def test_valid_branch_heads(self):
         """Normal branches point to existing commits."""
         t, hashes = make_tract_with_commits(3)
-        t.branch("feature", switch=False)
-        report = t.health()
+        t.branches.create("feature", switch=False)
+        report = t.search.health()
         assert report.healthy is True
 
     def test_detect_invalid_branch_head(self):
@@ -234,7 +234,7 @@ class TestBranchHeadValidity:
         t._session.execute(text("PRAGMA foreign_keys = ON"))
         t._session.flush()
 
-        report = t.health()
+        report = t.search.health()
 
         assert report.healthy is False
         found = any("broken" in w and "missing commit" in w for w in report.warnings)
@@ -252,7 +252,7 @@ class TestSummaryFormat:
     def test_healthy_summary(self):
         """Healthy report summary starts with 'Health: OK'."""
         t, _ = make_tract_with_commits(3)
-        report = t.health()
+        report = t.search.health()
         s = report.summary()
         assert s.startswith("Health: OK")
         assert "Commits: 3" in s
@@ -293,40 +293,40 @@ class TestHealthAfterOperations:
     def test_health_after_branch_and_merge(self):
         """Health is OK after creating a branch and merging."""
         t, hashes = make_tract_with_commits(3)
-        t.branch("feature", switch=True)
+        t.branches.create("feature", switch=True)
         t.commit(DialogueContent(role="user", text="Feature work"))
-        t.switch("main")
+        t.branches.switch("main")
         t.merge("feature")
 
-        report = t.health()
+        report = t.search.health()
         assert report.healthy is True
         assert report.commit_count >= 4
 
     def test_health_after_compress(self):
         """Health is OK after compression."""
         t, hashes = make_tract_with_commits(5)
-        t.compress(content="Summary of everything")
+        t.compression.compress(content="Summary of everything")
 
-        report = t.health()
+        report = t.search.health()
         assert report.healthy is True
 
     def test_health_after_gc(self):
         """Health is OK after garbage collection."""
         t, hashes = make_tract_with_commits(5)
-        t.reset(hashes[0], mode="hard")
-        t.gc(orphan_retention_days=0)
+        t.branches.reset(hashes[0], mode="hard")
+        t.compression.gc(orphan_retention_days=0)
 
-        report = t.health()
+        report = t.search.health()
         assert report.healthy is True
         assert report.orphan_count == 0
 
     def test_health_after_compress_then_gc(self):
         """Health is OK after compress followed by gc."""
         t, hashes = make_tract_with_commits(5)
-        t.compress(content="Summary of everything")
-        t.gc(orphan_retention_days=0, archive_retention_days=0)
+        t.compression.compress(content="Summary of everything")
+        t.compression.gc(orphan_retention_days=0, archive_retention_days=0)
 
-        report = t.health()
+        report = t.search.health()
         assert report.healthy is True
 
     def test_health_after_edit_commit(self):
@@ -340,15 +340,15 @@ class TestHealthAfterOperations:
             edit_target=info.commit_hash,
         )
 
-        report = t.health()
+        report = t.search.health()
         assert report.healthy is True
 
     def test_health_detached_head(self):
         """Health is OK when HEAD is detached."""
         t, hashes = make_tract_with_commits(3)
-        t.checkout(hashes[1])  # Detach HEAD
+        t.branches.checkout(hashes[1])  # Detach HEAD
 
-        report = t.health()
+        report = t.search.health()
         assert report.healthy is True
         # All commits should still be reachable (from main and detached HEAD)
         assert report.orphan_count == 0
@@ -368,6 +368,8 @@ class TestImport:
         assert HR is HealthReport
 
     def test_health_method_exists(self):
-        """Tract has a health() method."""
-        assert hasattr(Tract, "health")
-        assert callable(getattr(Tract, "health"))
+        """Tract has a health() method accessible via search sub-object."""
+        t = Tract.open()
+        assert hasattr(t.search, "health")
+        assert callable(getattr(t.search, "health"))
+        t.close()

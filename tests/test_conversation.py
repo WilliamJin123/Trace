@@ -191,7 +191,7 @@ class TestCloseLLMLifecycle:
     def test_externally_provided_client_not_closed(self):
         mock_client = MockLLMClient()
         t = Tract.open()
-        t.configure_llm(mock_client)
+        t.config.configure_llm(mock_client)
         assert not mock_client.closed
         t.close()
         assert not mock_client.closed
@@ -212,11 +212,11 @@ class TestGenerate:
     def test_generate_happy_path(self):
         t = Tract.open()
         mock = MockLLMClient(responses=["I am helpful!"])
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
         t.system("You are helpful.")
         t.user("Hello")
 
-        resp = t.generate()
+        resp = t.llm.generate()
 
         assert isinstance(resp, ChatResponse)
         assert resp.text == "I am helpful!"
@@ -230,14 +230,14 @@ class TestGenerate:
     def test_generate_creates_assistant_commit(self):
         t = Tract.open()
         mock = MockLLMClient(responses=["response text"])
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
         t.system("System")
         t.user("Question")
 
-        resp = t.generate()
+        resp = t.llm.generate()
 
         # Check that assistant commit exists in log
-        log = t.log(limit=10)
+        log = t.search.log(limit=10)
         assert len(log) == 3  # system + user + assistant
         assert "response text" in log[0].message or log[0].content_type == "dialogue"
         t.close()
@@ -245,11 +245,11 @@ class TestGenerate:
     def test_generate_records_usage(self):
         t = Tract.open()
         mock = MockLLMClient()
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
         t.system("System")
         t.user("Question")
 
-        t.generate()
+        t.llm.generate()
 
         # Verify usage was recorded: compile should show api: token source
         compiled = t.compile()
@@ -259,11 +259,11 @@ class TestGenerate:
     def test_generate_with_explicit_params(self):
         t = Tract.open()
         mock = MockLLMClient()
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
         t.system("System")
         t.user("Question")
 
-        resp = t.generate(model="gpt-4o", temperature=0.7, max_tokens=100)
+        resp = t.llm.generate(model="gpt-4o", temperature=0.7, max_tokens=100)
 
         assert resp.generation_config.model == "gpt-4o"
         assert resp.generation_config.temperature == 0.7
@@ -277,11 +277,11 @@ class TestGenerate:
     def test_generate_with_message_and_metadata(self):
         t = Tract.open()
         mock = MockLLMClient(responses=["answer"])
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
         t.system("System")
         t.user("Question")
 
-        resp = t.generate(message="custom msg", metadata={"source": "test"})
+        resp = t.llm.generate(message="custom msg", metadata={"source": "test"})
 
         assert resp.commit_info.message == "custom msg"
         assert resp.commit_info.metadata == {"source": "test"}
@@ -295,19 +295,19 @@ class TestGenerate:
         from tract.llm.errors import LLMConfigError
 
         with pytest.raises(LLMConfigError, match="No LLM client configured"):
-            t.generate()
+            t.llm.generate()
         t.close()
 
     def test_generate_inside_batch_raises(self):
         t = Tract.open()
         mock = MockLLMClient()
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
         t.system("System")
 
         with pytest.raises(TraceError, match="batch"):
             with t.batch():
                 t.user("Question")
-                t.generate()
+                t.llm.generate()
         t.close()
 
 
@@ -321,27 +321,27 @@ class TestChat:
     def test_chat_happy_path(self):
         t = Tract.open()
         mock = MockLLMClient(responses=["Hi there!"])
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
         t.system("You are helpful.")
 
-        resp = t.chat("Hello")
+        resp = t.llm.chat("Hello")
 
         assert isinstance(resp, ChatResponse)
         assert resp.text == "Hi there!"
         assert resp.usage is not None
         assert resp.commit_info is not None
         # Should have system + user + assistant = 3 commits
-        log = t.log(limit=10)
+        log = t.search.log(limit=10)
         assert len(log) == 3
         t.close()
 
     def test_chat_compiled_context_correct(self):
         t = Tract.open()
         mock = MockLLMClient(responses=["response"])
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
         t.system("Be helpful.")
 
-        t.chat("What is 2+2?")
+        t.llm.chat("What is 2+2?")
 
         compiled = t.compile()
         assert len(compiled.messages) == 3
@@ -355,26 +355,26 @@ class TestChat:
     def test_multi_turn_chat(self):
         t = Tract.open()
         mock = MockLLMClient(responses=["answer1", "answer2"])
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
         t.system("System prompt")
 
-        resp1 = t.chat("q1")
-        resp2 = t.chat("q2")
+        resp1 = t.llm.chat("q1")
+        resp2 = t.llm.chat("q2")
 
         assert resp1.text == "answer1"
         assert resp2.text == "answer2"
         # 5 commits: system + user1 + asst1 + user2 + asst2
-        log = t.log(limit=10)
+        log = t.search.log(limit=10)
         assert len(log) == 5
         t.close()
 
     def test_chat_with_name_param(self):
         t = Tract.open()
         mock = MockLLMClient(responses=["Hello Alice"])
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
         t.system("System")
 
-        t.chat("Hi", name="Alice")
+        t.llm.chat("Hi", name="Alice")
 
         compiled = t.compile()
         user_msg = compiled.messages[1]
@@ -388,18 +388,18 @@ class TestChat:
         from tract.llm.errors import LLMConfigError
 
         with pytest.raises(LLMConfigError, match="No LLM client configured"):
-            t.chat("Hello")
+            t.llm.chat("Hello")
         t.close()
 
     def test_chat_inside_batch_raises(self):
         t = Tract.open()
         mock = MockLLMClient()
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
         t.system("System")
 
         with pytest.raises(TraceError, match="batch"):
             with t.batch():
-                t.chat("Hello")
+                t.llm.chat("Hello")
         t.close()
 
 
@@ -415,7 +415,7 @@ class TestBuildGenerationConfig:
         t = Tract.open()
         response = {"model": "gpt-4o-2024-01-01"}
 
-        config = t._build_generation_config(
+        config = t.llm._build_generation_config(
             response, resolved={"model": "gpt-4o"}
         )
 
@@ -427,7 +427,7 @@ class TestBuildGenerationConfig:
         t = Tract.open()
         response = {}
 
-        config = t._build_generation_config(response, resolved={"model": "gpt-4o"})
+        config = t.llm._build_generation_config(response, resolved={"model": "gpt-4o"})
 
         assert config["model"] == "gpt-4o"
         t.close()
@@ -437,7 +437,7 @@ class TestBuildGenerationConfig:
         t = Tract.open()
         response = {"model": "gpt-4o"}
 
-        config = t._build_generation_config(
+        config = t.llm._build_generation_config(
             response, resolved={"model": "gpt-4o", "temperature": 0.5, "max_tokens": 200, "top_p": 0.9}
         )
 
@@ -452,7 +452,7 @@ class TestBuildGenerationConfig:
         t = Tract.open()
         response = {}
 
-        config = t._build_generation_config(response, resolved={})
+        config = t.llm._build_generation_config(response, resolved={})
 
         assert "model" not in config
         t.close()
@@ -468,11 +468,11 @@ class TestLLMMessageForwarding:
     def test_messages_sent_to_llm(self):
         t = Tract.open()
         mock = MockLLMClient()
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
         t.system("Be concise.")
         t.user("What is Python?")
 
-        t.generate()
+        t.llm.generate()
 
         assert mock.last_messages is not None
         assert len(mock.last_messages) == 2
@@ -485,11 +485,11 @@ class TestLLMMessageForwarding:
     def test_multi_turn_messages_accumulate(self):
         t = Tract.open()
         mock = MockLLMClient(responses=["r1", "r2"])
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
         t.system("System")
 
-        t.chat("q1")
-        t.chat("q2")
+        t.llm.chat("q1")
+        t.llm.chat("q2")
 
         # After second chat, LLM should see: system + user1 + asst1 + user2
         assert mock.last_messages is not None
@@ -568,11 +568,11 @@ class TestCustomLLMClient:
         """Custom client with extract_content/extract_usage works with generate()."""
         t = Tract.open()
         client = AnthropicStyleClient(responses=["Hello from Claude!"])
-        t.configure_llm(client)
+        t.config.configure_llm(client)
         t.system("You are helpful.")
         t.user("Hi")
 
-        resp = t.generate()
+        resp = t.llm.generate()
 
         assert resp.text == "Hello from Claude!"
         assert resp.usage is not None
@@ -584,14 +584,14 @@ class TestCustomLLMClient:
         """Custom client works through the chat() convenience method."""
         t = Tract.open()
         client = AnthropicStyleClient(responses=["Bonjour!"])
-        t.configure_llm(client)
+        t.config.configure_llm(client)
         t.system("System")
 
-        resp = t.chat("Hello")
+        resp = t.llm.chat("Hello")
 
         assert resp.text == "Bonjour!"
         assert isinstance(resp, ChatResponse)
-        log = t.log(limit=10)
+        log = t.search.log(limit=10)
         assert len(log) == 3  # system + user + assistant
         t.close()
 
@@ -599,15 +599,15 @@ class TestCustomLLMClient:
         """Custom client works for multi-turn conversations."""
         t = Tract.open()
         client = AnthropicStyleClient(responses=["r1", "r2"])
-        t.configure_llm(client)
+        t.config.configure_llm(client)
         t.system("System")
 
-        resp1 = t.chat("q1")
-        resp2 = t.chat("q2")
+        resp1 = t.llm.chat("q1")
+        resp2 = t.llm.chat("q2")
 
         assert resp1.text == "r1"
         assert resp2.text == "r2"
-        log = t.log(limit=10)
+        log = t.search.log(limit=10)
         assert len(log) == 5  # system + user1 + asst1 + user2 + asst2
         t.close()
 
@@ -615,11 +615,11 @@ class TestCustomLLMClient:
         """Duck-typed client without extract methods still works (OpenAI format)."""
         t = Tract.open()
         client = MinimalDuckClient()
-        t.configure_llm(client)
+        t.config.configure_llm(client)
         t.system("System")
         t.user("Hello")
 
-        resp = t.generate()
+        resp = t.llm.generate()
 
         assert resp.text == "duck says quack"
         assert resp.usage.prompt_tokens == 5
@@ -634,7 +634,7 @@ class TestCustomLLMClient:
         assert t.llm_client is client
         assert t._llm_state.owns_llm_client is False  # caller owns lifecycle
         t.system("System")
-        resp = t.chat("Hi")
+        resp = t.llm.chat("Hi")
         assert resp.text == "injected!"
         t.close()
         assert not client.closed  # Tract did NOT close the external client
@@ -654,7 +654,7 @@ class TestCustomLLMClient:
         t = Tract.open()
         client = MockLLMClient()
         resolver = CustomResolver()
-        t.configure_llm(client, resolver=resolver)
+        t.config.configure_llm(client, resolver=resolver)
 
         assert t._llm_state.default_resolver is resolver
         assert t.llm_client is client
@@ -666,7 +666,7 @@ class TestCustomLLMClient:
 
         t = Tract.open()
         client = MockLLMClient()
-        t.configure_llm(client)
+        t.config.configure_llm(client)
 
         assert isinstance(t._llm_state.default_resolver, OpenAIResolver)
         t.close()
@@ -693,10 +693,10 @@ class TestCustomLLMClient:
         assert not isinstance(client, LLMClient)
         # But it still works in practice via the fallback
         t = Tract.open()
-        t.configure_llm(client)
+        t.config.configure_llm(client)
         t.system("System")
         t.user("Hi")
-        resp = t.generate()
+        resp = t.llm.generate()
         assert resp.text == "duck says quack"
         t.close()
 
@@ -708,5 +708,5 @@ class TestCustomLLMClient:
 
         from tract.llm.errors import LLMConfigError
         with pytest.raises(LLMConfigError, match="llm_client="):
-            t.generate()
+            t.llm.generate()
         t.close()

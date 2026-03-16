@@ -5,8 +5,8 @@ Quick reference for the commit/compile surface area:
 - Shorthand: t.system(), t.user(), t.assistant()
 - Format: compile().to_dicts(), .to_openai(), .to_anthropic(), .pprint()
 - Batch: t.batch() for atomic multi-commit
-- Status: t.status() token tracking
-- Chat + persistence: t.chat(), reopening from disk
+- Status: t.search.status() token tracking
+- Chat + persistence: t.llm.chat(), reopening from disk
 """
 
 from tract import (
@@ -140,7 +140,7 @@ def main() -> None:
     t.user("Hello")
     print("\n=== 5. Status ===\n")
 
-    status = t.status()
+    status = t.search.status()
     print(status)                       # compact one-liner
     print(status.commit_count)          # number of commits
     print(status.token_count)           # current token usage
@@ -150,7 +150,7 @@ def main() -> None:
     config = TractConfig(token_budget=TokenBudgetConfig(max_tokens=4096))
     t2 = Tract.open(config=config)
     t2.system("You are helpful.")
-    s = t2.status()
+    s = t2.search.status()
     if s.token_budget_max:
         pct = s.token_count / s.token_budget_max * 100
         print(f"Budget: {pct:.0f}% used")
@@ -159,23 +159,23 @@ def main() -> None:
     t.close()
 
     # =================================================================
-    # 6. CHAT + PERSISTENCE — t.chat() and reopening from disk
+    # 6. CHAT + PERSISTENCE — t.llm.chat() and reopening from disk
     # =================================================================
     # chat() = commit user msg + compile + call LLM + commit response + record usage
     # Requires api_key/model on open():
     #   t = Tract.open(api_key="...", model="gpt-4o")
-    #   r = t.chat("What is Python?")
+    #   r = t.llm.chat("What is Python?")
     #   r.text           # response text
     #   r.usage          # token usage from API
     #   r.pprint()       # rich panel
 
     # Persistence — pass a db_path to save to disk:
     #   t = Tract.open("conversation.db", api_key="...", model="gpt-4o")
-    #   t.chat("Hello")
+    #   t.llm.chat("Hello")
     #   t.close()
     #   # Later: reopen and continue
     #   t = Tract.open("conversation.db", api_key="...", model="gpt-4o")
-    #   t.chat("Follow-up")  # includes all prior context automatically
+    #   t.llm.chat("Follow-up")  # includes all prior context automatically
 
     print("Content types reference complete.")
 

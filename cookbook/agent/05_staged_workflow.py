@@ -68,21 +68,21 @@ def main() -> None:
         )
 
         for stage, temp in [("design", 0.9), ("implementation", 0.3), ("validation", 0.5)]:
-            t.branch(stage, switch=True)
-            t.configure(stage=stage, temperature=temp)
-            t.switch("main")
+            t.branches.create(stage, switch=True)
+            t.config.set(stage=stage, temperature=temp)
+            t.branches.switch("main")
 
         # Start the agent on the design branch
-        t.switch("design")
+        t.branches.switch("design")
 
-        print(f"  Branches: {[b.name for b in t.list_branches()]}")
+        print(f"  Branches: {[b.name for b in t.branches.list()]}")
         print(f"  Starting on: {t.current_branch}")
 
         log = StepLogger()
 
         # Single task — agent must navigate all stages autonomously
         print("\n  --- Task ---")
-        result = t.run(
+        result = t.llm.run(
             "Design a task management REST API (title, status, assignee). "
             "Work through the available stages (design, implementation, "
             "validation) to produce a complete specification. Commit your "
@@ -96,9 +96,9 @@ def main() -> None:
         print("\n\n=== Final State ===\n")
         branches_visited = set()
         for stage in ["design", "implementation", "validation"]:
-            t.switch(stage)
+            t.branches.switch(stage)
             ctx = t.compile()
-            cfg = t.get_config("stage")
+            cfg = t.config.get("stage")
             if ctx.token_count > 50:  # has content beyond just config
                 branches_visited.add(stage)
             print(f"  [{stage}] stage={cfg}, {len(ctx.messages)} messages, "

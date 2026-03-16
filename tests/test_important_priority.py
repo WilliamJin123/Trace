@@ -132,7 +132,7 @@ class TestAnnotateWithRetention:
         """annotate() with fuzzy retention stores RetentionCriteria."""
         t = _make_tract()
         info = t.user("Test message")
-        ann = t.annotate(
+        ann = t.annotations.set(
             info.commit_hash, Priority.IMPORTANT,
             retain="Preserve the user's name",
         )
@@ -145,7 +145,7 @@ class TestAnnotateWithRetention:
         """annotate() with deterministic retention stores match_patterns."""
         t = _make_tract()
         info = t.user("My API key is sk-12345")
-        ann = t.annotate(
+        ann = t.annotations.set(
             info.commit_hash, Priority.IMPORTANT,
             retain_match=["sk-12345"],
         )
@@ -157,7 +157,7 @@ class TestAnnotateWithRetention:
         """annotate() with both fuzzy and deterministic retention."""
         t = _make_tract()
         info = t.user("Important data: 2024-01-01")
-        ann = t.annotate(
+        ann = t.annotations.set(
             info.commit_hash, Priority.IMPORTANT,
             retain="Keep the date",
             retain_match=["2024-01-01"],
@@ -170,7 +170,7 @@ class TestAnnotateWithRetention:
         """annotate() without retention params produces None retention."""
         t = _make_tract()
         info = t.user("Normal message")
-        ann = t.annotate(info.commit_hash, Priority.NORMAL)
+        ann = t.annotations.set(info.commit_hash, Priority.NORMAL)
         assert ann.retention is None
 
 
@@ -188,7 +188,7 @@ class TestShorthandWithRetention:
             priority=Priority.IMPORTANT,
             retain="Preserve the endpoint URL",
         )
-        annotations = t.get_annotations(info.commit_hash)
+        annotations = t.annotations.get(info.commit_hash)
         assert len(annotations) == 1
         assert annotations[0].priority == Priority.IMPORTANT
         assert annotations[0].retention is not None
@@ -202,7 +202,7 @@ class TestShorthandWithRetention:
             priority=Priority.IMPORTANT,
             retain_match=["42"],
         )
-        annotations = t.get_annotations(info.commit_hash)
+        annotations = t.annotations.get(info.commit_hash)
         assert len(annotations) == 1
         assert annotations[0].retention.match_patterns == ["42"]
 
@@ -214,7 +214,7 @@ class TestShorthandWithRetention:
             priority=Priority.IMPORTANT,
             retain="Preserve the system instruction",
         )
-        annotations = t.get_annotations(info.commit_hash)
+        annotations = t.annotations.get(info.commit_hash)
         # instruction content type auto-pins (default priority), so 2 annotations:
         # one from default and one from our explicit priority=IMPORTANT
         assert len(annotations) == 2
@@ -228,7 +228,7 @@ class TestShorthandWithRetention:
         """Shorthand without priority does not create annotation."""
         t = _make_tract()
         info = t.user("Hello")
-        annotations = t.get_annotations(info.commit_hash)
+        annotations = t.annotations.get(info.commit_hash)
         assert len(annotations) == 0
 
 
@@ -315,16 +315,16 @@ class TestClassifyReturnsFourGroups:
 
         # Create commits with different priorities
         c1 = t.user("pinned msg")
-        t.annotate(c1.commit_hash, Priority.PINNED)
+        t.annotations.set(c1.commit_hash, Priority.PINNED)
 
         c2 = t.user("important msg")
-        t.annotate(c2.commit_hash, Priority.IMPORTANT)
+        t.annotations.set(c2.commit_hash, Priority.IMPORTANT)
 
         c3 = t.user("normal msg")
         # No annotation = NORMAL by default
 
         c4 = t.user("skip msg")
-        t.annotate(c4.commit_hash, Priority.SKIP)
+        t.annotations.set(c4.commit_hash, Priority.SKIP)
 
         # Get commit rows from the repo
         commit_repo = t._commit_repo
@@ -359,7 +359,7 @@ class TestCompressPreservesImportantContent:
         # Create commits
         t.user("Hello, my name is Alice")
         c2 = t.assistant("Nice to meet you, Alice!")
-        t.annotate(
+        t.annotations.set(
             c2.commit_hash, Priority.IMPORTANT,
             retain="Preserve the user's name Alice",
         )
@@ -371,9 +371,9 @@ class TestCompressPreservesImportantContent:
         mock_llm.chat.return_value = _make_llm_response(
             "Previously in this conversation: Alice was greeted. Weather discussed."
         )
-        t.configure_llm(mock_llm)
+        t.config.configure_llm(mock_llm)
 
-        result = t.compress()
+        result = t.compression.compress()
 
         # Verify the prompt included retention instructions
         call_args = mock_llm.chat.call_args
@@ -388,7 +388,7 @@ class TestCompressPreservesImportantContent:
 
         t.user("The API endpoint is /api/v1/users")
         c2 = t.assistant("Using endpoint /api/v1/users for the query")
-        t.annotate(
+        t.annotations.set(
             c2.commit_hash, Priority.IMPORTANT,
             retain="Preserve the endpoint",
             retain_match=["/api/v1/users"],
@@ -399,9 +399,9 @@ class TestCompressPreservesImportantContent:
         mock_llm.chat.return_value = _make_llm_response(
             "Previously in this conversation: The endpoint /api/v1/users was used."
         )
-        t.configure_llm(mock_llm)
+        t.config.configure_llm(mock_llm)
 
-        result = t.compress()
+        result = t.compression.compress()
         assert result.compressed_tokens > 0
 
     def test_compress_important_with_retain_match(self):
@@ -410,7 +410,7 @@ class TestCompressPreservesImportantContent:
 
         t.user("The secret code is XYZ-789")
         c2 = t.assistant("Noted the code XYZ-789")
-        t.annotate(
+        t.annotations.set(
             c2.commit_hash, Priority.IMPORTANT,
             retain_match=["XYZ-789"],
         )
@@ -420,9 +420,9 @@ class TestCompressPreservesImportantContent:
         mock_llm.chat.return_value = _make_llm_response(
             "Previously: The code XYZ-789 was noted."
         )
-        t.configure_llm(mock_llm)
+        t.config.configure_llm(mock_llm)
 
-        result = t.compress()
+        result = t.compression.compress()
         assert mock_llm.chat.call_count == 1
         assert result.compressed_tokens > 0
 
@@ -437,7 +437,7 @@ class TestRetentionRoundTripStorage:
         """Store and retrieve retention criteria from DB."""
         t = _make_tract()
         info = t.user("Important data point: threshold=0.95")
-        t.annotate(
+        t.annotations.set(
             info.commit_hash, Priority.IMPORTANT,
             retain="Preserve the threshold value",
             retain_match=["threshold=0.95"],
@@ -445,7 +445,7 @@ class TestRetentionRoundTripStorage:
         )
 
         # Read back from DB via get_annotations
-        annotations = t.get_annotations(info.commit_hash)
+        annotations = t.annotations.get(info.commit_hash)
         assert len(annotations) == 1
         ann = annotations[0]
         assert ann.priority == Priority.IMPORTANT
@@ -458,8 +458,8 @@ class TestRetentionRoundTripStorage:
         """Annotation without retention round-trips as None."""
         t = _make_tract()
         info = t.user("Plain message")
-        t.annotate(info.commit_hash, Priority.NORMAL)
-        annotations = t.get_annotations(info.commit_hash)
+        t.annotations.set(info.commit_hash, Priority.NORMAL)
+        annotations = t.annotations.get(info.commit_hash)
         assert len(annotations) == 1
         assert annotations[0].retention is None
 
@@ -467,11 +467,11 @@ class TestRetentionRoundTripStorage:
         """Regex retention criteria round-trips correctly."""
         t = _make_tract()
         info = t.user("Date: 2024-01-15")
-        t.annotate(
+        t.annotations.set(
             info.commit_hash, Priority.IMPORTANT,
             retain_match=[r"\d{4}-\d{2}-\d{2}"],
             retain_match_mode="regex",
         )
-        annotations = t.get_annotations(info.commit_hash)
+        annotations = t.annotations.get(info.commit_hash)
         assert annotations[0].retention.match_mode == "regex"
         assert annotations[0].retention.match_patterns == [r"\d{4}-\d{2}-\d{2}"]

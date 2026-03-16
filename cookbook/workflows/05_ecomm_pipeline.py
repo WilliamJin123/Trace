@@ -47,7 +47,7 @@ def main() -> None:
 
         print("=== Setting Up E-Commerce Pipeline ===\n")
 
-        t.configure(
+        t.config.set(
             stage="product_research",
             temperature=0.8,
             compile_strategy="full",
@@ -71,7 +71,7 @@ def main() -> None:
             def gate(ctx: MiddlewareContext):
                 if ctx.target != stage_name:
                     return
-                count = len(ctx.tract.log())
+                count = len(ctx.tract.search.log())
                 if count < min_commits:
                     raise BlockedError(
                         "pre_transition",
@@ -79,10 +79,10 @@ def main() -> None:
                     )
             return gate
 
-        t.use("pre_transition", stage_gate(6, "landing_pages"))
-        t.use("pre_transition", stage_gate(3, "ad_copy"))
-        t.use("pre_transition", stage_gate(3, "metrics_analysis"))
-        t.use("pre_transition", stage_gate(3, "optimization"))
+        t.middleware.add("pre_transition", stage_gate(6, "landing_pages"))
+        t.middleware.add("pre_transition", stage_gate(3, "ad_copy"))
+        t.middleware.add("pre_transition", stage_gate(3, "metrics_analysis"))
+        t.middleware.add("pre_transition", stage_gate(3, "optimization"))
 
         # Register tags
         for tag_name in [
@@ -90,10 +90,10 @@ def main() -> None:
             "variant-a", "variant-b", "headline", "cta",
             "ad-search", "ad-social", "metrics", "winner", "optimization",
         ]:
-            t.register_tag(tag_name)
+            t.tags.register(tag_name)
 
-        print(f"  Product: {t.get_config('product')}")
-        print(f"  Price: {t.get_config('price_point')}")
+        print(f"  Product: {t.config.get('product')}")
+        print(f"  Price: {t.config.get('price_point')}")
 
         t.system(
             "You are an e-commerce growth strategist and copywriter.\n"
@@ -120,7 +120,7 @@ def main() -> None:
         # =============================================================
         print("\n=== Stage 1: Product Research ===\n")
 
-        result = t.run(
+        result = t.llm.run(
             "Research the competitive landscape and target audience for this "
             "product. What insights should inform our marketing strategy? "
             "Consider the competition, customer pain points, and our key "
@@ -137,9 +137,9 @@ def main() -> None:
         print("\n\n=== Stage 2: Landing Pages ===\n")
 
         t.transition("landing_pages", handoff="summary")
-        t.configure(stage="landing_pages", temperature=0.7)
+        t.config.set(stage="landing_pages", temperature=0.7)
 
-        result = t.run(
+        result = t.llm.run(
             "Create landing page variants with different value propositions. "
             "Each variant should target a different customer motivation. "
             "Include compelling headlines and calls to action.",
@@ -155,9 +155,9 @@ def main() -> None:
         print("\n\n=== Stage 3: Ad Copy ===\n")
 
         t.transition("ad_copy", handoff="summary")
-        t.configure(stage="ad_copy", temperature=0.6)
+        t.config.set(stage="ad_copy", temperature=0.6)
 
-        result = t.run(
+        result = t.llm.run(
             "Write ad copy for search and social channels that aligns with "
             "the landing page strategy. Adapt the messaging for each "
             "platform's format and audience expectations.",
@@ -173,7 +173,7 @@ def main() -> None:
         print("\n\n=== Stage 4: Metrics Analysis ===\n")
 
         t.transition("metrics_analysis", handoff="summary")
-        t.configure(stage="metrics_analysis", temperature=0.3)
+        t.config.set(stage="metrics_analysis", temperature=0.3)
 
         # Seed simulated metrics via metadata
         t.commit(
@@ -186,7 +186,7 @@ def main() -> None:
             tags=["metrics"],
         )
 
-        result = t.run(
+        result = t.llm.run(
             "Analyze these A/B test results and determine which variant is "
             "performing better and why. What do the conversion rates and "
             "cost metrics tell us about customer preferences?",
@@ -202,9 +202,9 @@ def main() -> None:
         print("\n\n=== Stage 5: Optimization ===\n")
 
         t.transition("optimization", handoff="summary")
-        t.configure(stage="optimization", temperature=0.5)
+        t.config.set(stage="optimization", temperature=0.5)
 
-        result = t.run(
+        result = t.llm.run(
             "Based on the metrics analysis, declare a winner and explain "
             "the reasoning. What optimizations should we pursue in the "
             "next iteration to improve performance further?",
@@ -220,23 +220,23 @@ def main() -> None:
 
         print(f"\n=== Final Pipeline State ===\n")
 
-        print(f"  Stage: {t.get_config('stage')}")
+        print(f"  Stage: {t.config.get('stage')}")
         print(f"  Branch: {t.current_branch}")
 
         print(f"\n  Branches:")
-        for b in t.list_branches():
+        for b in t.branches.list():
             marker = "*" if b.is_current else " "
             print(f"    {marker} {b.name}")
 
         print(f"\n  Tags with content:")
-        for entry in t.list_tags():
+        for entry in t.tags.list():
             if entry["count"] > 0:
                 print(f"    {entry['name']:20s} count={entry['count']}")
 
         print(f"\n  Log (last 12 commits):")
-        pprint_log(t.log()[-12:])
+        pprint_log(t.search.log()[-12:])
 
-        print(f"\n  Total commits: {len(t.log())}")
+        print(f"\n  Total commits: {len(t.search.log())}")
         print(f"  Stages completed: 5/5")
 
 

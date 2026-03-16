@@ -12,7 +12,7 @@ Patterns shown:
   6. Context Growth Alerting        -- detect runaway context before it hurts
 
 Demonstrates: LoopResult.step_usages, LoopResult.budget_exhausted,
-              t.use(), t.health(), t.status(), LoopConfig.step_budget,
+              t.middleware.add(), t.search.health(), t.search.status(), LoopConfig.step_budget,
               on_tool_result callback, middleware pre_commit/post_commit/
               pre_compile/pre_compress, BlockedError
 
@@ -196,9 +196,9 @@ def audit_trail() -> None:
                 "branch": ctx.branch,
             })
 
-        t.use("post_commit", audit_commit)
-        t.use("pre_compile", audit_compile)
-        t.use("pre_compress", audit_compress)
+        t.middleware.add("post_commit", audit_commit)
+        t.middleware.add("pre_compile", audit_compile)
+        t.middleware.add("pre_compress", audit_compress)
 
         # --- Perform operations ---
         t.system("You are a financial analyst.")
@@ -211,7 +211,7 @@ def audit_trail() -> None:
         ctx = t.compile()
 
         # Compress triggers pre_compress middleware
-        t.compress(content="Q2: $3.8M, Q3: $4.2M (+18% YoY, +10.5% QoQ).")
+        t.compression.compress(content="Q2: $3.8M, Q3: $4.2M (+18% YoY, +10.5% QoQ).")
 
         # --- Display audit trail ---
         print(f"  {'#':>3}  {'Event':<10}  {'Branch':<10}  {'Details'}")
@@ -243,7 +243,7 @@ def audit_trail() -> None:
 # ===================================================================
 
 def health_dashboard() -> None:
-    """Build a health dashboard from t.health() + metrics."""
+    """Build a health dashboard from t.search.health() + metrics."""
 
     print()
     print("=" * 60)
@@ -258,15 +258,15 @@ def health_dashboard() -> None:
         t.assistant("Project tracker ready.")
 
         # Create branches for different workstreams
-        t.branch("feature-auth", switch=True)
+        t.branches.create("feature-auth", switch=True)
         t.user("Implement OAuth2 login flow.")
         t.assistant("OAuth2 flow implemented with PKCE.")
-        t.switch("main")
+        t.branches.switch("main")
 
-        t.branch("feature-api", switch=True)
+        t.branches.create("feature-api", switch=True)
         t.user("Design REST API endpoints.")
         t.assistant("12 endpoints designed following OpenAPI 3.0 spec.")
-        t.switch("main")
+        t.branches.switch("main")
 
         # Merge one branch
         t.merge("feature-auth")
@@ -276,7 +276,7 @@ def health_dashboard() -> None:
         t.assistant("Architecture review complete. All components aligned.")
 
         # --- Run health check ---
-        report = t.health()
+        report = t.search.health()
 
         # --- Dashboard display ---
         status_icon = "OK" if report.healthy else "ISSUES"
@@ -352,8 +352,8 @@ def budget_dashboard() -> None:
         t.system("You are a market research agent.")
 
         # --- Stage: Research ---
-        t.configure(compile_strategy="full")
-        research_start = t.status().token_count
+        t.config.set(compile_strategy="full")
+        research_start = t.search.status().token_count
 
         research_items = [
             "Competitor A launched new AI product at $99/mo, targeting SMB.",
@@ -365,7 +365,7 @@ def budget_dashboard() -> None:
             t.user(item, message=item[:60] + "...")
             t.assistant(f"Noted: {item[:40]}...", message=f"Ack research finding")
 
-        research_end = t.status().token_count
+        research_end = t.search.status().token_count
         research_tokens = research_end - research_start
         stage_usage["research"] = {
             "tokens": research_tokens,
@@ -374,7 +374,7 @@ def budget_dashboard() -> None:
         }
 
         # Compress research before analysis (frees context for next stages)
-        t.compress(content=(
+        t.compression.compress(content=(
             "Research findings: Competitor A launched AI ($99/mo SMB). "
             "SaaS +22% YoY. Customers want analytics (68%) and AI (45%). "
             "Competitor B acquired data co for $50M."
@@ -382,7 +382,7 @@ def budget_dashboard() -> None:
 
         # --- Stage: Analysis ---
         t.transition("analysis")
-        analysis_start = t.status().token_count
+        analysis_start = t.search.status().token_count
 
         t.user(
             "Analyze competitive positioning based on research. Key factors: "
@@ -397,7 +397,7 @@ def budget_dashboard() -> None:
             message="Competitive analysis complete",
         )
 
-        analysis_end = t.status().token_count
+        analysis_end = t.search.status().token_count
         analysis_tokens = analysis_end - analysis_start
         stage_usage["analysis"] = {
             "tokens": analysis_tokens,
@@ -407,7 +407,7 @@ def budget_dashboard() -> None:
 
         # --- Stage: Synthesis ---
         t.transition("synthesis")
-        synthesis_start = t.status().token_count
+        synthesis_start = t.search.status().token_count
 
         t.user("Synthesize findings into executive brief.", message="Synthesize")
         t.assistant(
@@ -417,7 +417,7 @@ def budget_dashboard() -> None:
             message="Executive brief",
         )
 
-        synthesis_end = t.status().token_count
+        synthesis_end = t.search.status().token_count
         synthesis_tokens = synthesis_end - synthesis_start
         stage_usage["synthesis"] = {
             "tokens": synthesis_tokens,
@@ -428,7 +428,7 @@ def budget_dashboard() -> None:
         # --- Dashboard display ---
         total_budget = sum(stage_budgets.values())
         total_stage_used = sum(info["tokens"] for info in stage_usage.values())
-        final_context = t.status().token_count
+        final_context = t.search.status().token_count
 
         print(f"  {'Stage':<12}  {'Budget':>8}  {'Added':>8}  {'Remaining':>10}  {'Status'}")
         print(f"  {'-' * 55}")
@@ -724,9 +724,9 @@ def main() -> None:
     print("  Pattern                     Tract Primitives Used")
     print("  --------------------------  -----------------------------------------")
     print("  Token tracking              LoopResult.step_usages, total_tokens")
-    print("  Audit trail                 t.use() on post_commit/pre_compile/pre_compress")
-    print("  Health dashboard            t.health() -> HealthReport")
-    print("  Budget dashboard            t.status(), t.transition(), TokenBudgetConfig")
+    print("  Audit trail                 t.middleware.add() on post_commit/pre_compile/pre_compress")
+    print("  Health dashboard            t.search.health() -> HealthReport")
+    print("  Budget dashboard            t.search.status(), t.transition(), TokenBudgetConfig")
     print("  Error rate monitoring       on_tool_result callback, tool_handlers")
     print("  Context growth alerting     t.compile().token_count, threshold math")
     print()

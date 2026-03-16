@@ -160,9 +160,9 @@ class TestCompressToolCallsContext:
         t, _, _ = _build_tool_call_tract()
 
         mock = MockLLMClient(responses=[json.dumps(["Compacted."])])
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
 
-        t.compress_tool_calls(include_context=True)
+        t.compression.compress_tool_calls(include_context=True)
 
         assert mock.last_messages is not None
         system_msg = mock.last_messages[0]
@@ -174,9 +174,9 @@ class TestCompressToolCallsContext:
         t, _, _ = _build_tool_call_tract()
 
         mock = MockLLMClient(responses=[json.dumps(["Compacted."])])
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
 
-        t.compress_tool_calls(include_context=True)
+        t.compression.compress_tool_calls(include_context=True)
 
         user_msg = mock.last_messages[1]
         assert user_msg["role"] == "user"
@@ -189,9 +189,9 @@ class TestCompressToolCallsContext:
         t, _, _ = _build_tool_call_tract()
 
         mock = MockLLMClient(responses=[json.dumps(["Compacted."])])
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
 
-        t.compress_tool_calls()
+        t.compression.compress_tool_calls()
 
         system_msg = mock.last_messages[0]
         assert system_msg["content"] == TOOL_COMPACT_SYSTEM
@@ -201,9 +201,9 @@ class TestCompressToolCallsContext:
         t, _, _ = _build_tool_call_tract()
 
         mock = MockLLMClient(responses=[json.dumps(["Compacted."])])
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
 
-        t.compress_tool_calls(include_context=False)
+        t.compression.compress_tool_calls(include_context=False)
 
         user_msg = mock.last_messages[1]
         assert "conversation so far" not in user_msg["content"]
@@ -213,9 +213,9 @@ class TestCompressToolCallsContext:
         t, _, _ = _build_tool_call_tract()
 
         mock = MockLLMClient(responses=[json.dumps(["Compacted grep output."])])
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
 
-        result = t.compress_tool_calls(include_context=True)
+        result = t.compression.compress_tool_calls(include_context=True)
 
         assert isinstance(result, ToolCompactResult)
         assert result.turn_count == 1
@@ -228,9 +228,9 @@ class TestCompressToolCallsContext:
 
         custom = "You are a custom compactor."
         mock = MockLLMClient(responses=[json.dumps(["Custom."])])
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
 
-        t.compress_tool_calls(include_context=True, system_prompt=custom)
+        t.compression.compress_tool_calls(include_context=True, system_prompt=custom)
 
         system_msg = mock.last_messages[0]
         assert system_msg["content"] == custom
@@ -242,9 +242,9 @@ class TestCompressToolCallsContext:
         mock = MockLLMClient(
             responses=[json.dumps(["Found TODO comments at lines 42, 99, 150."])]
         )
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
 
-        result = t.compress_tool_calls(target_tokens=50)
+        result = t.compression.compress_tool_calls(target_tokens=50)
 
         assert isinstance(result, ToolCompactResult)
         assert len(result.edit_commits) == 1

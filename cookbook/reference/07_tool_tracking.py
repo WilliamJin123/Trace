@@ -85,7 +85,7 @@ def main() -> None:
     print(f"\nedit: {orig.token_count} -> {edited.token_count} tokens")
 
     # Auto-summarization (requires LLM):
-    # t.configure_tool_summarization(
+    # t.config.configure_tool_summarization(
     #     auto_threshold=50,                                # requires LLM
     #     default_instructions="Keep ONLY relevant facts.", # requires LLM
     #     include_context=True,                             # requires LLM
@@ -107,15 +107,15 @@ def main() -> None:
     print(f"\nwithout reasoning: {ctx.commit_count}, with: {ctx_with.commit_count}")
     print(f"  Reasoning text: '{r.message}'")
 
-    t.annotate(r.commit_hash, Priority.PINNED)  # force inclusion
+    t.annotations.set(r.commit_hash, Priority.PINNED)  # force inclusion
     # format= and metadata= also accepted:
     # t.reasoning("...", format="think_tags", metadata={"source": "deepseek"})
 
     # LLM reasoning (requires LLM):
-    # resp = t.generate(reasoning_effort="high")
+    # resp = t.llm.generate(reasoning_effort="high")
     # resp.reasoning         # extracted text
     # resp.reasoning_commit  # CommitInfo or None
-    # t.generate(reasoning=False)        # extract but don't commit
+    # t.llm.generate(reasoning=False)        # extract but don't commit
     # Tract.open(commit_reasoning=False) # global opt-out
     t.close()
 
@@ -124,12 +124,12 @@ def main() -> None:
     # =================================================================
     # Every assistant commit auto-captures generation_config.
 
-    # t.chat("Write opener.", temperature=0.7)
-    # t.chat("Wilder version.", temperature=1.5)
-    # t.query_by_config("temperature", ">", 1.0)           # single field
-    # t.query_by_config("temperature", "between", [0, 1])   # range
-    # t.query_by_config("temperature", "in", [0.0, 1.5])    # set membership
-    # t.query_by_config(conditions=[("model","=","gpt-4"),   # multi-field AND
+    # t.llm.chat("Write opener.", temperature=0.7)
+    # t.llm.chat("Wilder version.", temperature=1.5)
+    # t.search.query_by_config("temperature", ">", 1.0)           # single field
+    # t.search.query_by_config("temperature", "between", [0, 1])   # range
+    # t.search.query_by_config("temperature", "in", [0.0, 1.5])    # set membership
+    # t.search.query_by_config(conditions=[("model","=","gpt-4"),   # multi-field AND
     #                               ("temperature","=",0.0)])
     print("\nquery_by_config: requires commits with generation_config")
 
@@ -143,14 +143,14 @@ def main() -> None:
         "parameters": {"type": "object", "properties": {
             "expr": {"type": "string"}}, "required": ["expr"]},
     }}]
-    t.set_tools(tools)
+    t.tools.set(tools)
     ci = t.system("Calculator mode.")
-    recorded = t.get_commit_tools(ci.commit_hash)
+    recorded = t.tools.get_for_commit(ci.commit_hash)
     print(f"tool provenance: {len(recorded)} tools at {ci.commit_hash[:8]}")
 
-    t.set_tools(None)  # clear tools mid-session
+    t.tools.set(None)  # clear tools mid-session
     ci2 = t.user("No tools now.")
-    print(f"after clear: {len(t.get_commit_tools(ci2.commit_hash) or [])} tools")
+    print(f"after clear: {len(t.tools.get_for_commit(ci2.commit_hash) or [])} tools")
     t.close()
 
     print("\nDone.")

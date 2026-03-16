@@ -142,7 +142,7 @@ class TestToolExecution:
 
     def test_get_config_tool_with_configure(self, tract_instance):
         """get_config resolves value from DAG config commits."""
-        tract_instance.configure(model="gpt-4o")
+        tract_instance.config.set(model="gpt-4o")
         executor = ToolExecutor(tract_instance)
         result = executor.execute("get_config", {"key": "model"})
         assert result.success
@@ -167,7 +167,7 @@ class TestToolExecution:
             if ctx.target == "blocked-branch":
                 raise BlockedError("pre_transition", "Not allowed")
 
-        tract_instance.use("pre_transition", block_transition)
+        tract_instance.middleware.add("pre_transition", block_transition)
         executor = ToolExecutor(tract_instance)
         result = executor.execute("transition", {"target": "blocked-branch"})
         assert not result.success  # Blocked raises, caught by executor
@@ -295,7 +295,7 @@ class TestToolExecution:
     def test_remove_middleware_tool(self, tract_instance):
         """remove_middleware removes a handler by ID."""
         # First create one
-        handler_id = tract_instance.use("post_commit", lambda ctx: None)
+        handler_id = tract_instance.middleware.add("post_commit", lambda ctx: None)
         executor = ToolExecutor(tract_instance)
         result = executor.execute(
             "remove_middleware",
@@ -384,7 +384,7 @@ class TestProfiles:
 class TestAsTools:
     def test_as_tools_includes_new(self, tract_instance):
         """as_tools() includes new tools in output."""
-        tools = tract_instance.as_tools(profile="self", format="openai")
+        tools = tract_instance.toolkit.as_tools(profile="self", format="openai")
         names = {t["function"]["name"] for t in tools}
         assert "configure" in names
         assert "get_config" in names
@@ -393,7 +393,7 @@ class TestAsTools:
         assert "remove_middleware" in names
 
     def test_as_tools_full_profile(self, tract_instance):
-        tools = tract_instance.as_tools(profile="full", format="openai")
+        tools = tract_instance.toolkit.as_tools(profile="full", format="openai")
         names = {t["function"]["name"] for t in tools}
         assert "configure" in names
         assert "create_metadata" in names
@@ -405,7 +405,7 @@ class TestAsTools:
 
     def test_as_callable_tools(self, tract_instance):
         """as_callable_tools includes new tools."""
-        callables = tract_instance.as_callable_tools(profile="self")
+        callables = tract_instance.toolkit.as_callable_tools(profile="self")
         names = {c.__name__ for c in callables}
         assert "configure" in names
         assert "get_config" in names

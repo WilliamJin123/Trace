@@ -162,7 +162,7 @@ def run_loop(
             at the start if provided.
         config: Loop configuration. Defaults to LoopConfig().
         llm_client: LLM client to use. Falls back to tract's configured client.
-        tools: Tool definitions (OpenAI format). Falls back to tract.as_tools().
+        tools: Tool definitions (OpenAI format). Falls back to tract.toolkit.as_tools().
         tool_handlers: Optional mapping of custom tool names to callables.
             When the LLM calls a tool whose name is in this dict, the
             corresponding function is called with the tool arguments as
@@ -193,7 +193,7 @@ def run_loop(
         )
 
     if tools is None:
-        tools = tract.as_tools(format="openai")
+        tools = tract.toolkit.as_tools(format="openai")
 
     # Grab effective LLM config for the result
     effective_config = tract.default_config
@@ -236,8 +236,8 @@ def run_loop(
             presenter = ToolPresenter(tract)
 
     # Resolve config once (unlikely to change mid-loop)
-    strategy: CompileStrategy = tract.get_config("compile_strategy") or cfg.strategy
-    strategy_k: int = tract.get_config("compile_strategy_k") or cfg.strategy_k
+    strategy: CompileStrategy = tract.config.get("compile_strategy") or cfg.strategy
+    strategy_k: int = tract.config.get("compile_strategy_k") or cfg.strategy_k
 
     for step in range(cfg.max_steps):
         steps = step + 1
@@ -266,7 +266,7 @@ def run_loop(
                     cfg.auto_compress_threshold * 100, cfg.max_tokens,
                 )
                 try:
-                    tract.compress(strategy="sliding_window", window_size=cfg.strategy_k)
+                    tract.compression.compress(strategy="sliding_window", window_size=cfg.strategy_k)
                     last_compiled = tract.compile(strategy=strategy, strategy_k=strategy_k)
                     compressed_this_step = True
                 except Exception as e:
@@ -292,7 +292,7 @@ def run_loop(
 
         # Pre-generate middleware (can block)
         try:
-            tract._run_middleware(
+            tract.middleware._run(
                 "pre_generate",
                 pending={"messages": messages, "config": llm_kwargs},
             )
@@ -321,7 +321,7 @@ def run_loop(
 
         # Post-generate middleware (informational)
         _post_gen_usage = _extract_usage(response, client)
-        tract._run_middleware(
+        tract.middleware._run(
             "post_generate",
             pending={
                 "response": content or "",
@@ -468,7 +468,7 @@ def run_loop(
 
             # Pre-tool-execute middleware (can block to skip this tool)
             try:
-                tract._run_middleware(
+                tract.middleware._run(
                     "pre_tool_execute",
                     pending={"tool_name": tc_name, "arguments": tc_args},
                 )
@@ -490,7 +490,7 @@ def run_loop(
                     if on_tool_result:
                         on_tool_result(tc_name, str(output), "success")
                     # Post-tool-execute middleware (informational)
-                    tract._run_middleware(
+                    tract.middleware._run(
                         "post_tool_execute",
                         pending={"tool_name": tc_name, "result": str(output), "success": True},
                     )
@@ -502,7 +502,7 @@ def run_loop(
                     if on_tool_result:
                         on_tool_result(tc_name, f"{type(exc).__name__}: {exc}", "error")
                     # Post-tool-execute middleware (informational)
-                    tract._run_middleware(
+                    tract.middleware._run(
                         "post_tool_execute",
                         pending={
                             "tool_name": tc_name,
@@ -523,7 +523,7 @@ def run_loop(
                 if on_tool_result:
                     on_tool_result(tc_name, output_text, "success" if result.success else "error")
                 # Post-tool-execute middleware (informational)
-                tract._run_middleware(
+                tract.middleware._run(
                     "post_tool_execute",
                     pending={
                         "tool_name": tc_name,
@@ -751,7 +751,7 @@ def _summarize_tool_output(
         context_text=context_text,
     )
 
-    llm = tract._resolve_llm_client("compress")
+    llm = tract.config._resolve_llm_client("compress")
     response = llm.chat(
         [
             {"role": "system", "content": sys_prompt},
@@ -796,7 +796,7 @@ def _extract_and_record_usage(
         return None
     try:
         usage = tract._normalize_usage_dict(usage_dict)
-        tract.record_usage(usage)
+        tract.compression.record_usage(usage)
         return usage
     except Exception:
         logger.debug("Failed to record usage", exc_info=True)
@@ -1014,7 +1014,7 @@ async def arun_loop(
         )
 
     if tools is None:
-        tools = tract.as_tools(format="openai")
+        tools = tract.toolkit.as_tools(format="openai")
 
     effective_config = tract.default_config
 
@@ -1055,8 +1055,8 @@ async def arun_loop(
         else:
             presenter = ToolPresenter(tract)
 
-    strategy: CompileStrategy = tract.get_config("compile_strategy") or cfg.strategy
-    strategy_k: int = tract.get_config("compile_strategy_k") or cfg.strategy_k
+    strategy: CompileStrategy = tract.config.get("compile_strategy") or cfg.strategy
+    strategy_k: int = tract.config.get("compile_strategy_k") or cfg.strategy_k
 
     for step in range(cfg.max_steps):
         steps = step + 1
@@ -1085,7 +1085,7 @@ async def arun_loop(
                     cfg.auto_compress_threshold * 100, cfg.max_tokens,
                 )
                 try:
-                    tract.compress(strategy="sliding_window", window_size=cfg.strategy_k)
+                    tract.compression.compress(strategy="sliding_window", window_size=cfg.strategy_k)
                     last_compiled = tract.compile(strategy=strategy, strategy_k=strategy_k)
                     compressed_this_step = True
                 except Exception as e:
@@ -1110,7 +1110,7 @@ async def arun_loop(
 
         # Pre-generate middleware (can block)
         try:
-            tract._run_middleware(
+            tract.middleware._run(
                 "pre_generate",
                 pending={"messages": messages, "config": llm_kwargs},
             )
@@ -1141,7 +1141,7 @@ async def arun_loop(
 
         # Post-generate middleware (informational)
         _post_gen_usage = _extract_usage(response, client)
-        tract._run_middleware(
+        tract.middleware._run(
             "post_generate",
             pending={
                 "response": content or "",
@@ -1280,7 +1280,7 @@ async def arun_loop(
 
             # Pre-tool-execute middleware (can block to skip this tool)
             try:
-                tract._run_middleware(
+                tract.middleware._run(
                     "pre_tool_execute",
                     pending={"tool_name": tc_name, "arguments": tc_args},
                 )
@@ -1304,7 +1304,7 @@ async def arun_loop(
                     _commit_tool_result(tract, tc_name, str(output), "success", result_meta)
                     if on_tool_result:
                         on_tool_result(tc_name, str(output), "success")
-                    tract._run_middleware(
+                    tract.middleware._run(
                         "post_tool_execute",
                         pending={"tool_name": tc_name, "result": str(output), "success": True},
                     )
@@ -1315,7 +1315,7 @@ async def arun_loop(
                     )
                     if on_tool_result:
                         on_tool_result(tc_name, f"{type(exc).__name__}: {exc}", "error")
-                    tract._run_middleware(
+                    tract.middleware._run(
                         "post_tool_execute",
                         pending={
                             "tool_name": tc_name,
@@ -1335,7 +1335,7 @@ async def arun_loop(
                     _commit_tool_result(tract, tc_name, output_text, status, result_meta)
                 if on_tool_result:
                     on_tool_result(tc_name, output_text, "success" if result.success else "error")
-                tract._run_middleware(
+                tract.middleware._run(
                     "post_tool_execute",
                     pending={
                         "tool_name": tc_name,

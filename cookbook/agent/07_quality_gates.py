@@ -67,13 +67,13 @@ def main() -> None:
         )
 
         # Developer sets up gated workflow infrastructure
-        t.branch("research", switch=True)
-        t.configure(stage="research")
+        t.branches.create("research", switch=True)
+        t.config.set(stage="research")
 
         # Gate: require at least 3 artifact commits before transition
         def research_gate(ctx: MiddlewareContext):
             if ctx.target == "implementation":
-                entries = ctx.tract.log(limit=50)
+                entries = ctx.tract.search.log(limit=50)
                 artifacts = [e for e in entries if e.content_type == "artifact"]
                 if len(artifacts) < 3:
                     raise BlockedError(
@@ -82,21 +82,21 @@ def main() -> None:
                         f"need at least 3 before moving to implementation.",
                     )
 
-        t.use("pre_transition", research_gate)
+        t.middleware.add("pre_transition", research_gate)
 
-        t.switch("main")
-        t.branch("implementation", switch=True)
-        t.configure(stage="implementation")
-        t.switch("research")
+        t.branches.switch("main")
+        t.branches.create("implementation", switch=True)
+        t.config.set(stage="implementation")
+        t.branches.switch("research")
 
         log = StepLogger()
 
         print(f"  Starting on: {t.current_branch}")
-        print(f"  Branches: {[b.name for b in t.list_branches()]}")
+        print(f"  Branches: {[b.name for b in t.branches.list()]}")
 
         # Task: research then attempt transition
         print("\n  --- Task: Research ---")
-        result = t.run(
+        result = t.llm.run(
             "Research authentication, database schema, and error handling "
             "patterns for a REST API. When you feel your research is "
             "thorough, move to implementation.",
@@ -108,7 +108,7 @@ def main() -> None:
         # If the agent didn't try transitioning, force an attempt to show the gate
         if t.current_branch != "implementation":
             print("\n  --- Agent didn't transition, forcing attempt ---")
-            entries = t.log(limit=50)
+            entries = t.search.log(limit=50)
             artifacts = [e for e in entries if e.content_type == "artifact"]
             print(f"  Artifacts committed: {len(artifacts)}")
             try:
@@ -121,7 +121,7 @@ def main() -> None:
         # Report
         print("\n\n=== Final State ===\n")
         print(f"  Current branch: {t.current_branch}")
-        status = t.status()
+        status = t.search.status()
         print(f"  Commits: {status.commit_count}, Tokens: {status.token_count}")
 
         print("\n  Context:")

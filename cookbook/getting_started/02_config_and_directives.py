@@ -2,9 +2,9 @@
 
 Three clean primitives for controlling LLM behavior:
 
-  1. t.configure()  -- commit key-value settings to the DAG
+  1. t.config.set()  -- commit key-value settings to the DAG
   2. t.directive()  -- commit named instructions (compiled, deduplicated)
-  3. t.use()        -- register Python middleware for event hooks
+  3. t.middleware.add()        -- register Python middleware for event hooks
 
 Config and directives travel with the conversation (they are commits),
 follow DAG precedence (closest to HEAD wins), and appear in the log.
@@ -12,9 +12,9 @@ follow DAG precedence (closest to HEAD wins), and appear in the log.
 Directives can load text from markdown files via path=, with auto-
 discovery from a .tract/prompts/ directory.
 
-Demonstrates: t.configure(), t.directive(), t.directive(path=),
-              t.system(path=), t.get_config(), t.get_all_configs(),
-              t.use() basics, .tract/prompts/ auto-discovery
+Demonstrates: t.config.set(), t.directive(), t.directive(path=),
+              t.system(path=), t.config.get(), t.config.get_all(),
+              t.middleware.add() basics, .tract/prompts/ auto-discovery
 
 No LLM required.
 """
@@ -35,16 +35,16 @@ def main() -> None:
 
         print("=== Config (t.configure) ===\n")
 
-        t.configure(model="gpt-4o", temperature=0.7)
-        t.configure(max_tokens=4096)
+        t.config.set(model="gpt-4o", temperature=0.7)
+        t.config.set(max_tokens=4096)
 
-        print(f"  model:       {t.get_config('model')}")
-        print(f"  temperature: {t.get_config('temperature')}")
-        print(f"  max_tokens:  {t.get_config('max_tokens')}")
-        print(f"  missing key: {t.get_config('nonexistent', 'default-val')}")
+        print(f"  model:       {t.config.get('model')}")
+        print(f"  temperature: {t.config.get('temperature')}")
+        print(f"  max_tokens:  {t.config.get('max_tokens')}")
+        print(f"  missing key: {t.config.get('nonexistent', 'default-val')}")
 
         # Resolve all active configs at once
-        all_cfg = t.get_all_configs()
+        all_cfg = t.config.get_all()
         print(f"  all configs: {all_cfg}")
 
         # --- 2. DAG precedence: closer to HEAD wins ---
@@ -55,10 +55,10 @@ def main() -> None:
         t.assistant("Hi there!")
 
         # Override model -- closer to HEAD wins
-        t.configure(model="claude-sonnet")
+        t.config.set(model="claude-sonnet")
 
-        print(f"  model (after override): {t.get_config('model')}")
-        print(f"  temperature (unchanged): {t.get_config('temperature')}")
+        print(f"  model (after override): {t.config.get('model')}")
+        print(f"  temperature (unchanged): {t.config.get('temperature')}")
 
         # --- 3. Directives: named standing instructions ---
 
@@ -95,7 +95,7 @@ def main() -> None:
             commit_count["n"] += 1
             print(f"    [middleware] post_commit #{commit_count['n']}")
 
-        handler_id = t.use("post_commit", count_commits)
+        handler_id = t.middleware.add("post_commit", count_commits)
         print(f"  Registered post_commit handler: {handler_id}")
 
         t.user("This commit triggers middleware.")
@@ -104,7 +104,7 @@ def main() -> None:
         print(f"  Commits counted: {commit_count['n']}")
 
         # Remove middleware when done
-        t.remove_middleware(handler_id)
+        t.middleware.remove(handler_id)
         print(f"  Middleware removed: {handler_id}")
 
         # This commit will NOT trigger the handler
@@ -114,7 +114,7 @@ def main() -> None:
         # --- 5. Log: configs and directives are visible commits ---
 
         print("\n=== Log (configs and directives are commits) ===\n")
-        pprint_log(t.log())
+        pprint_log(t.search.log())
 
     # --- 6. File-backed directives and .tract/prompts/ auto-discovery ---
 

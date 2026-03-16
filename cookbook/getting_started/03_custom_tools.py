@@ -1,6 +1,6 @@
 """Custom Tools: Adding domain-specific tools to the agent loop
 
-t.run() gives the agent tract's built-in context tools by default. This
+t.llm.run() gives the agent tract's built-in context tools by default. This
 example shows how to add your own tools alongside them -- the agent gets
 both tract tools (commit, log, status...) and your custom functions.
 
@@ -8,7 +8,7 @@ Two techniques:
   1. tool_names -- select which built-in tract tools the agent gets
   2. tool_handlers + custom tool dicts -- add domain-specific functions
 
-Demonstrates: tool_names, tool_handlers, custom tool dicts, t.run()
+Demonstrates: tool_names, tool_handlers, custom tool dicts, t.llm.run()
 
 Requires: LLM API key (uses Groq provider)
 """
@@ -104,7 +104,7 @@ def main() -> None:
 
         # --- 1. Select a slim subset of built-in tract tools ---
 
-        tract_tools = t.as_tools(
+        tract_tools = t.toolkit.as_tools(
             profile="full",
             tool_names=["commit", "status", "log", "compile"],
             format="openai",
@@ -129,7 +129,7 @@ def main() -> None:
 
         log = StepLogger()
 
-        result = t.run(
+        result = t.llm.run(
             "What is the circumference of a circle with radius 10? "
             "Look up pi, then calculate 2 * pi * 10.",
             max_steps=8,

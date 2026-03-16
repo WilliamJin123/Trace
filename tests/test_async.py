@@ -125,14 +125,14 @@ def sync_only_client():
 @pytest.fixture
 def tract_with_client(mock_client):
     t = Tract.open()
-    t.configure_llm(mock_client)
+    t.config.configure_llm(mock_client)
     return t
 
 
 @pytest.fixture
 def tract_with_sync_client(sync_only_client):
     t = Tract.open()
-    t.configure_llm(sync_only_client)
+    t.config.configure_llm(sync_only_client)
     return t
 
 
@@ -183,7 +183,7 @@ class TestAchat:
     async def test_achat_basic(self, tract_with_client):
         t = tract_with_client
         t.system("You are helpful.")
-        result = await t.achat("Hello")
+        result = await t.llm.achat("Hello")
         assert result.text == "Hello!"
         assert result.prompt == "Hello"
         assert result.usage is not None
@@ -194,15 +194,15 @@ class TestAchat:
         """achat() should produce the same result as chat()."""
         # Sync
         t1 = Tract.open()
-        t1.configure_llm(MockLLMClient())
+        t1.config.configure_llm(MockLLMClient())
         t1.system("You are helpful.")
-        sync_result = t1.chat("Hello")
+        sync_result = t1.llm.chat("Hello")
 
         # Async
         t2 = Tract.open()
-        t2.configure_llm(MockLLMClient())
+        t2.config.configure_llm(MockLLMClient())
         t2.system("You are helpful.")
-        async_result = await t2.achat("Hello")
+        async_result = await t2.llm.achat("Hello")
 
         assert sync_result.text == async_result.text
         assert sync_result.usage == async_result.usage
@@ -212,7 +212,7 @@ class TestAchat:
         """achat() should work with sync-only clients via to_thread fallback."""
         t = tract_with_sync_client
         t.system("You are helpful.")
-        result = await t.achat("Hello")
+        result = await t.llm.achat("Hello")
         assert result.text == "Hello!"
 
 
@@ -224,7 +224,7 @@ class TestAgenerate:
         t = tract_with_client
         t.system("You are helpful.")
         t.user("Hello")
-        result = await t.agenerate()
+        result = await t.llm.agenerate()
         assert result.text == "Hello!"
 
     @pytest.mark.asyncio
@@ -237,7 +237,7 @@ class TestAgenerate:
         ]
         client = MockLLMClient(responses)
         t = Tract.open()
-        t.configure_llm(client)
+        t.config.configure_llm(client)
         t.system("Be helpful.")
         t.user("Question")
 
@@ -246,7 +246,7 @@ class TestAgenerate:
                 return (True, None)
             return (False, "not good enough")
 
-        result = await t.agenerate(validator=validator, max_retries=3)
+        result = await t.llm.agenerate(validator=validator, max_retries=3)
         assert result.text == "good answer"
 
 
@@ -258,9 +258,9 @@ class TestArun:
         """arun() should complete when LLM returns no tool calls."""
         client = MockLLMClient([_make_response("Done!")])
         t = Tract.open()
-        t.configure_llm(client)
+        t.config.configure_llm(client)
         t.system("You are a helpful agent.")
-        result = await t.arun(task="Do something")
+        result = await t.llm.arun(task="Do something")
         assert result.status == "completed"
         assert result.final_response == "Done!"
         assert result.steps == 1
@@ -276,13 +276,13 @@ class TestArun:
         final_response = _make_response("All done.")
         client = MockLLMClient([tool_response, final_response])
         t = Tract.open()
-        t.configure_llm(client)
+        t.config.configure_llm(client)
         t.system("You manage context.")
 
         def check_handler():
             return "ok"
 
-        result = await t.arun(
+        result = await t.llm.arun(
             task="Check status",
             tools=[{
                 "type": "function",
@@ -313,8 +313,8 @@ class TestArun:
             return f"result: {x}"
 
         t = Tract.open()
-        t.configure_llm(client)
-        result = await t.arun(
+        t.config.configure_llm(client)
+        result = await t.llm.arun(
             task="Use tool",
             tools=[{
                 "type": "function",
@@ -337,9 +337,9 @@ class TestArunNewParams:
         """arun(step_budget=100) should not raise TypeError."""
         client = MockLLMClient([_make_response("Done!")])
         t = Tract.open()
-        t.configure_llm(client)
+        t.config.configure_llm(client)
         t.system("You are helpful.")
-        result = await t.arun(task="Do something", step_budget=100)
+        result = await t.llm.arun(task="Do something", step_budget=100)
         assert result.status == "completed"
         assert result.steps == 1
 
@@ -356,10 +356,10 @@ class TestArunNewParams:
         }])
         client = MockLLMClient([tool_response])
         t = Tract.open()
-        t.configure_llm(client)
+        t.config.configure_llm(client)
         t.system("You manage context.")
 
-        result = await t.arun(
+        result = await t.llm.arun(
             task="Keep going",
             max_steps=50,
             step_budget=20,
@@ -388,7 +388,7 @@ class TestArunNewParams:
         final_response = _make_response("Ok, done.")
         client = MockLLMClient([tool_response, final_response])
         t = Tract.open()
-        t.configure_llm(client)
+        t.config.configure_llm(client)
         t.system("You manage context.")
 
         def validator(tool_name, args):
@@ -396,7 +396,7 @@ class TestArunNewParams:
                 return (False, "tool blocked by validator")
             return (True, None)
 
-        result = await t.arun(
+        result = await t.llm.arun(
             task="Do something",
             tool_validator=validator,
             tools=[{
@@ -417,9 +417,9 @@ class TestArunNewParams:
         """arun(auto_compress_threshold=0.8) should not raise TypeError."""
         client = MockLLMClient([_make_response("Done!")])
         t = Tract.open()
-        t.configure_llm(client)
+        t.config.configure_llm(client)
         t.system("You are helpful.")
-        result = await t.arun(
+        result = await t.llm.arun(
             task="Do something",
             auto_compress_threshold=0.8,
         )
@@ -439,7 +439,7 @@ class TestAcompress:
         t.user("Message 2")
         t.assistant("Response 2")
 
-        result = await t.acompress(content="Summary of conversation.")
+        result = await t.compression.acompress(content="Summary of conversation.")
         assert result.compressed_tokens > 0
 
     @pytest.mark.asyncio
@@ -447,14 +447,14 @@ class TestAcompress:
         """acompress with LLM should use async LLM call."""
         client = MockLLMClient([_make_response("Compressed summary.")])
         t = Tract.open()
-        t.configure_llm(client)
+        t.config.configure_llm(client)
         t.system("You are helpful.")
         t.user("Message 1")
         t.assistant("Response 1")
         t.user("Message 2")
         t.assistant("Response 2")
 
-        result = await t.acompress()
+        result = await t.compression.acompress()
         assert result.compressed_tokens > 0
 
 
@@ -466,9 +466,9 @@ class TestArevise:
         """arevise should create an EDIT commit with revised content."""
         client = MockLLMClient([_make_response("Improved text.")])
         t = Tract.open()
-        t.configure_llm(client)
+        t.config.configure_llm(client)
         original = t.assistant("Original text.")
-        result = await t.arevise(original.commit_hash, "Make it better")
+        result = await t.llm.arevise(original.commit_hash, "Make it better")
         assert result.text == "Improved text."
         # The commit should be an EDIT
         assert result.commit_info is not None
@@ -507,7 +507,7 @@ class TestSessionAcollapse:
         client = MockLLMClient([_make_response("Summarized research.")])
         with Session.open() as session:
             parent = session.create_tract(display_name="parent")
-            parent.configure_llm(client)
+            parent.config.configure_llm(client)
             child = session.spawn(parent, purpose="research")
             child.user("Research question")
             child.assistant("Research answer")
@@ -553,7 +553,7 @@ class TestArunLoop:
         }])
         client = MockLLMClient([tool_response])
         t = Tract.open()
-        t.configure_llm(client)
+        t.config.configure_llm(client)
         t.system("You manage context.")
 
         from tract.loop import LoopConfig, arun_loop

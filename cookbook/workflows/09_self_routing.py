@@ -94,7 +94,7 @@ def build_router(stages: dict, *, min_signals: int = 1) -> tuple:
         # Only route on assistant commits (agent-generated content)
         if not ctx.commit or ctx.commit.content_type != "dialogue":
             return
-        content = ctx.tract.get_content(ctx.commit)
+        content = ctx.tract.search.get_content(ctx.commit)
         if not content:
             return
 
@@ -120,7 +120,7 @@ def build_router(stages: dict, *, min_signals: int = 1) -> tuple:
 
             # Apply stage config
             stage_def = stages[best_stage]
-            ctx.tract.configure(stage=best_stage, **stage_def["config"])
+            ctx.tract.config.set(stage=best_stage, **stage_def["config"])
 
             # Update stage directive
             ctx.tract.directive("current-stage", stage_def["directive"])
@@ -154,10 +154,10 @@ def main() -> None:
 
         # Install the routing middleware
         router, route_state = build_router(STAGES)
-        t.use("post_commit", router)
+        t.middleware.add("post_commit", router)
 
         # Initial stage setup
-        t.configure(stage="research", **STAGES["research"]["config"])
+        t.config.set(stage="research", **STAGES["research"]["config"])
         t.directive("current-stage", STAGES["research"]["directive"])
 
         t.system(
@@ -175,7 +175,7 @@ def main() -> None:
         print("=== Running Agent ===\n")
 
         log = StepLogger()
-        result = t.run(
+        result = t.llm.run(
             "Design and implement a simple LRU cache in Python. "
             "Start by researching the approach (what data structures, "
             "what operations, edge cases). Then implement it as a class "
@@ -195,7 +195,7 @@ def main() -> None:
 
         print(f"\n=== Routing Report ===\n")
 
-        final_stage = t.get_config("stage") or "research"
+        final_stage = t.config.get("stage") or "research"
         print(f"  Final stage:   {final_stage}")
         print(f"  Transitions:   {len(route_state['transitions'])}")
         for tr in route_state["transitions"]:
@@ -210,7 +210,7 @@ def main() -> None:
             print(f"  (The agent may not have produced keyword-rich content.)")
 
         print(f"\n  Commit log:")
-        pprint_log(t.log()[-10:])
+        pprint_log(t.search.log()[-10:])
 
         print(f"\n  Compiled context:")
         t.compile().pprint(style="compact")

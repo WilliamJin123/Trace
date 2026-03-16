@@ -94,7 +94,7 @@ def build_quality_gate(required_tag="draft", min_draft_commits=4):
         if ctx.target != "review":
             return
         # Count commits tagged "draft" -- ensures substantive work before review
-        draft_commits = ctx.tract.find(tag=required_tag, limit=50)
+        draft_commits = ctx.tract.search.find(tag=required_tag, limit=50)
         if len(draft_commits) < min_draft_commits:
             raise BlockedError(
                 "pre_transition",
@@ -133,8 +133,8 @@ def main() -> None:
         # Load the research workflow profile -- applies config + directives
         t.load_profile("research")
         print(f"  Loaded 'research' profile")
-        print(f"  Active profile: {t.active_profile.name}")
-        print(f"  Profile stages: {list(t.active_profile.stages.keys())}")
+        print(f"  Active profile: {t.templates.active_profile.name}")
+        print(f"  Profile stages: {list(t.templates.active_profile.stages.keys())}")
 
         # Apply a parameterized directive template for the domain
         t.apply_template(
@@ -162,7 +162,7 @@ def main() -> None:
 
         # Apply the 'ingest' stage from the research profile
         t.apply_stage("ingest")
-        configs = t.get_all_configs()
+        configs = t.config.get_all()
         print(f"  Applied 'ingest' stage config: {configs}")
         print()
 
@@ -182,17 +182,17 @@ def main() -> None:
             "risk", "opportunity", "key-finding", "draft",
         ]
         for name in tag_names:
-            t.register_tag(name)
+            t.tags.register(name)
         print(f"  Registered {len(tag_names)} tags: {tag_names}")
 
         # Attach observability middleware
         metrics, on_post_commit = build_metrics_tracker()
-        tracker_id = t.use("post_commit", on_post_commit)
+        tracker_id = t.middleware.add("post_commit", on_post_commit)
         print(f"  Attached post_commit metrics tracker: {tracker_id}")
 
         # Attach quality gate middleware -- blocks review unless >= 4 draft commits
         gate_fn = build_quality_gate(required_tag="draft", min_draft_commits=4)
-        gate_id = t.use("pre_transition", gate_fn)
+        gate_id = t.middleware.add("pre_transition", gate_fn)
         print(f"  Attached pre_transition quality gate: {gate_id}")
         print()
 
@@ -227,12 +227,12 @@ def main() -> None:
             tags=["market-size", "key-finding"],
         )
         # Pin the market size finding -- it must survive compression
-        t.annotate(
+        t.annotations.set(
             market_response.commit_hash,
             Priority.PINNED,
             reason="Core market data -- must survive compression",
         )
-        t.tag(market_response.commit_hash, "market-size")
+        t.tags.add(market_response.commit_hash, "market-size")
         print(f"  Market research committed and pinned [{market_response.commit_hash[:8]}]")
 
         # Competitor research
@@ -250,7 +250,7 @@ def main() -> None:
             metadata={"competitors_analyzed": 5, "confidence": "medium"},
             tags=["competitor", "pricing"],
         )
-        t.annotate(
+        t.annotations.set(
             competitor_commit.commit_hash,
             Priority.IMPORTANT,
             reason="Competitive landscape reference",
@@ -270,11 +270,11 @@ def main() -> None:
             metadata={"survey_size": 200, "source": "DevOps Pulse 2025"},
             tags=["pain-point", "key-finding"],
         )
-        t.annotate(pain_commit.commit_hash, Priority.PINNED, reason="Core customer pain data")
+        t.annotations.set(pain_commit.commit_hash, Priority.PINNED, reason="Core customer pain data")
         print(f"  Pain points committed and pinned [{pain_commit.commit_hash[:8]}]")
 
         # Check pinned commits
-        pinned = t.pinned()
+        pinned = t.search.pinned()
         print(f"  Pinned commits: {len(pinned)} (these survive compression)")
         print()
 
@@ -292,10 +292,10 @@ def main() -> None:
         main_head = t.head
 
         # --- Optimistic analysis branch ---
-        t.branch("optimistic")
+        t.branches.create("optimistic")
         print(f"  Created 'optimistic' branch, switched to it")
 
-        t.configure(temperature=0.7, analysis_bias="bullish")
+        t.config.set(temperature=0.7, analysis_bias="bullish")
         t.assistant(
             "OPTIMISTIC ANALYSIS:\n"
             "The AI code review market has massive tailwinds. Developer "
@@ -312,11 +312,11 @@ def main() -> None:
         print(f"  Optimistic analysis committed on 'optimistic' branch")
 
         # --- Pessimistic analysis branch ---
-        t.switch("main")
-        t.branch("pessimistic")
+        t.branches.switch("main")
+        t.branches.create("pessimistic")
         print(f"  Created 'pessimistic' branch, switched to it")
 
-        t.configure(temperature=0.2, analysis_bias="bearish")
+        t.config.set(temperature=0.2, analysis_bias="bearish")
         t.assistant(
             "PESSIMISTIC ANALYSIS:\n"
             "GitHub Copilot's bundling strategy is an existential threat. "
@@ -343,13 +343,13 @@ def main() -> None:
         print()
 
         # List all branches
-        branches = t.list_branches()
+        branches = t.branches.list()
         print(f"  Branches: {[b.name for b in branches]}")
         current = [b for b in branches if b.is_current][0]
         print(f"  Currently on: {current.name}")
 
         # Compare optimistic vs pessimistic
-        diff_result = t.compare("optimistic", "pessimistic")
+        diff_result = t.search.compare("optimistic", "pessimistic")
         print(f"  Cross-branch diff (optimistic vs pessimistic):")
         diff_result.pprint(stat_only=True)
         print()
@@ -365,7 +365,7 @@ def main() -> None:
         print()
 
         # Switch to main and merge optimistic (has the SAM/revenue projections)
-        t.switch("main")
+        t.branches.switch("main")
         merge_result = t.merge("optimistic", strategy="theirs")
         print(f"  Merged 'optimistic' into main: {merge_result.merge_type}")
 
@@ -393,7 +393,7 @@ def main() -> None:
         print(f"  Before compression: {messages_before} messages, ~{tokens_before} tokens")
 
         # Compress -- pinned commits (market data, pain points) survive
-        compress_result = t.compress(
+        compress_result = t.compression.compress(
             content=(
                 "[Research Summary] AI Code Review Market Analysis:\n"
                 "- Market: $1.2B total, $340M AI segment, 28% CAGR\n"
@@ -437,7 +437,7 @@ def main() -> None:
 
         # Apply the synthesize stage from the research profile
         t.apply_stage("synthesize")
-        configs = t.get_all_configs()
+        configs = t.config.get_all()
         print(f"  Applied 'synthesize' stage: temp={configs.get('temperature')}, "
               f"strategy={configs.get('compile_strategy')}")
         print()
@@ -453,22 +453,22 @@ def main() -> None:
         print()
 
         # Find by content substring across the current branch context
-        market_hits = t.find(content="$340M", limit=10)
+        market_hits = t.search.find(content="$340M", limit=10)
         print(f"  Found {len(market_hits)} commits mentioning '$340M' (market size)")
         for hit in market_hits:
             preview = (hit.message or hit.content_type)[:50]
             print(f"    [{hit.commit_hash[:8]}] {preview}")
 
         # Find by metadata key (high-confidence research)
-        high_conf = t.find(metadata_key="confidence", metadata_value="high", limit=5)
+        high_conf = t.search.find(metadata_key="confidence", metadata_value="high", limit=5)
         print(f"  Found {len(high_conf)} high-confidence commits")
 
         # Find by content type -- look for all instruction commits
-        instructions = t.find(content_type="instruction", limit=10)
+        instructions = t.search.find(content_type="instruction", limit=10)
         print(f"  Found {len(instructions)} instruction commits (directives, handoffs)")
 
         # Search the optimistic branch for opportunity findings
-        opp_hits = t.find(tag="opportunity", branch="optimistic", limit=5)
+        opp_hits = t.search.find(tag="opportunity", branch="optimistic", limit=5)
         print(f"  Found {len(opp_hits)} 'opportunity' commits on optimistic branch")
         print()
 
@@ -555,8 +555,8 @@ def main() -> None:
 
         # Demonstrate checkpoint-and-rollback: save state, try something risky
         checkpoint = t.head
-        t.register_tag("checkpoint")
-        t.tag(checkpoint, "checkpoint")
+        t.tags.register("checkpoint")
+        t.tags.add(checkpoint, "checkpoint")
         print(f"  Checkpoint saved at [{checkpoint[:8]}]")
 
         # Simulate a bad edit that we want to undo
@@ -569,8 +569,8 @@ def main() -> None:
         print(f"  Bad pivot committed [{bad_commit.commit_hash[:8]}] -- will rollback")
 
         # Rollback to checkpoint
-        t.reset(checkpoint)
-        commits_after_reset = len(t.log(limit=50))
+        t.branches.reset(checkpoint)
+        commits_after_reset = len(t.search.log(limit=50))
         print(f"  Reset to checkpoint [{checkpoint[:8]}]")
         print(f"  Commits visible after reset: {commits_after_reset}")
 
@@ -604,10 +604,10 @@ def main() -> None:
             print(f"  Successfully transitioned to 'review'")
         except BlockedError:
             # If still blocked, temporarily remove the gate for demonstration
-            t.remove_middleware(gate_id)
+            t.middleware.remove(gate_id)
             t.transition("review")
             print(f"  Transitioned to 'review' (gate removed for demo)")
-            gate_id = t.use("pre_transition", gate_fn)
+            gate_id = t.middleware.add("pre_transition", gate_fn)
 
         # Apply validate stage for review
         t.apply_stage("validate")
@@ -640,7 +640,7 @@ def main() -> None:
         print(f"  Review committed [{review_commit.commit_hash[:8]}]")
 
         # Show a sequential diff
-        diff = t.diff()
+        diff = t.search.diff()
         print(f"  Diff (previous -> HEAD):")
         diff.pprint(stat_only=True)
         print()
@@ -658,7 +658,7 @@ def main() -> None:
         print()
 
         # --- Status ---
-        status = t.status()
+        status = t.search.status()
         print(f"  Status:")
         print(f"    HEAD:          [{(status.head_hash or 'none')[:8]}]")
         print(f"    Branch:        {status.branch_name}")
@@ -667,12 +667,12 @@ def main() -> None:
         print()
 
         # --- Health check ---
-        health = t.health()
+        health = t.search.health()
         print(f"  Health: {health.summary()}")
         print()
 
         # --- Branches ---
-        branches = t.list_branches()
+        branches = t.branches.list()
         print(f"  Branches ({len(branches)}):")
         for b in branches:
             marker = " *" if b.is_current else "  "
@@ -680,14 +680,14 @@ def main() -> None:
         print()
 
         # --- Tags ---
-        tags = t.list_tags()
+        tags = t.tags.list()
         print(f"  Tag Registry ({len(tags)} tags):")
         for entry in tags:
             print(f"    {entry['name']:20s} count={entry['count']}")
         print()
 
         # --- Pinned commits ---
-        pinned = t.pinned()
+        pinned = t.search.pinned()
         print(f"  Pinned commits ({len(pinned)}):")
         for p in pinned:
             preview = (p.message or p.content_type)[:40]
@@ -695,7 +695,7 @@ def main() -> None:
         print()
 
         # --- Configs ---
-        configs = t.get_all_configs()
+        configs = t.config.get_all()
         print(f"  Active configs:")
         for k, v in sorted(configs.items()):
             print(f"    {k}: {v}")
@@ -703,7 +703,7 @@ def main() -> None:
 
         # --- Commit log ---
         print(f"  Commit log (last 15):")
-        pprint_log(t.log()[-15:])
+        pprint_log(t.search.log()[-15:])
         print()
 
         # --- Middleware metrics ---
@@ -724,8 +724,8 @@ def main() -> None:
         print()
 
         # --- Clean up middleware ---
-        t.remove_middleware(tracker_id)
-        t.remove_middleware(gate_id)
+        t.middleware.remove(tracker_id)
+        t.middleware.remove(gate_id)
 
     # =================================================================
     # Feature Coverage Summary

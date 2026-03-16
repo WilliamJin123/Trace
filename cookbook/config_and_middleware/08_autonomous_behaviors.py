@@ -43,21 +43,21 @@ def main() -> None:
 
         def auto_skip(ctx: MiddlewareContext):
             if ctx.commit and ctx.commit.content_type in skip_types:
-                ctx.tract.annotate(ctx.commit.commit_hash, Priority.SKIP)
+                ctx.tract.annotations.set(ctx.commit.commit_hash, Priority.SKIP)
 
-        t.use("post_commit", auto_skip)
+        t.middleware.add("post_commit", auto_skip)
 
         t.system("You are a helpful assistant.")
-        t.configure(temperature=0.5)        # config commit -- auto-skipped
+        t.config.set(temperature=0.5)        # config commit -- auto-skipped
         t.reasoning("Let me think...")       # reasoning -- auto-skipped
         t.user("What is Python?")
         t.assistant("A programming language.")
 
         compiled = t.compile()
-        total = len(t.log())
-        skipped = len(t.skipped())
+        total = len(t.search.log())
+        skipped = len(t.search.skipped())
         print(f"  Commits made:")
-        pprint_log(t.log())
+        pprint_log(t.search.log())
         print()
         print(f"\n  Compiled context ({compiled.commit_count} of {total} commits):")
         compiled.pprint(style="compact")
@@ -69,7 +69,7 @@ def main() -> None:
     # =================================================================
     # After N commits accumulate, compress older content to keep
     # context lean. The closure tracks state across invocations.
-    # In production, replace the print with ctx.tract.compress().
+    # In production, replace the print with ctx.tract.compression.compress().
 
     print("\n=== Pattern 2: Commit-Count Compression Trigger ===\n")
 
@@ -82,19 +82,19 @@ def main() -> None:
             threshold = 6
             if compress_state["commit_count"] >= threshold:
                 # In production with a configured LLM:
-                # ctx.tract.compress(strategy="sliding_window", window_size=3)
+                # ctx.tract.compression.compress(strategy="sliding_window", window_size=3)
                 compress_state["triggered"] = True
                 compress_state["commit_count"] = 0  # reset counter
                 print(f"    >> Compression triggered at {threshold} commits")
 
-        t.use("post_commit", auto_compress_trigger)
+        t.middleware.add("post_commit", auto_compress_trigger)
 
         t.system("You are a research analyst.")
         for i in range(7):
             t.user(f"Finding #{i}: data point about topic {i}")
             t.assistant(f"Noted finding #{i}.")
 
-        print(f"  Built up {len(t.log())} commits (7 user + 7 assistant + 1 system)")
+        print(f"  Built up {len(t.search.log())} commits (7 user + 7 assistant + 1 system)")
         print(f"  Trigger fired: {compress_state['triggered']}")
         print(f"  (In production, compress() would summarize older commits)")
         assert compress_state["triggered"], "Should have triggered"
@@ -120,23 +120,23 @@ def main() -> None:
             if not ctx.commit:
                 return
             text = (ctx.commit.message or "").lower()
-            content = str(ctx.tract.get_content(ctx.commit) or "").lower()
+            content = str(ctx.tract.search.get_content(ctx.commit) or "").lower()
             combined = text + " " + content
 
-            current_stage = ctx.tract.get_config("stage") or "research"
+            current_stage = ctx.tract.config.get("stage") or "research"
             for target, keywords in routes.items():
                 if target == current_stage:
                     continue
                 if any(kw in combined for kw in keywords):
-                    ctx.tract.configure(stage=target)
+                    ctx.tract.config.set(stage=target)
                     route_state["transitions"].append(
                         f"{current_stage} -> {target}"
                     )
                     break
 
-        t.use("post_commit", keyword_router)
+        t.middleware.add("post_commit", keyword_router)
 
-        t.configure(stage="research")
+        t.config.set(stage="research")
         t.system("You are a software engineer.")
 
         print("  [research stage]")
@@ -150,7 +150,7 @@ def main() -> None:
         print('    user:      "Now implement a Stack class with push and pop."')
         print(f"    >> routed: {route_state['transitions'][-1]}")
 
-        stage = t.get_config("stage")
+        stage = t.config.get("stage")
         print(f"\n  [implementation stage]")
         t.assistant("Here's the implementation.")
         print('    assistant: "Here\'s the implementation."')
@@ -160,7 +160,7 @@ def main() -> None:
         print('    user:      "Now write tests to verify the Stack works."')
         print(f"    >> routed: {route_state['transitions'][-1]}")
 
-        stage = t.get_config("stage")
+        stage = t.config.get("stage")
         print(f"\n  [validation stage]")
         print(f"  All transitions: {route_state['transitions']}")
         assert stage == "validation"
@@ -189,16 +189,16 @@ def main() -> None:
             if is_error:
                 error_state["consecutive_errors"] += 1
                 if error_state["consecutive_errors"] >= 2:
-                    ctx.tract.configure(temperature=0.1)
+                    ctx.tract.config.set(temperature=0.1)
                     error_state["adjustments"].append("lowered temp to 0.1")
             else:
                 if error_state["consecutive_errors"] >= 2:
-                    ctx.tract.configure(temperature=0.7)
+                    ctx.tract.config.set(temperature=0.7)
                     error_state["adjustments"].append("restored temp to 0.7")
                 error_state["consecutive_errors"] = 0
 
-        t.use("post_commit", adaptive_config)
-        t.configure(temperature=0.7)
+        t.middleware.add("post_commit", adaptive_config)
+        t.config.set(temperature=0.7)
 
         t.system("You are a deployment agent.")
 
@@ -217,7 +217,7 @@ def main() -> None:
         print(f"    consecutive errors: {error_state['consecutive_errors']}")
 
         # After 2 errors, temperature should have dropped
-        temp = t.get_config("temperature")
+        temp = t.config.get("temperature")
         print(f"    >> temperature adapted: 0.7 -> {temp}")
         assert temp == 0.1, f"Expected 0.1, got {temp}"
 
@@ -228,7 +228,7 @@ def main() -> None:
         t.tool_result("c3", "deploy", "Deployed successfully.")
         print('  deploy() -> "Deployed successfully." [OK]')
 
-        temp = t.get_config("temperature")
+        temp = t.config.get("temperature")
         print(f"    >> temperature restored: 0.1 -> {temp}")
         assert temp == 0.7, f"Expected 0.7, got {temp}"
 
@@ -253,12 +253,12 @@ def main() -> None:
             tool_state["result_tokens"] += ctx.commit.token_count
             if tool_state["result_tokens"] > 20:
                 # In production with a configured LLM:
-                # ctx.tract.compress_tool_calls()
+                # ctx.tract.compression.compress_tool_calls()
                 tool_state["compaction_needed"] = True
                 tool_state["result_tokens"] = 0  # reset after compaction
                 print(f"    >> Tool compaction triggered")
 
-        t.use("post_commit", tool_budget_guard)
+        t.middleware.add("post_commit", tool_budget_guard)
 
         t.system("You are a file search agent.")
         # Simulate a sequence of tool calls with verbose results
@@ -279,12 +279,12 @@ def main() -> None:
     # All patterns are independent middleware handlers. Compose them
     # by registering multiple handlers on the same event:
     #
-    #   t.use("post_commit", auto_skip)
-    #   t.use("post_commit", keyword_router)
-    #   t.use("post_commit", adaptive_config)
+    #   t.middleware.add("post_commit", auto_skip)
+    #   t.middleware.add("post_commit", keyword_router)
+    #   t.middleware.add("post_commit", adaptive_config)
     #
     # Handlers fire in registration order. Each sees the same
-    # MiddlewareContext. Use t.remove_middleware(id) to disable.
+    # MiddlewareContext. Use t.middleware.remove(id) to disable.
 
     print("\n=== Summary ===\n")
     print("  Pattern 1: auto_skip        post_commit    -> annotate(SKIP)")

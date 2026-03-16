@@ -255,7 +255,7 @@ class TestRunLoop:
         result = run_loop(tract_instance, task="Do something", llm_client=client)
         assert result.status == "completed"
         # Verify the task was committed (check log)
-        entries = tract_instance.log(limit=10)
+        entries = tract_instance.search.log(limit=10)
         # Should have: user message (task) + assistant message (OK)
         content_types = [e.content_type for e in entries]
         assert "dialogue" in content_types
@@ -371,7 +371,7 @@ class TestRunLoop:
         result = run_loop(tract_instance, task="Bad tool", llm_client=client, config=config)
         assert result.status == "completed"
         assert result.tool_calls == 1
-        entries = tract_instance.log(limit=20)
+        entries = tract_instance.search.log(limit=20)
         messages = [e.message for e in entries if e.message and "tool error" in e.message]
         assert len(messages) >= 1
 
@@ -385,7 +385,7 @@ class TestRunLoop:
         assert result.status == "completed"
         assert result.tool_calls == 1
         # With transparent_meta_tools=True (default), error is NOT in the DAG
-        entries = tract_instance.log(limit=20)
+        entries = tract_instance.search.log(limit=20)
         messages = [e.message for e in entries if e.message and "tool error" in e.message]
         assert len(messages) == 0
 
@@ -408,7 +408,7 @@ class TestRunLoop:
         assert result.status == "completed"
         assert result.tool_calls == 1
 
-        entries = tract_instance.log(limit=20)
+        entries = tract_instance.search.log(limit=20)
         messages = [e.message for e in entries if e.message]
 
         # The committed CONTENT ("research finding") IS in the DAG
@@ -434,7 +434,7 @@ class TestRunLoop:
         result = run_loop(tract_instance, task="Research", llm_client=client, config=config)
         assert result.status == "completed"
 
-        entries = tract_instance.log(limit=20)
+        entries = tract_instance.search.log(limit=20)
         messages = [e.message for e in entries if e.message]
         # With transparency off, tool call/result messages ARE in the DAG
         assert any("call commit" in m for m in messages)
@@ -455,7 +455,7 @@ class TestRunLoop:
             tool_handlers={"web_search": lambda query: f"Results for: {query}"},
         )
         assert result.status == "completed"
-        entries = tract_instance.log(limit=20)
+        entries = tract_instance.search.log(limit=20)
         messages = [e.message for e in entries if e.message]
         # Domain tool results ARE in the DAG
         assert any("tool result" in m for m in messages)
@@ -520,35 +520,35 @@ class TestRunLoop:
 
 class TestTractRunFacade:
     def test_run_through_facade(self, tract_instance):
-        """t.run(task='...') delegates to run_loop."""
+        """t.llm.run(task='...') delegates to run_loop."""
         # Inject a mock LLM client
         tract_instance._llm_state.llm_client = MockLLMClient([_make_response("Done via facade.")])
-        result = tract_instance.run(task="Facade test")
+        result = tract_instance.llm.run(task="Facade test")
         assert result.status == "completed"
         assert result.final_response == "Done via facade."
 
     def test_run_with_custom_client(self, tract_instance):
-        """t.run() accepts llm_client override."""
+        """t.llm.run() accepts llm_client override."""
         client = MockLLMClient([_make_response("Custom client.")])
-        result = tract_instance.run(task="Custom", llm_client=client)
+        result = tract_instance.llm.run(task="Custom", llm_client=client)
         assert result.status == "completed"
         assert result.final_response == "Custom client."
 
     def test_run_max_steps(self, tract_instance):
-        """t.run(max_steps=...) is respected."""
+        """t.llm.run(max_steps=...) is respected."""
         responses = [
             _make_response(f"S{i}", tool_calls=[{"name": "status", "arguments": {}}])
             for i in range(10)
         ]
         client = MockLLMClient(responses)
-        result = tract_instance.run(task="Limited", max_steps=2, llm_client=client)
+        result = tract_instance.llm.run(task="Limited", max_steps=2, llm_client=client)
         assert result.status == "max_steps"
         assert result.steps == 2
 
     def test_run_system_prompt(self, tract_instance):
-        """t.run(system_prompt=...) is passed through."""
+        """t.llm.run(system_prompt=...) is passed through."""
         client = MockLLMClient([_make_response("Sys prompted.")])
-        tract_instance.run(task="SP", system_prompt="Be concise.", llm_client=client)
+        tract_instance.llm.run(task="SP", system_prompt="Be concise.", llm_client=client)
         call_messages = client.calls[0]["messages"]
         assert call_messages[0]["role"] == "system"
         assert call_messages[0]["content"] == "Be concise."
@@ -562,7 +562,7 @@ class TestTractRunFacade:
 class TestLoopWithMiddleware:
     def test_config_from_configure(self, tract_instance):
         """Config commits that set compile_strategy are respected."""
-        tract_instance.configure(compile_strategy="adaptive")
+        tract_instance.config.set(compile_strategy="adaptive")
         client = MockLLMClient([_make_response("Config-configured.")])
         result = run_loop(tract_instance, llm_client=client)
         assert result.status == "completed"
@@ -571,7 +571,7 @@ class TestLoopWithMiddleware:
         """Middleware can fire during loop execution (on post_commit events)."""
         # Register a post_commit handler that sets a flag
         seen = []
-        tract_instance.use("post_commit", lambda ctx: seen.append(True))
+        tract_instance.middleware.add("post_commit", lambda ctx: seen.append(True))
         client = MockLLMClient([
             _make_response("Committing something", tool_calls=[{"name": "status", "arguments": {}}]),
             _make_response("Done with middleware."),
@@ -587,7 +587,7 @@ class TestLoopWithMiddleware:
         def block_compile(ctx):
             raise BlockedError("pre_compile", "Context window full")
 
-        tract_instance.use("pre_compile", block_compile)
+        tract_instance.middleware.add("pre_compile", block_compile)
         client = MockLLMClient([_make_response("Should not reach here.")])
         result = run_loop(tract_instance, task="Blocked loop", llm_client=client)
         assert result.status == "blocked"
@@ -611,7 +611,7 @@ class TestMiddlewareBlocking:
         def block_compile(ctx):
             raise BlockedError("pre_compile", "Budget exceeded")
 
-        tract_instance.use("pre_compile", block_compile)
+        tract_instance.middleware.add("pre_compile", block_compile)
         with pytest.raises(BlockedError, match="pre_compile blocked"):
             tract_instance.compile()
 
@@ -624,7 +624,7 @@ class TestMiddlewareBlocking:
     def test_commit_fires_post_commit_middleware(self, tract_instance):
         """Commit fires post_commit middleware after persist (informational)."""
         seen = []
-        tract_instance.use("post_commit", lambda ctx: seen.append(True))
+        tract_instance.middleware.add("post_commit", lambda ctx: seen.append(True))
         # This should succeed -- post_commit middleware is informational
         info = tract_instance.system("After middleware")
         assert info.commit_hash
@@ -643,9 +643,9 @@ class TestMiddlewareBlocking:
         def block_compress(ctx):
             raise BlockedError("pre_compress", "Compression disabled")
 
-        t.use("pre_compress", block_compress)
+        t.middleware.add("pre_compress", block_compress)
         with pytest.raises(BlockedError, match="pre_compress blocked"):
-            t.compress(content="manual summary")
+            t.compression.compress(content="manual summary")
 
     def test_gc_blocked(self, tmp_path):
         """Block middleware on pre_gc raises BlockedError."""
@@ -658,9 +658,9 @@ class TestMiddlewareBlocking:
         def block_gc(ctx):
             raise BlockedError("pre_gc", "GC disabled")
 
-        t.use("pre_gc", block_gc)
+        t.middleware.add("pre_gc", block_gc)
         with pytest.raises(BlockedError, match="pre_gc blocked"):
-            t.gc()
+            t.compression.gc()
 
     def test_merge_blocked(self, tmp_path):
         """Block middleware on pre_merge raises BlockedError."""
@@ -669,13 +669,13 @@ class TestMiddlewareBlocking:
         db = str(tmp_path / "block_merge.db")
         t = __import__("tract").Tract.open(db)
         t.system("Main content")
-        t.branch("feature", switch=True)
+        t.branches.create("feature", switch=True)
         t.system("Feature content")
-        t.switch("main")
+        t.branches.switch("main")
 
         def block_merge(ctx):
             raise BlockedError("pre_merge", "Merge frozen")
 
-        t.use("pre_merge", block_merge)
+        t.middleware.add("pre_merge", block_merge)
         with pytest.raises(BlockedError, match="pre_merge blocked"):
             t.merge("feature")

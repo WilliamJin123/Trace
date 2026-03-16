@@ -70,7 +70,7 @@ class TestSpawn:
 
         # Parent should have a new commit
         assert parent.head != head_before
-        log = parent.log(limit=1)
+        log = parent.search.log(limit=1)
         assert len(log) == 1
         assert "spawn: data analysis" in log[0].message
 
@@ -81,8 +81,8 @@ class TestSpawn:
         session, parent = _create_session_with_parent(tmp_path)
         child = session.spawn(parent, purpose="summarize docs", display_name="summarizer")
 
-        # Check spawn pointer via parent.children()
-        children = parent.children()
+        # Check spawn pointer via parent.spawn.children()
+        children = parent.spawn.children()
         assert len(children) == 1
         info = children[0]
         assert isinstance(info, SpawnInfo)
@@ -148,7 +148,7 @@ class TestSpawn:
         child1 = session.spawn(parent, purpose="task1", display_name="worker-1")
         child2 = session.spawn(parent, purpose="task2")
 
-        children = parent.children()
+        children = parent.spawn.children()
         names = {c.child_tract_id: c.display_name for c in children}
         assert names[child1.tract_id] == "worker-1"
         assert names[child2.tract_id] is None
@@ -169,16 +169,16 @@ class TestSpawn:
         c = session.spawn(b, purpose="subtask-C")
 
         # Check parent chain
-        assert c.parent().parent_tract_id == b.tract_id
-        assert b.parent().parent_tract_id == a.tract_id
-        assert a.parent() is None
+        assert c.spawn.parent().parent_tract_id == b.tract_id
+        assert b.spawn.parent().parent_tract_id == a.tract_id
+        assert a.spawn.parent() is None
 
         # Check children
-        assert len(a.children()) == 1
-        assert a.children()[0].child_tract_id == b.tract_id
-        assert len(b.children()) == 1
-        assert b.children()[0].child_tract_id == c.tract_id
-        assert len(c.children()) == 0
+        assert len(a.spawn.children()) == 1
+        assert a.spawn.children()[0].child_tract_id == b.tract_id
+        assert len(b.spawn.children()) == 1
+        assert b.spawn.children()[0].child_tract_id == c.tract_id
+        assert len(c.spawn.children()) == 0
 
         session.close()
 
@@ -188,16 +188,16 @@ class TestSpawn:
         child = session.spawn(parent, purpose="test task")
 
         # Parent has no parent
-        assert parent.parent() is None
+        assert parent.spawn.parent() is None
 
         # Child has parent
-        info = child.parent()
+        info = child.spawn.parent()
         assert info is not None
         assert info.parent_tract_id == parent.tract_id
         assert info.purpose == "test task"
 
         # Parent has one child
-        children = parent.children()
+        children = parent.spawn.children()
         assert len(children) == 1
         assert children[0].child_tract_id == child.tract_id
 
@@ -217,8 +217,8 @@ class TestSpawn:
         )
 
         # Profile should be loaded — active_profile set
-        assert child.active_profile is not None
-        assert child.active_profile.name == "coding"
+        assert child.templates.active_profile is not None
+        assert child.templates.active_profile.name == "coding"
         # Profile directives should be committed
         compiled = child.compile()
         # At least the inherited snapshot + profile directives
@@ -237,8 +237,8 @@ class TestSpawn:
         )
 
         # Stage config applies — implement stage sets temperature=0.2
-        assert child.get_config("temperature") == 0.2
-        assert child.get_config("compile_strategy") == "messages"
+        assert child.config.get("temperature") == 0.2
+        assert child.config.get("compile_strategy") == "messages"
 
         session.close()
 
@@ -270,8 +270,8 @@ class TestSpawn:
             configure={"temperature": 0.1, "analyst_role": "performance"},
         )
 
-        assert child.get_config("temperature") == 0.1
-        assert child.get_config("analyst_role") == "performance"
+        assert child.config.get("temperature") == 0.1
+        assert child.config.get("analyst_role") == "performance"
 
         session.close()
 
@@ -304,9 +304,9 @@ class TestSpawn:
         )
 
         # Explicit temperature (0.9) should win over implement stage default (0.2)
-        assert child.get_config("temperature") == 0.9
+        assert child.config.get("temperature") == 0.9
         # compile_strategy from stage still applies (not overridden)
-        assert child.get_config("compile_strategy") == "messages"
+        assert child.config.get("compile_strategy") == "messages"
 
         session.close()
 
@@ -334,12 +334,12 @@ class TestSpawn:
             configure={"domain": "machine-learning"},
         )
 
-        assert child.active_profile is not None
-        assert child.active_profile.name == "research"
+        assert child.templates.active_profile is not None
+        assert child.templates.active_profile.name == "research"
         # ingest stage sets temperature=0.3
-        assert child.get_config("temperature") == 0.3
+        assert child.config.get("temperature") == 0.3
         # explicit configure applied last
-        assert child.get_config("domain") == "machine-learning"
+        assert child.config.get("domain") == "machine-learning"
         compiled = child.compile()
         text = " ".join(m.content for m in compiled.messages)
         assert "primary sources" in text
@@ -405,7 +405,7 @@ class TestCollapse:
         )
 
         # Check the parent's latest commit
-        log = parent.log(limit=1)
+        log = parent.search.log(limit=1)
         assert len(log) == 1
         assert "collapse: analysis" in log[0].message
         assert log[0].commit_hash == result.parent_commit_hash
@@ -424,7 +424,7 @@ class TestCollapse:
             child, into=parent, content="Summary", auto_commit=True
         )
 
-        commit = parent.get_commit(result.parent_commit_hash)
+        commit = parent.search.get_commit(result.parent_commit_hash)
         assert commit is not None
         assert commit.metadata["collapse_source_tract_id"] == child.tract_id
         assert commit.metadata["collapse_source_head"] == child_head
@@ -533,7 +533,7 @@ class TestInheritanceDetails:
         child = session.spawn(parent, purpose="snapshot test")
 
         # Head snapshot produces exactly one commit
-        log = child.log(limit=10)
+        log = child.search.log(limit=10)
         assert len(log) == 1
         assert log[0].content_type == "instruction"
 
@@ -547,15 +547,15 @@ class TestInheritanceDetails:
         session = Session.open(db_path)
         parent = session.create_tract()
         info = parent.commit(InstructionContent(text="important"))
-        parent.annotate(info.commit_hash, Priority.PINNED, reason="key")
+        parent.annotations.set(info.commit_hash, Priority.PINNED, reason="key")
 
         child = session.spawn(parent, purpose="clone", inheritance="full_clone")
 
         # Child should have the commit with an annotation
-        child_log = child.log(limit=10)
+        child_log = child.search.log(limit=10)
         assert len(child_log) >= 1
         # The cloned commit should have a PINNED annotation
-        child_annotations = child.get_annotations(child_log[-1].commit_hash)
+        child_annotations = child.annotations.get(child_log[-1].commit_hash)
         # There will be 2: the auto-annotation (instruction=pinned) + the explicit PINNED
         pinned = [a for a in child_annotations if a.priority == Priority.PINNED]
         assert len(pinned) >= 1

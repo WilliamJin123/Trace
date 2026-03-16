@@ -5,7 +5,7 @@ The proposer commits an implementation plan, the critic tears it apart on a
 separate branch, the defender evaluates which critiques hold up, and the reviser
 incorporates surviving feedback into a final version.
 
-Uses separate t.run() calls per role so each agent has its own perspective
+Uses separate t.llm.run() calls per role so each agent has its own perspective
 and can't self-censor. Branching isolates each viewpoint; compare() and merge()
 reconcile them. Full conversations are printed after each stage so you can
 read exactly what each agent said.
@@ -16,7 +16,7 @@ Stages:
   defend   -- independent agent pushes back on overblown critiques
   revise   -- incorporate surviving critiques into final version
 
-Demonstrates: multi-agent perspectives via separate t.run() calls, branching
+Demonstrates: multi-agent perspectives via separate t.llm.run() calls, branching
               for isolated viewpoints, compare() for cross-branch diff, merge()
               to reconcile, directives for role-specific behavior, middleware
               gates, config-per-stage (high temp for critique, low for defense),
@@ -40,7 +40,7 @@ def print_conversation(t: Tract, label: str) -> None:
     """Compile current branch and print the full chat transcript."""
     print(f"\n{'=' * 60}")
     print(f"  FULL CONVERSATION: {label}")
-    print(f"  branch={t.current_branch}  commits={len(t.log())}")
+    print(f"  branch={t.current_branch}  commits={len(t.search.log())}")
     print(f"{'=' * 60}\n")
     t.compile().pprint(style="chat")
     print()
@@ -62,7 +62,7 @@ def main() -> None:
         # =============================================================
 
         for tag in ["flaw", "risk", "nitpick", "valid", "dismissed", "revised"]:
-            t.register_tag(tag)
+            t.tags.register(tag)
 
         # =============================================================
         # Stage 1: PROPOSE -- seed the original plan on main
@@ -70,7 +70,7 @@ def main() -> None:
 
         print("=== Stage 1: PROPOSE ===\n")
 
-        t.configure(stage="propose", temperature=0.5)
+        t.config.set(stage="propose", temperature=0.5)
 
         t.system(
             "You are a senior engineer. The conversation contains a system "
@@ -108,7 +108,7 @@ def main() -> None:
             message="proposal: implementation plan",
         )
 
-        proposal_log = t.log()
+        proposal_log = t.search.log()
         print(f"  Seeded {len(proposal_log)} commits on main")
         print_conversation(t, "PROPOSAL (main)")
 
@@ -118,9 +118,9 @@ def main() -> None:
 
         print("=== Stage 2: CRITIQUE ===\n")
 
-        t.branch("critique")
-        t.switch("critique")
-        t.configure(stage="critique", temperature=0.8)
+        t.branches.create("critique")
+        t.branches.switch("critique")
+        t.config.set(stage="critique", temperature=0.8)
 
         t.directive(
             "critic-role",
@@ -140,7 +140,7 @@ def main() -> None:
         def critique_completion_gate(ctx: MiddlewareContext):
             if ctx.target != "main":
                 return
-            findings = [c for c in ctx.tract.log() if c.tags and "flaw" in c.tags]
+            findings = [c for c in ctx.tract.search.log() if c.tags and "flaw" in c.tags]
             if len(findings) < findings_needed:
                 raise BlockedError(
                     "pre_transition",
@@ -148,11 +148,11 @@ def main() -> None:
                      f"(have {len(findings)})"],
                 )
 
-        t.use("pre_transition", critique_completion_gate)
+        t.middleware.add("pre_transition", critique_completion_gate)
 
         print("  Running critic agent...\n")
 
-        critic_result = t.run(
+        critic_result = t.llm.run(
             "Review the notification service proposal above. Find every flaw, "
             "risk, and questionable decision. Focus on:\n"
             "- Single points of failure\n"
@@ -168,7 +168,7 @@ def main() -> None:
             tool_names=["commit", "tag", "get_config", "status", "log"],
         )
 
-        critique_log = t.log()
+        critique_log = t.search.log()
         flaw_commits = [c for c in critique_log if c.tags and "flaw" in c.tags]
         print(f"\n  Critic: {len(critique_log)} commits, "
               f"{len(flaw_commits)} tagged as flaws")
@@ -183,21 +183,21 @@ def main() -> None:
 
         print("=== Stage 3: DEFEND ===\n")
 
-        t.switch("main")
-        t.branch("defense")
-        t.switch("defense")
-        t.configure(stage="defend", temperature=0.3)
+        t.branches.switch("main")
+        t.branches.create("defense")
+        t.branches.switch("defense")
+        t.config.set(stage="defend", temperature=0.3)
 
         # Compile the critique branch to get the full conversation text.
         # (compare().to_json() only has structural metadata — no message content.)
-        t.switch("critique")
+        t.branches.switch("critique")
         critique_ctx = t.compile()
         critique_messages = "\n\n".join(
             f"[{m.get('role', '?')}]: {m.get('content', '')}"
             for m in critique_ctx.to_dicts()
             if m.get("role") != "system"
         )
-        t.switch("defense")
+        t.branches.switch("defense")
 
         t.system(
             "You are an independent technical reviewer. You have the original "
@@ -227,7 +227,7 @@ def main() -> None:
 
         print("  Running defender agent...\n")
 
-        defense_result = t.run(
+        defense_result = t.llm.run(
             "Evaluate each critique from the adversarial review. For each one, "
             "decide if it's VALID (real problem worth fixing) or DISMISSED "
             "(overblown, incorrect, or trivial). Commit each verdict separately "
@@ -237,7 +237,7 @@ def main() -> None:
             tool_names=["commit", "tag", "get_config", "status", "log"],
         )
 
-        defense_log = t.log()
+        defense_log = t.search.log()
         valid = [c for c in defense_log if c.tags and "valid" in c.tags]
         dismissed = [c for c in defense_log if c.tags and "dismissed" in c.tags]
         print(f"\n  Defender verdicts: {len(valid)} valid, {len(dismissed)} dismissed")
@@ -252,8 +252,8 @@ def main() -> None:
 
         print("=== Stage 4: REVISE ===\n")
 
-        t.switch("main")
-        t.configure(stage="revise", temperature=0.4)
+        t.branches.switch("main")
+        t.config.set(stage="revise", temperature=0.4)
 
         # Merge defense branch to bring verdicts into main
         t.merge("defense", message="merge defense verdicts into main")
@@ -269,7 +269,7 @@ def main() -> None:
 
         print("  Running reviser agent...\n")
 
-        revise_result = t.run(
+        revise_result = t.llm.run(
             "Review the conversation history. The original proposal and the "
             "defense verdicts are both here. For every critique marked VALID, "
             "propose a concrete design change. Then commit a revised version "
@@ -301,12 +301,12 @@ def main() -> None:
               f"{critic_result.steps + defense_result.steps + revise_result.steps}")
 
         print(f"\n  Branches:")
-        for b in t.list_branches():
+        for b in t.branches.list():
             marker = "*" if b.is_current else " "
             print(f"    {marker} {b.name}")
 
         print(f"\n  Tag summary:")
-        for entry in t.list_tags():
+        for entry in t.tags.list():
             if entry["count"] > 0:
                 print(f"    {entry['name']:12s} count={entry['count']}")
 

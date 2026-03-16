@@ -234,7 +234,7 @@ def _auto_split_prepare(
         )
 
     try:
-        content = tract.get_content(commit_hash)
+        content = tract.search.get_content(commit_hash)
         if content is None:
             return None, fail_open
         content_str = json.dumps(content, default=str) if isinstance(content, dict) else str(content)
@@ -397,7 +397,7 @@ def _execute_split(
 
     # SKIP the original commit
     try:
-        tract.annotate(original_hash, Priority.SKIP, reason="Split into smaller commits")
+        tract.annotations.set(original_hash, Priority.SKIP, reason="Split into smaller commits")
     except Exception:
         logger.warning(
             "Failed to SKIP original commit %s after split.", original_hash[:12], exc_info=True,
@@ -423,7 +423,7 @@ def _build_rebase_manifest(tract: Tract) -> str:
     current = tract.current_branch or "(detached)"
     head = tract.head
     head_short = head[:8] if head else "(empty)"
-    branches = tract.list_branches()
+    branches = tract.branches.list()
 
     lines = [
         "=== BRANCH STATE ===",
@@ -436,7 +436,7 @@ def _build_rebase_manifest(tract: Tract) -> str:
         lines.append(f"  {b.name}{marker} -> {b.commit_hash[:8] if b.commit_hash else '(empty)'}")
 
     # Recent commits on current branch
-    entries = tract.log(limit=10)
+    entries = tract.search.log(limit=10)
     if entries:
         lines.append("")
         lines.append("RECENT COMMITS (current branch):")
@@ -610,7 +610,7 @@ def _build_branch_manifest(tract: Tract, context: str = "") -> str:
     current = tract.current_branch or "(detached)"
     head = tract.head
     head_short = head[:8] if head else "(empty)"
-    branches = tract.list_branches()
+    branches = tract.branches.list()
 
     lines = [
         "=== BRANCH STATE ===",
@@ -623,7 +623,7 @@ def _build_branch_manifest(tract: Tract, context: str = "") -> str:
         lines.append(f"  {b.name}{marker}")
 
     # Recent commits
-    entries = tract.log(limit=10)
+    entries = tract.search.log(limit=10)
     if entries:
         lines.append("")
         lines.append("RECENT COMMITS:")
@@ -718,7 +718,7 @@ def _auto_branch_finalize(
         )
 
     try:
-        ctx.tract.branch(branch_name)
+        ctx.tract.branches.create(branch_name)
         return AutoBranchResult(
             branched=True,
             branch_name=branch_name,

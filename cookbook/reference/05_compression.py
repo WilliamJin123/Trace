@@ -20,7 +20,7 @@ def main() -> None:
     t.assistant("Neutron stars are ultra-dense remnants of supernovae.")
 
     # Compress all non-pinned history into a single summary commit
-    result = t.compress(
+    result = t.compression.compress(
         content="User learned about black holes (extreme gravity) and neutron stars (dense remnants).",
     )
     result.pprint()
@@ -32,7 +32,7 @@ def main() -> None:
 
     t = Tract.open()
     sys_ci = t.system("You are a contract reviewer.")
-    t.annotate(sys_ci.commit_hash, Priority.PINNED)
+    t.annotations.set(sys_ci.commit_hash, Priority.PINNED)
 
     q1 = t.user("What are the payment terms?")
     a1 = t.assistant("Net 45, 1.5% late penalty.")
@@ -40,7 +40,7 @@ def main() -> None:
     a2 = t.assistant("Uptime SLA is aggressive at 99.95%.")
 
     # Compress but preserve specific commits verbatim
-    result = t.compress(
+    result = t.compression.compress(
         content="Contract: Net 45 payment, 1.5% penalty, 99.95% SLA.",
         preserve=[q1.commit_hash, a1.commit_hash],  # keep these intact
     )
@@ -57,14 +57,14 @@ def main() -> None:
     t.assistant("Revenue is strong. Churn is below industry average.")
 
     # Mark the report as IMPORTANT with retention criteria
-    t.annotate(
+    t.annotations.set(
         report.commit_hash,
         Priority.IMPORTANT,
         retain="Preserve all dollar amounts and percentages",
     )
 
     # LLM-based compress with target token count (requires LLM)
-    # result = t.compress(target_tokens=100)  # requires LLM
+    # result = t.compression.compress(target_tokens=100)  # requires LLM
     t.close()
 
     # =================================================================
@@ -73,18 +73,18 @@ def main() -> None:
 
     t = Tract.open()
     sys_ci = t.system("You are helpful.")
-    t.annotate(sys_ci.commit_hash, Priority.PINNED)
+    t.annotations.set(sys_ci.commit_hash, Priority.PINNED)
     t.user("Hello")
     t.assistant("Hi there!")
 
-    t.compress(content="User greeted the assistant.")
+    t.compression.compress(content="User greeted the assistant.")
 
     # Conservative: keep archives forever (default)
-    gc1 = t.gc(archive_retention_days=None)
+    gc1 = t.compression.gc(archive_retention_days=None)
     print(f"\ngc(None): removed {gc1.commits_removed} commits")
 
     # Aggressive: remove archives immediately
-    gc2 = t.gc(archive_retention_days=0)
+    gc2 = t.compression.gc(archive_retention_days=0)
     print(f"gc(0): removed {gc2.commits_removed}, freed {gc2.tokens_freed} tokens")
 
     # Production recommendation: archive_retention_days=30
@@ -138,7 +138,7 @@ def main() -> None:
     t.tool_result("c2", "bash", "import hashlib\ndef authenticate(): pass")
 
     # Compress only grep results, leave bash untouched (requires LLM)
-    # grep_result = t.compress_tool_calls(
+    # grep_result = t.compression.compress_tool_calls(
     #     name="grep",
     #     instructions="One line per file: 'filename: finding'",
     # )

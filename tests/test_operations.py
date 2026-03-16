@@ -42,7 +42,7 @@ class TestLogEnhanced:
         for i in range(25):
             info = t.commit(DialogueContent(role="user", text=f"Msg {i}"))
             hashes.append(info.commit_hash)
-        result = t.log()
+        result = t.search.log()
         assert len(result) == 20
 
     @pytest.mark.parametrize("op,expected_count", [
@@ -58,20 +58,20 @@ class TestLogEnhanced:
             operation=CommitOperation.EDIT,
             edit_target=h1,
         )
-        result = t.log(op_filter=op)
+        result = t.search.log(op_filter=op)
         assert len(result) == expected_count
         assert all(c.operation == op for c in result)
 
     def test_log_empty_tract(self):
         """Log on empty tract returns empty list."""
         t = make_tract()
-        assert t.log() == []
+        assert t.search.log() == []
 
     def test_log_op_filter_no_matches(self):
         """op_filter with no matching commits returns empty list."""
         t = make_tract()
         t.commit(DialogueContent(role="user", text="Hello"))
-        result = t.log(op_filter=CommitOperation.EDIT)
+        result = t.search.log(op_filter=CommitOperation.EDIT)
         assert result == []
 
 
@@ -85,7 +85,7 @@ class TestStatus:
     def test_status_empty_tract(self):
         """Status on empty tract returns defaults."""
         t = make_tract()
-        info = t.status()
+        info = t.search.status()
         assert isinstance(info, StatusInfo)
         assert info.head_hash is None
         assert info.commit_count == 0
@@ -97,7 +97,7 @@ class TestStatus:
         """Status shows correct head, branch, and commit count."""
         t = make_tract()
         hashes = populate_tract(t, 3)
-        info = t.status()
+        info = t.search.status()
         assert info.head_hash == hashes[-1]
         assert info.branch_name == "main"
         assert info.is_detached is False
@@ -107,8 +107,8 @@ class TestStatus:
         """After checkout to specific commit, is_detached=True."""
         t = make_tract()
         hashes = populate_tract(t, 3)
-        t.checkout(hashes[0])
-        info = t.status()
+        t.branches.checkout(hashes[0])
+        info = t.search.status()
         assert info.is_detached is True
         assert info.branch_name is None
         assert info.head_hash == hashes[0]
@@ -120,21 +120,21 @@ class TestStatus:
         )
         t = Tract.open(":memory:", config=config)
         populate_tract(t, 1)
-        info = t.status()
+        info = t.search.status()
         assert info.token_budget_max == 5000
 
     def test_status_without_budget(self):
         """Status has token_budget_max=None when no budget configured."""
         t = make_tract()
         populate_tract(t, 1)
-        info = t.status()
+        info = t.search.status()
         assert info.token_budget_max is None
 
     def test_status_recent_commits(self):
         """Status returns last 3 commits in recent_commits."""
         t = make_tract()
         hashes = populate_tract(t, 5)
-        info = t.status()
+        info = t.search.status()
         assert len(info.recent_commits) == 3
         # Newest first
         assert info.recent_commits[0].commit_hash == hashes[4]
@@ -145,7 +145,7 @@ class TestStatus:
         """If only 1 commit, recent_commits has 1 entry."""
         t = make_tract()
         hashes = populate_tract(t, 1)
-        info = t.status()
+        info = t.search.status()
         assert len(info.recent_commits) == 1
         assert info.recent_commits[0].commit_hash == hashes[0]
 
@@ -154,7 +154,7 @@ class TestStatus:
         t = make_tract()
         populate_tract(t, 3)
         compiled = t.compile()
-        info = t.status()
+        info = t.search.status()
         assert info.token_count == compiled.token_count
         assert info.token_source == compiled.token_source
 
@@ -171,7 +171,7 @@ class TestDiff:
         t = make_tract()
         h1 = t.commit(DialogueContent(role="user", text="Hello")).commit_hash
         h2 = t.commit(DialogueContent(role="assistant", text="World")).commit_hash
-        result = t.diff(h1, h2)
+        result = t.search.diff(h1, h2)
         assert isinstance(result, DiffResult)
         assert result.commit_a == h1
         assert result.commit_b == h2
@@ -185,7 +185,7 @@ class TestDiff:
         t = make_tract()
         h1 = t.commit(DialogueContent(role="user", text="Hello")).commit_hash
         h2 = t.commit(DialogueContent(role="assistant", text="World")).commit_hash
-        result = t.diff(commit_a=h1)
+        result = t.search.diff(commit_a=h1)
         assert result.commit_b == h2  # HEAD
 
     def test_diff_edit_auto_resolve(self):
@@ -198,7 +198,7 @@ class TestDiff:
             edit_target=h1,
         )
         # diff with commit_b=edit commit should auto-resolve commit_a to h1's content
-        result = t.diff(commit_b=edit_info.commit_hash)
+        result = t.search.diff(commit_b=edit_info.commit_hash)
         # The edit replaces h1's content, so we should see a modification
         assert result.commit_a == h1
         # There should be exactly 1 message diff (the edited message)
@@ -208,7 +208,7 @@ class TestDiff:
         """Diff with no commit_a and commit_b is first commit shows all added."""
         t = make_tract()
         h1 = t.commit(DialogueContent(role="user", text="Hello")).commit_hash
-        result = t.diff(commit_b=h1)
+        result = t.search.diff(commit_b=h1)
         assert result.commit_a == "(empty)"
         added = [d for d in result.message_diffs if d.status == "added"]
         assert len(added) == 1
@@ -217,7 +217,7 @@ class TestDiff:
         """Diff A vs A returns all unchanged."""
         t = make_tract()
         h1 = t.commit(DialogueContent(role="user", text="Hello")).commit_hash
-        result = t.diff(h1, h1)
+        result = t.search.diff(h1, h1)
         unchanged = [d for d in result.message_diffs if d.status == "unchanged"]
         assert len(unchanged) == 1
         assert result.stat.messages_unchanged == 1
@@ -236,7 +236,7 @@ class TestDiff:
         )
         # Diff the original content vs the edit
         # compile at h1 gives original; compile at edit gives the edited version
-        result = t.diff(h1, edit_info.commit_hash)
+        result = t.search.diff(h1, edit_info.commit_hash)
         modified = [d for d in result.message_diffs if d.status == "modified"]
         assert len(modified) == 1
         assert len(modified[0].content_diff_lines) > 0  # Has unified diff
@@ -250,7 +250,7 @@ class TestDiff:
             operation=CommitOperation.EDIT,
             edit_target=h1,
         )
-        result = t.diff(h1, edit_info.commit_hash)
+        result = t.search.diff(h1, edit_info.commit_hash)
         modified = [d for d in result.message_diffs if d.status == "modified"]
         assert len(modified) == 1
         assert modified[0].role_a == "user"
@@ -267,9 +267,9 @@ class TestDiff:
             DialogueContent(role="assistant", text="Hi"),
             generation_config={"temperature": 0.9, "model": "gpt-4"},
         )
-        hashes = [c.commit_hash for c in t.log()]
+        hashes = [c.commit_hash for c in t.search.log()]
         # hashes[0] is latest (assistant), hashes[1] is oldest (user)
-        result = t.diff(hashes[1], hashes[0])
+        result = t.search.diff(hashes[1], hashes[0])
         assert "temperature" in result.generation_config_changes
         assert result.generation_config_changes["temperature"] == (0.5, 0.9)
         # model didn't change, so should not be in changes
@@ -280,7 +280,7 @@ class TestDiff:
         t = make_tract()
         h1 = t.commit(DialogueContent(role="user", text="Hello")).commit_hash
         h2 = t.commit(DialogueContent(role="assistant", text="World")).commit_hash
-        result = t.diff(h1, h2)
+        result = t.search.diff(h1, h2)
         # h1 has 1 message, h2 has 2. The first is unchanged, second is added.
         assert result.stat.messages_unchanged == 1
         assert result.stat.messages_added == 1
@@ -293,7 +293,7 @@ class TestDiff:
         h1 = t.commit(DialogueContent(role="user", text="Hello")).commit_hash
         h2 = t.commit(DialogueContent(role="assistant", text="World")).commit_hash
         # Use first 8 chars as prefix
-        result = t.diff(h1[:8], h2[:8])
+        result = t.search.diff(h1[:8], h2[:8])
         assert result.commit_a == h1
         assert result.commit_b == h2
 
@@ -301,14 +301,14 @@ class TestDiff:
         """Diff on empty tract raises TraceError."""
         t = make_tract()
         with pytest.raises(TraceError, match="No commits to diff"):
-            t.diff()
+            t.search.diff()
 
     def test_diff_invalid_commit_raises(self):
         """Diff with nonexistent hash raises CommitNotFoundError."""
         t = make_tract()
         t.commit(DialogueContent(role="user", text="Hello"))
         with pytest.raises(CommitNotFoundError):
-            t.diff("nonexistent_commit_hash_that_does_not_exist")
+            t.search.diff("nonexistent_commit_hash_that_does_not_exist")
 
     def test_diff_parent_auto_resolve(self):
         """When commit_a is None and commit_b is not EDIT, uses parent."""
@@ -316,7 +316,7 @@ class TestDiff:
         h1 = t.commit(DialogueContent(role="user", text="Hello")).commit_hash
         h2 = t.commit(DialogueContent(role="assistant", text="World")).commit_hash
         # diff(commit_b=h2) with no commit_a should use h2's parent (h1)
-        result = t.diff(commit_b=h2)
+        result = t.search.diff(commit_b=h2)
         assert result.commit_a == h1
         assert result.commit_b == h2
 
@@ -327,8 +327,8 @@ class TestDiff:
         t.commit(DialogueContent(role="assistant", text="B"))
         h3 = t.commit(DialogueContent(role="user", text="C")).commit_hash
         # Diff first commit vs h3 (3 messages vs 1 message)
-        hashes = [c.commit_hash for c in t.log()]
-        result = t.diff(hashes[-1], h3)  # oldest vs newest
+        hashes = [c.commit_hash for c in t.search.log()]
+        result = t.search.diff(hashes[-1], h3)  # oldest vs newest
         indices = [d.index for d in result.message_diffs]
         assert indices == list(range(len(indices)))
 
@@ -340,7 +340,7 @@ class TestDiff:
         h3 = t.commit(DialogueContent(role="user", text="Follow up")).commit_hash
         # h3 has 3 messages, h1 has 1 message
         # Diffing h3 (A, 3 msgs) vs h1 (B, 1 msg) should show 2 removed
-        result = t.diff(h3, h1)
+        result = t.search.diff(h3, h1)
         removed = [d for d in result.message_diffs if d.status == "removed"]
         assert len(removed) == 2
         assert result.stat.messages_removed == 2
@@ -351,7 +351,7 @@ class TestDiff:
         t = make_tract()
         h1 = t.commit(DialogueContent(role="user", text="Hello")).commit_hash
         h2 = t.commit(DialogueContent(role="assistant", text="World")).commit_hash
-        result = t.diff(h1, h2)
+        result = t.search.diff(h1, h2)
         assert "Hello" in result._text_a
         assert "user" in result._text_a
         assert "Hello" in result._text_b
@@ -363,7 +363,7 @@ class TestDiff:
         t = make_tract()
         h1 = t.commit(DialogueContent(role="user", text="Hello")).commit_hash
         h2 = t.commit(DialogueContent(role="assistant", text="World")).commit_hash
-        result = t.diff(h1, h2)
+        result = t.search.diff(h1, h2)
 
         launched: list[list[str]] = []
 
@@ -397,7 +397,7 @@ class TestDiff:
         t = make_tract()
         h1 = t.commit(DialogueContent(role="user", text="A")).commit_hash
         h2 = t.commit(DialogueContent(role="assistant", text="B")).commit_hash
-        result = t.diff(h1, h2)
+        result = t.search.diff(h1, h2)
 
         launched: list[list[str]] = []
 
@@ -420,7 +420,7 @@ class TestDiff:
         t = make_tract()
         h1 = t.commit(DialogueContent(role="user", text="A")).commit_hash
         h2 = t.commit(DialogueContent(role="assistant", text="B")).commit_hash
-        result = t.diff(h1, h2)
+        result = t.search.diff(h1, h2)
 
         monkeypatch.delenv("EDITOR", raising=False)
         monkeypatch.delenv("TRACT_DIFF_EDITOR", raising=False)
@@ -443,15 +443,15 @@ class TestCompare:
         """compare(branch_a, branch_b) returns DiffResult across branches."""
         t = make_tract()
         t.commit(DialogueContent(role="user", text="Shared root"))
-        t.branch("feature")
+        t.branches.create("feature")
         t.commit(DialogueContent(role="assistant", text="Feature reply"))
-        t.checkout("main")
+        t.branches.checkout("main")
         t.commit(DialogueContent(role="assistant", text="Main reply"))
 
         original_branch = t.current_branch
         original_head = t.head
 
-        result = t.compare("main", "feature")
+        result = t.search.compare("main", "feature")
 
         assert isinstance(result, DiffResult)
         # HEAD and branch must be unchanged
@@ -467,11 +467,11 @@ class TestCompare:
         """When branch_a is omitted, it defaults to current branch HEAD."""
         t = make_tract()
         t.commit(DialogueContent(role="user", text="Hello"))
-        t.branch("other")
+        t.branches.create("other")
         t.commit(DialogueContent(role="assistant", text="Other branch reply"))
-        t.checkout("main")
+        t.branches.checkout("main")
 
-        result = t.compare(branch_b="other")
+        result = t.search.compare(branch_b="other")
         assert isinstance(result, DiffResult)
         assert result.commit_a == t.head
 
@@ -481,7 +481,7 @@ class TestCompare:
         h1 = t.commit(DialogueContent(role="user", text="Hello")).commit_hash
         h2 = t.commit(DialogueContent(role="assistant", text="World")).commit_hash
 
-        result = t.compare(commit_a=h1, commit_b=h2)
+        result = t.search.compare(commit_a=h1, commit_b=h2)
         assert result.commit_a == h1
         assert result.commit_b == h2
         added = [d for d in result.message_diffs if d.status == "added"]
@@ -491,9 +491,9 @@ class TestCompare:
         """Comparing a branch against itself yields all unchanged."""
         t = make_tract()
         t.commit(DialogueContent(role="user", text="Hello"))
-        t.branch("copy", switch=False)
+        t.branches.create("copy", switch=False)
 
-        result = t.compare("main", "copy")
+        result = t.search.compare("main", "copy")
         assert result.stat.messages_unchanged == 1
         assert result.stat.messages_added == 0
         assert result.stat.messages_removed == 0
@@ -503,14 +503,14 @@ class TestCompare:
         """compare() must not alter HEAD, current branch, or any refs."""
         t = make_tract()
         t.commit(DialogueContent(role="user", text="Root"))
-        t.branch("feat")
+        t.branches.create("feat")
         t.commit(DialogueContent(role="user", text="Feat commit"))
-        t.checkout("main")
+        t.branches.checkout("main")
 
         head_before = t.head
         branch_before = t.current_branch
 
-        t.compare("main", "feat")
+        t.search.compare("main", "feat")
 
         assert t.head == head_before
         assert t.current_branch == branch_before
@@ -521,7 +521,7 @@ class TestCompare:
         h = t.commit(DialogueContent(role="user", text="Hello")).commit_hash
 
         with pytest.raises(ValueError, match="branch_a and commit_a"):
-            t.compare(branch_a="main", commit_a=h, branch_b="main")
+            t.search.compare(branch_a="main", commit_a=h, branch_b="main")
 
     def test_compare_mutual_exclusivity_branch_b_commit_b(self):
         """Cannot provide both branch_b and commit_b."""
@@ -529,7 +529,7 @@ class TestCompare:
         h = t.commit(DialogueContent(role="user", text="Hello")).commit_hash
 
         with pytest.raises(ValueError, match="branch_b and commit_b"):
-            t.compare(branch_b="main", commit_b=h)
+            t.search.compare(branch_b="main", commit_b=h)
 
     def test_compare_no_side_b_raises(self):
         """Must specify at least branch_b or commit_b."""
@@ -537,14 +537,14 @@ class TestCompare:
         t.commit(DialogueContent(role="user", text="Hello"))
 
         with pytest.raises(ValueError, match="branch_b or commit_b"):
-            t.compare("main")
+            t.search.compare("main")
 
     def test_compare_no_commits_raises(self):
         """Defaulting side A with no commits raises TraceError."""
         t = make_tract()
         # No commits, so defaulting branch_a to HEAD should fail
         with pytest.raises(TraceError, match="No commits"):
-            t.compare(branch_b="main")
+            t.search.compare(branch_b="main")
 
     def test_compare_invalid_branch_raises(self):
         """Nonexistent branch raises CommitNotFoundError."""
@@ -552,22 +552,22 @@ class TestCompare:
         t.commit(DialogueContent(role="user", text="Hello"))
 
         with pytest.raises(CommitNotFoundError):
-            t.compare("main", "nonexistent")
+            t.search.compare("main", "nonexistent")
 
     def test_compare_divergent_branches(self):
         """Branches that diverge from a common ancestor show correct diffs."""
         t = make_tract()
         t.commit(DialogueContent(role="user", text="Shared"))
 
-        t.branch("alpha")
+        t.branches.create("alpha")
         t.commit(DialogueContent(role="assistant", text="Alpha response"))
         t.commit(DialogueContent(role="user", text="Alpha followup"))
 
-        t.checkout("main")
-        t.branch("beta")
+        t.branches.checkout("main")
+        t.branches.create("beta")
         t.commit(DialogueContent(role="assistant", text="Beta response"))
 
-        result = t.compare("alpha", "beta")
+        result = t.search.compare("alpha", "beta")
 
         assert isinstance(result, DiffResult)
         # alpha has 3 messages (shared + 2), beta has 2 messages (shared + 1)
@@ -579,10 +579,10 @@ class TestCompare:
         """One side by branch name, other by commit hash."""
         t = make_tract()
         h1 = t.commit(DialogueContent(role="user", text="Root")).commit_hash
-        t.branch("feat")
+        t.branches.create("feat")
         t.commit(DialogueContent(role="assistant", text="Feature reply"))
 
-        result = t.compare(commit_a=h1, branch_b="feat")
+        result = t.search.compare(commit_a=h1, branch_b="feat")
         assert result.commit_a == h1
         added = [d for d in result.message_diffs if d.status == "added"]
         assert len(added) >= 1
@@ -591,10 +591,10 @@ class TestCompare:
         """DiffResult has populated stat object."""
         t = make_tract()
         t.commit(DialogueContent(role="user", text="Main only"))
-        t.branch("other")
+        t.branches.create("other")
         t.commit(DialogueContent(role="assistant", text="Other only"))
 
-        result = t.compare("main", "other")
+        result = t.search.compare("main", "other")
         assert isinstance(result.stat, DiffStat)
         # At minimum, stat fields should be non-negative integers
         assert result.stat.messages_added >= 0

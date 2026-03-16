@@ -2,7 +2,7 @@
 
 An agent-driven multi-stage workflow. Config sets stage-specific settings
 (temperature, compile strategy) and middleware gates transitions. The agent
-gets transition tools and decides when to move between stages -- one t.run()
+gets transition tools and decides when to move between stages -- one t.llm.run()
 call drives the whole pipeline.
 
 Stages:
@@ -10,7 +10,7 @@ Stages:
   implementation -- low temperature (0.3), precise code generation
   validation     -- minimal temperature (0.1), deterministic testing
 
-Demonstrates: t.configure() for stage configs, t.directive() for stage
+Demonstrates: t.config.set() for stage configs, t.directive() for stage
               instructions, pre_transition middleware gates, agent-driven
               stage navigation, compile strategy per stage
 
@@ -48,7 +48,7 @@ def main() -> None:
         print("=== Setting Up Workflow ===\n")
 
         # Initial stage and settings
-        t.configure(
+        t.config.set(
             stage="design",
             temperature=0.9,
             compile_strategy="full",
@@ -69,7 +69,7 @@ def main() -> None:
         def impl_gate(ctx: MiddlewareContext):
             if ctx.target != "implementation":
                 return
-            count = len(ctx.tract.log())
+            count = len(ctx.tract.search.log())
             if count < 6:
                 raise BlockedError(
                     "pre_transition",
@@ -79,17 +79,17 @@ def main() -> None:
         def validation_gate(ctx: MiddlewareContext):
             if ctx.target != "validation":
                 return
-            count = len(ctx.tract.log())
+            count = len(ctx.tract.search.log())
             if count < 3:
                 raise BlockedError(
                     "pre_transition",
                     [f"Need >= 3 commits for validation (have {count})"],
                 )
 
-        t.use("pre_transition", impl_gate)
-        t.use("pre_transition", validation_gate)
+        t.middleware.add("pre_transition", impl_gate)
+        t.middleware.add("pre_transition", validation_gate)
 
-        configs = t.get_all_configs()
+        configs = t.config.get_all()
         print(f"  Initial configs: {configs}")
 
         # =============================================================
@@ -117,7 +117,7 @@ def main() -> None:
 
         log = StepLogger()
 
-        result = t.run(
+        result = t.llm.run(
             "Design and implement a simple stack data structure in Python with "
             "push, pop, peek, and is_empty methods. Then write 3 test cases.\n\n"
             "Start by designing the interface (what methods, what types, edge cases). "
@@ -138,16 +138,16 @@ def main() -> None:
 
         print(f"\n=== Final State ===\n")
 
-        final_configs = t.get_all_configs()
+        final_configs = t.config.get_all()
         print(f"  Active configs: {final_configs}")
 
         print(f"\n  Branches:")
-        for b in t.list_branches():
+        for b in t.branches.list():
             marker = "*" if b.is_current else " "
             print(f"    {marker} {b.name}")
 
         print(f"\n  Log (last 8 commits):")
-        pprint_log(t.log()[-8:])
+        pprint_log(t.search.log()[-8:])
 
 
 if __name__ == "__main__":

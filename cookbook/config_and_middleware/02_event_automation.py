@@ -13,8 +13,8 @@ Valid middleware events (12 total):
 Pre-event handlers can raise BlockedError to prevent the operation.
 Post-event handlers run after the operation completes.
 
-Demonstrates: t.use(), pre_commit validation, post_commit logging,
-              pre_compile hooks, BlockedError, t.remove_middleware()
+Demonstrates: t.middleware.add(), pre_commit validation, post_commit logging,
+              pre_compile hooks, BlockedError, t.middleware.remove()
 
 No LLM required.
 """
@@ -39,7 +39,7 @@ def main() -> None:
             }
             commit_log.append(entry)
 
-        log_id = t.use("post_commit", log_commits)
+        log_id = t.middleware.add("post_commit", log_commits)
         print(f"  Registered post_commit logger: {log_id}")
 
         t.system("You are a helpful assistant.")
@@ -71,7 +71,7 @@ def main() -> None:
                         [f"Potential secret detected: '{pattern}' in content"],
                     )
 
-        secrets_id = t.use("pre_commit", block_secrets)
+        secrets_id = t.middleware.add("pre_commit", block_secrets)
         print(f"  Registered pre_commit validator: {secrets_id}")
 
         # This commit goes through fine
@@ -106,7 +106,7 @@ def main() -> None:
                     [f"Content too long: {len(text)} chars (limit 500)"],
                 )
 
-        limit_id = t.use("pre_commit", limit_message_length)
+        limit_id = t.middleware.add("pre_commit", limit_message_length)
         print(f"  Registered pre_commit length limiter: {limit_id}")
 
         # Short commit goes through
@@ -133,7 +133,7 @@ def main() -> None:
             """Track how many times compile is called."""
             compile_count["n"] += 1
 
-        compile_id = t.use("pre_compile", track_compiles)
+        compile_id = t.middleware.add("pre_compile", track_compiles)
         print(f"  Registered pre_compile tracker: {compile_id}")
 
         t.compile()
@@ -145,16 +145,16 @@ def main() -> None:
         print("\n=== Removing Middleware ===\n")
 
         print(f"  Removing logger: {log_id}")
-        t.remove_middleware(log_id)
+        t.middleware.remove(log_id)
 
         print(f"  Removing secrets filter: {secrets_id}")
-        t.remove_middleware(secrets_id)
+        t.middleware.remove(secrets_id)
 
         print(f"  Removing length limiter: {limit_id}")
-        t.remove_middleware(limit_id)
+        t.middleware.remove(limit_id)
 
         print(f"  Removing compile tracker: {compile_id}")
-        t.remove_middleware(compile_id)
+        t.middleware.remove(compile_id)
 
         # Now commits go through without any middleware
         count_before = len(commit_log)
@@ -170,7 +170,7 @@ def main() -> None:
         print("                     pre_generate, post_generate,")
         print("                     pre_tool_execute, post_tool_execute")
         print("  Block pattern:     raise BlockedError(event, [reasons])")
-        print("  Remove pattern:    t.remove_middleware(handler_id)")
+        print("  Remove pattern:    t.middleware.remove(handler_id)")
 
 
 if __name__ == "__main__":

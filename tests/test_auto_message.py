@@ -50,7 +50,7 @@ class TestFallbackMessage:
         """auto_message defaults to False; LLM client alone doesn't trigger it."""
         client = _make_mock_client()
         with Tract.open() as t:
-            t.configure_llm(client)
+            t.config.configure_llm(client)
             info = t.system("Hello world")
             client.chat.assert_not_called()
             assert info.message == "Hello world"
@@ -59,7 +59,7 @@ class TestFallbackMessage:
         """Inside batch(), auto-message is skipped."""
         client = _make_mock_client()
         with Tract.open(auto_message=True) as t:
-            t.configure_llm(client)
+            t.config.configure_llm(client)
             with t.batch():
                 info = t.system("Hello world")
             client.chat.assert_not_called()
@@ -73,7 +73,7 @@ class TestFallbackMessage:
         del client.extract_usage
         del client.extract_reasoning
         with Tract.open(auto_message=True) as t:
-            t.configure_llm(client)
+            t.config.configure_llm(client)
             info = t.system("Hello world")
             assert info.message == "Hello world"
 
@@ -105,7 +105,7 @@ class TestLLMSummarization:
         """auto_message=True uses the default LLM client."""
         client = _make_mock_client("Ask about first computer")
         with Tract.open(auto_message=True) as t:
-            t.configure_llm(client)
+            t.config.configure_llm(client)
             info = t.system("When was the first computer invented?")
             assert info.message == "Ask about first computer"
             client.chat.assert_called_once()
@@ -114,7 +114,7 @@ class TestLLMSummarization:
         """auto_message='model-name' sets operation config with that model."""
         client = _make_mock_client("Summary from cheap model")
         with Tract.open(auto_message="llama3.1-8b") as t:
-            t.configure_llm(client)
+            t.config.configure_llm(client)
             info = t.system("Some content")
             assert info.message == "Summary from cheap model"
             call_kwargs = client.chat.call_args[1]
@@ -126,7 +126,7 @@ class TestLLMSummarization:
         client = _make_mock_client("Custom config summary")
         cfg = LLMConfig(model="gpt-4o-mini", temperature=0.1, max_tokens=50)
         with Tract.open(auto_message=cfg) as t:
-            t.configure_llm(client)
+            t.config.configure_llm(client)
             info = t.system("Some content")
             assert info.message == "Custom config summary"
             call_kwargs = client.chat.call_args[1]
@@ -141,7 +141,7 @@ class TestLLMSummarization:
         long_summary = "A" * 150
         client = _make_mock_client(long_summary)
         with Tract.open(auto_message=True) as t:
-            t.configure_llm(client)
+            t.config.configure_llm(client)
             info = t.system("Some content")
             assert len(info.message) <= 100
             assert info.message.endswith("...")
@@ -150,7 +150,7 @@ class TestLLMSummarization:
         """Empty LLM output triggers fallback."""
         client = _make_mock_client("")
         with Tract.open(auto_message=True) as t:
-            t.configure_llm(client)
+            t.config.configure_llm(client)
             info = t.system("Hello world")
             assert info.message == "Hello world"
 
@@ -160,7 +160,7 @@ class TestLLMSummarization:
 
         client = _make_mock_client("Summary")
         with Tract.open(auto_message=True) as t:
-            t.configure_llm(client)
+            t.config.configure_llm(client)
             t.system("Test content")
             call_args = client.chat.call_args
             messages = call_args[0][0]
@@ -171,7 +171,7 @@ class TestLLMSummarization:
         """reasoning() also uses LLM auto-message."""
         client = _make_mock_client("Analyze code structure")
         with Tract.open(auto_message=True) as t:
-            t.configure_llm(client)
+            t.config.configure_llm(client)
             info = t.reasoning("Let me think about the code structure...")
             assert info.message == "Analyze code structure"
 
@@ -179,7 +179,7 @@ class TestLLMSummarization:
         """Providing message= explicitly skips LLM summarization."""
         client = _make_mock_client("LLM summary")
         with Tract.open(auto_message=True) as t:
-            t.configure_llm(client)
+            t.config.configure_llm(client)
             info = t.system("Some content", message="My custom message")
             assert info.message == "My custom message"
             client.chat.assert_not_called()
@@ -195,13 +195,13 @@ class TestConfigWiring:
     def test_configure_operations_message(self):
         """configure_operations accepts 'message' key."""
         with Tract.open() as t:
-            t.configure_operations(message=LLMConfig(model="gpt-4o-mini"))
+            t.config.configure_operations(message=LLMConfig(model="gpt-4o-mini"))
             assert t.operation_configs.message == LLMConfig(model="gpt-4o-mini")
 
     def test_configure_operations_dataclass(self):
         """OperationConfigs accepts message field."""
         with Tract.open() as t:
-            t.configure_operations(OperationConfigs(
+            t.config.configure_operations(OperationConfigs(
                 message=LLMConfig(model="gpt-4o-mini", temperature=0.0),
             ))
             assert t.operation_configs.message is not None
@@ -211,14 +211,14 @@ class TestConfigWiring:
         """configure_clients accepts 'message' key."""
         mock_client = MagicMock()
         with Tract.open() as t:
-            t.configure_clients(message=mock_client)
+            t.config.configure_clients(message=mock_client)
             assert t.operation_clients.message is mock_client
 
     def test_configure_clients_dataclass(self):
         """OperationClients accepts message field."""
         mock_client = MagicMock()
         with Tract.open() as t:
-            t.configure_clients(OperationClients(message=mock_client))
+            t.config.configure_clients(OperationClients(message=mock_client))
             assert t.operation_clients.message is mock_client
 
     def test_per_operation_client_used(self):
@@ -226,8 +226,8 @@ class TestConfigWiring:
         default_client = _make_mock_client("Default summary")
         message_client = _make_mock_client("Message-specific")
         with Tract.open(auto_message=True) as t:
-            t.configure_llm(default_client)
-            t.configure_clients(message=message_client)
+            t.config.configure_llm(default_client)
+            t.config.configure_clients(message=message_client)
             info = t.system("Some content")
             assert info.message == "Message-specific"
             message_client.chat.assert_called_once()
@@ -255,8 +255,8 @@ class TestConfigWiring:
         """configure_operations(message=) works alongside auto_message=True."""
         client = _make_mock_client("Summary")
         with Tract.open(auto_message=True) as t:
-            t.configure_llm(client)
-            t.configure_operations(message=LLMConfig(model="gpt-4o-mini"))
+            t.config.configure_llm(client)
+            t.config.configure_operations(message=LLMConfig(model="gpt-4o-mini"))
             t.system("Test")
             call_kwargs = client.chat.call_args[1]
             assert call_kwargs.get("model") == "gpt-4o-mini"

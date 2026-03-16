@@ -116,13 +116,13 @@ class TestTractDir:
 
     def test_tract_dir_for_file_db(self, tmp_path: Path) -> None:
         t = _make_file_tract(tmp_path)
-        assert t.tract_dir is not None
-        assert t.tract_dir == tmp_path / ".tract"
+        assert t.persistence.tract_dir is not None
+        assert t.persistence.tract_dir == tmp_path / ".tract"
         t.close()
 
     def test_tract_dir_for_memory_db(self) -> None:
         t = Tract.open()
-        assert t.tract_dir is None
+        assert t.persistence.tract_dir is None
         t.close()
 
 
@@ -137,7 +137,7 @@ class TestSaveWorkflow:
     def test_save_workflow_writes_file(self, tmp_path: Path) -> None:
         t = _make_file_tract(tmp_path)
         code = 'def run():\n    print("workflow")\n'
-        path = t.save_workflow("my_workflow", code)
+        path = t.persistence.save_workflow("my_workflow", code)
         assert path.exists()
         assert path.read_text(encoding="utf-8") == code
         assert path == tmp_path / ".tract" / "workflows" / "my_workflow.py"
@@ -147,7 +147,7 @@ class TestSaveWorkflow:
         t = _make_file_tract(tmp_path)
         bad_code = "def run(:\n"
         with pytest.raises(SyntaxError):
-            t.save_workflow("bad_workflow", bad_code)
+            t.persistence.save_workflow("bad_workflow", bad_code)
         t.close()
 
 
@@ -161,12 +161,12 @@ class TestInMemory:
 
     def test_memory_db_has_no_tract_dir(self) -> None:
         t = Tract.open()
-        assert t.tract_dir is None
+        assert t.persistence.tract_dir is None
         t.close()
 
     def test_memory_db_quarantined_empty(self) -> None:
         t = Tract.open()
-        assert t.quarantined == []
+        assert t.persistence.quarantined == []
         t.close()
 
 
@@ -244,6 +244,6 @@ class TestDirectoryStructure:
         """save_workflow creates .tract/workflows/ lazily."""
         t = _make_file_tract(tmp_path)
         code = 'def run():\n    pass\n'
-        t.save_workflow("my_workflow", code)
+        t.persistence.save_workflow("my_workflow", code)
         assert (tmp_path / ".tract" / "workflows").is_dir()
         t.close()

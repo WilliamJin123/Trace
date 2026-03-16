@@ -1,13 +1,13 @@
 """Shared step logger for cookbook examples.
 
 Prints comprehensive real-time information about what happens during
-a t.run() agent loop: assistant messages, tool calls, and tool results.
+a t.llm.run() agent loop: assistant messages, tool calls, and tool results.
 
 Usage:
     from _logging import StepLogger
 
     log = StepLogger()
-    result = t.run("...", on_step=log.on_step, on_tool_result=log.on_tool_result)
+    result = t.llm.run("...", on_step=log.on_step, on_tool_result=log.on_tool_result)
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ class StepLogger:
         self.show_args = show_args
 
     def on_step(self, step_num: int, response: Any) -> None:
-        """on_step callback for t.run().
+        """on_step callback for t.llm.run().
 
         Extracts and prints assistant text and tool calls from the
         raw LLM response object.
@@ -72,7 +72,7 @@ class StepLogger:
             print(f"{self.indent}  (empty response)")
 
     def on_tool_result(self, tool_name: str, output: str, status: str) -> None:
-        """on_tool_result callback for t.run().
+        """on_tool_result callback for t.llm.run().
 
         Prints tool results as they are returned.
         """

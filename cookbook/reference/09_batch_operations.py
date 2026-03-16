@@ -13,7 +13,7 @@ Patterns shown:
   6. Performance comparison   -- batch vs individual commits
 
 Demonstrates: t.batch(), t.commit(), t.system(), t.user(), t.assistant(),
-              t.branch(), t.configure(), t.use()
+              t.branches.create(), t.config.set(), t.middleware.add()
 
 No LLM required.
 """
@@ -35,7 +35,7 @@ def basic_batch():
     with Tract.open() as t:
         # Without batch: each call commits immediately
         t.system("You are a helpful assistant.")
-        commits_before = len(t.log())
+        commits_before = len(t.search.log())
         print(f"  Commits after system(): {commits_before}")
 
         # With batch: all commits happen at once
@@ -47,7 +47,7 @@ def basic_batch():
             t.user("2. Calculate the area of a circle with radius 5")
             t.assistant("Area = pi * r^2 = 78.54 square units.")
 
-        commits_after = len(t.log())
+        commits_after = len(t.search.log())
         batch_commits = commits_after - commits_before
         print(f"  Commits after batch: {commits_after} ({batch_commits} new)")
 
@@ -78,7 +78,7 @@ def batch_rollback():
     with Tract.open() as t:
         t.system("You are a data processor.")
         t.user("Process this data in three steps.")
-        commits_before = len(t.log())
+        commits_before = len(t.search.log())
         head_before = t.head
         print(f"  Before batch: {commits_before} commits, HEAD={head_before[:8]}")
 
@@ -92,7 +92,7 @@ def batch_rollback():
         except ValueError as e:
             print(f"  Caught error: {e}")
 
-        commits_after = len(t.log())
+        commits_after = len(t.search.log())
         head_after = t.head
         print(f"  After failed batch: {commits_after} commits, HEAD={head_after[:8]}")
 
@@ -125,7 +125,7 @@ def nested_batch_behavior():
 
     with Tract.open() as t:
         t.system("You are a test assistant.")
-        commits_before = len(t.log())
+        commits_before = len(t.search.log())
 
         # Nested batches: the inner batch's finally clause restores a
         # noop commit function instead of the real one, so the outer batch
@@ -154,7 +154,7 @@ def nested_batch_behavior():
             t.user("Message B")
             t.user("Message C")
 
-        commits_after = len(t.log())
+        commits_after = len(t.search.log())
         assert commits_after == commits_before + 3
         print(f"  Flat batch: {commits_after - commits_before} commits added correctly")
 
@@ -179,7 +179,7 @@ def batch_with_middleware():
             if ctx.commit:
                 commit_log.append(ctx.commit.content_type)
 
-        mw_id = t.use("post_commit", track_commits)
+        mw_id = t.middleware.add("post_commit", track_commits)
 
         # Middleware fires on each commit inside the batch
         with t.batch():
@@ -199,7 +199,7 @@ def batch_with_middleware():
         assert len(ctx.messages) >= 3
         ctx.pprint(style="compact")
 
-        t.remove_middleware(mw_id)
+        t.middleware.remove(mw_id)
 
     print()
     print("PASSED")
@@ -225,11 +225,11 @@ def batch_atomic_branch_setup():
         print(f"  Main branch: [{main_head[:8]}]")
 
         # Create a branch and populate it atomically
-        t.branch("sprint_1", switch=True)
+        t.branches.create("sprint_1", switch=True)
 
         with t.batch():
             # All of this happens in one transaction
-            t.configure(stage="sprint_1", temperature=0.3)
+            t.config.set(stage="sprint_1", temperature=0.3)
             t.user("Sprint 1 scope: auth module, database schema, API endpoints.")
             t.assistant("Sprint 1 planned with 3 deliverables.")
             t.user("Task 1: Implement JWT authentication.")
@@ -237,12 +237,12 @@ def batch_atomic_branch_setup():
             t.user("Task 2: Design user table schema.")
             t.assistant("Schema: users(id, email, password_hash, created_at).")
 
-        sprint_commits = len(t.log())
+        sprint_commits = len(t.search.log())
         ctx = t.compile()
         ctx.pprint(style="compact")
 
         # Switch back to main -- sprint_1 setup is all-or-nothing
-        t.switch("main")
+        t.branches.switch("main")
         main_ctx = t.compile()
         main_ctx.pprint(style="compact")
 

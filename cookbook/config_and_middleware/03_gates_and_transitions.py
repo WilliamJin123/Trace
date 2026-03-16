@@ -32,14 +32,14 @@ def main() -> None:
             """Require at least 5 commits before transitioning to review."""
             if ctx.target != "review":
                 return
-            commit_count = len(ctx.tract.log())
+            commit_count = len(ctx.tract.search.log())
             if commit_count < 5:
                 raise BlockedError(
                     "pre_transition",
                     [f"Need >= 5 commits for review (have {commit_count})"],
                 )
 
-        gate_id = t.use("pre_transition", review_gate)
+        gate_id = t.middleware.add("pre_transition", review_gate)
 
         # Generic transition logging
         transition_log = []
@@ -48,7 +48,7 @@ def main() -> None:
             """Log all transitions."""
             transition_log.append(ctx.target)
 
-        log_id = t.use("post_transition", log_transitions)
+        log_id = t.middleware.add("post_transition", log_transitions)
 
         print(f"  Gate registered: {gate_id}")
         print(f"  Logger registered: {log_id}")
@@ -71,7 +71,7 @@ def main() -> None:
         t.user("Add error handling")
         t.assistant("Updated with input validation...")
 
-        print(f"\n  Commit count: {len(t.log())}")
+        print(f"\n  Commit count: {len(t.search.log())}")
 
         # --- Transition succeeds ---
 
@@ -86,7 +86,7 @@ def main() -> None:
         print("\n=== Handoff Modes ===\n")
 
         # Switch back to add more content
-        t.switch("main")
+        t.branches.switch("main")
         t.user("More context for handoff demo")
         t.assistant("Acknowledged")
 
@@ -96,20 +96,20 @@ def main() -> None:
             print(f"  full handoff -> commit {result.commit_hash[:8]} on {t.current_branch}")
 
         # Switch back and try summary handoff
-        t.switch("main")
-        t.configure(handoff_summary_k=3)
+        t.branches.switch("main")
+        t.config.set(handoff_summary_k=3)
         result = t.transition("summary-handoff-branch", handoff="summary")
         if result:
             print(f"  summary handoff -> commit {result.commit_hash[:8]} on {t.current_branch}")
 
         # Custom text handoff
-        t.switch("main")
+        t.branches.switch("main")
         result = t.transition("custom-handoff-branch", handoff="Key context: user needs fibonacci")
         if result:
             print(f"  custom handoff -> commit {result.commit_hash[:8]} on {t.current_branch}")
 
         # No handoff (just switch)
-        t.switch("main")
+        t.branches.switch("main")
         result = t.transition("bare-branch", handoff="none")
         print(f"  no handoff -> result={result}, branch={t.current_branch}")
 
@@ -117,19 +117,19 @@ def main() -> None:
 
         print("\n=== Multiple Gates ===\n")
 
-        t.switch("main")
+        t.branches.switch("main")
 
         def production_gate(ctx: MiddlewareContext):
             """Require 'approved' config flag before production transition."""
             if ctx.target != "production":
                 return
-            if not ctx.tract.get_config("approved"):
+            if not ctx.tract.config.get("approved"):
                 raise BlockedError(
                     "pre_transition",
                     ["Production requires approved=True in config"],
                 )
 
-        prod_gate_id = t.use("pre_transition", production_gate)
+        prod_gate_id = t.middleware.add("pre_transition", production_gate)
 
         try:
             t.transition("production")
@@ -138,7 +138,7 @@ def main() -> None:
             print(f"  Blocked: {e.reasons[0]}")
 
         # Set approval config and retry
-        t.configure(approved=True)
+        t.config.set(approved=True)
         t.transition("production")
         print(f"  After approval: transitioned to {t.current_branch}")
 
@@ -147,7 +147,7 @@ def main() -> None:
         print("\n=== Gate Summary ===\n")
         print(f"  Transitions logged: {transition_log}")
         print(f"  Branches created:")
-        for b in t.list_branches():
+        for b in t.branches.list():
             marker = "*" if b.is_current else " "
             print(f"    {marker} {b.name}")
 

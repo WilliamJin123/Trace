@@ -1,7 +1,7 @@
 """Integration tests for SemanticGate through the Tract API.
 
 Tests gate registration, removal, listing, blocking, and pass-through
-using ``t.gate()``, ``t.remove_gate()``, ``t.list_gates()`` with a
+using ``t.middleware.gate()``, ``t.middleware.remove_gate()``, ``t.middleware.list_gates()`` with a
 mock LLM client (no real LLM calls).
 """
 
@@ -62,7 +62,7 @@ class ErrorLLMClient:
 
 def _seed_commits(t: Tract, n: int = 3, tag: str = "research") -> None:
     """Add *n* commits tagged with *tag*."""
-    t.register_tag(tag, f"Auto-registered for test")
+    t.tags.register(tag, f"Auto-registered for test")
     for i in range(n):
         t.commit(
             {"content_type": "dialogue", "role": "user", "text": f"Finding {i + 1}"},
@@ -85,31 +85,31 @@ def _pass_response(reason: str = "Criterion met") -> str:
 
 class TestGateRegistrationAndRemoval:
     def test_register_list_remove(self):
-        """Register a gate via t.gate(), verify in list_gates(), remove, verify gone."""
+        """Register a gate via t.middleware.gate(), verify in list_gates(), remove, verify gone."""
         with Tract.open() as t:
             mock = MockLLMClient(_pass_response())
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            assert t.list_gates() == []
+            assert t.middleware.list_gates() == []
 
-            t.gate(
+            t.middleware.gate(
                 "quality-check",
                 event="pre_transition",
                 check="At least 3 commits tagged 'research'",
             )
 
-            assert "quality-check" in t.list_gates()
-            assert len(t.list_gates()) == 1
+            assert "quality-check" in t.middleware.list_gates()
+            assert len(t.middleware.list_gates()) == 1
 
-            t.remove_gate("quality-check")
+            t.middleware.remove_gate("quality-check")
 
-            assert t.list_gates() == []
+            assert t.middleware.list_gates() == []
 
     def test_remove_nonexistent_gate_raises(self):
         """Removing a gate that doesn't exist raises ValueError."""
         with Tract.open() as t:
             with pytest.raises(ValueError, match="not found"):
-                t.remove_gate("no-such-gate")
+                t.middleware.remove_gate("no-such-gate")
 
 
 # ---------------------------------------------------------------------------
@@ -121,24 +121,24 @@ class TestGateDuplicateNameRejected:
         """Registering two gates with the same name raises ValueError."""
         with Tract.open() as t:
             mock = MockLLMClient(_pass_response())
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            t.gate("unique-gate", event="pre_transition", check="check A")
+            t.middleware.gate("unique-gate", event="pre_transition", check="check A")
 
             with pytest.raises(ValueError, match="already registered"):
-                t.gate("unique-gate", event="pre_commit", check="check B")
+                t.middleware.gate("unique-gate", event="pre_commit", check="check B")
 
     def test_reregister_after_removal_succeeds(self):
         """After removing a gate, the same name can be reused."""
         with Tract.open() as t:
             mock = MockLLMClient(_pass_response())
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            t.gate("reusable", event="pre_transition", check="check A")
-            t.remove_gate("reusable")
+            t.middleware.gate("reusable", event="pre_transition", check="check A")
+            t.middleware.remove_gate("reusable")
             # Should not raise
-            t.gate("reusable", event="pre_commit", check="check B")
-            assert "reusable" in t.list_gates()
+            t.middleware.gate("reusable", event="pre_commit", check="check B")
+            assert "reusable" in t.middleware.list_gates()
 
 
 # ---------------------------------------------------------------------------
@@ -150,16 +150,16 @@ class TestGateBlocksTransition:
         """When LLM returns FAIL, transition raises BlockedError."""
         with Tract.open() as t:
             mock = MockLLMClient(_fail_response("Not enough research commits"))
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
             # Seed some commits
             _seed_commits(t, n=2, tag="research")
 
             # Create the target branch before gating
-            t.branch("synthesis", switch=False)
+            t.branches.create("synthesis", switch=False)
 
             # Register the gate
-            t.gate(
+            t.middleware.gate(
                 "research-complete",
                 event="pre_transition",
                 check="At least 3 commits tagged 'research'",
@@ -178,12 +178,12 @@ class TestGateBlocksTransition:
         """BlockedError reasons include the gate name for debuggability."""
         with Tract.open() as t:
             mock = MockLLMClient(_fail_response("Missing analysis"))
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
             _seed_commits(t, n=1)
-            t.branch("next-stage", switch=False)
+            t.branches.create("next-stage", switch=False)
 
-            t.gate(
+            t.middleware.gate(
                 "analysis-gate",
                 event="pre_transition",
                 check="Must contain analysis",
@@ -204,14 +204,14 @@ class TestGatePassesTransition:
         """When LLM returns PASS, transition completes successfully."""
         with Tract.open() as t:
             mock = MockLLMClient(_pass_response("All criteria satisfied"))
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
             _seed_commits(t, n=3, tag="research")
 
             # Create the target branch
-            t.branch("synthesis", switch=False)
+            t.branches.create("synthesis", switch=False)
 
-            t.gate(
+            t.middleware.gate(
                 "research-complete",
                 event="pre_transition",
                 check="At least 3 commits tagged 'research'",
@@ -230,12 +230,12 @@ class TestGatePassesTransition:
         """The LLM receives a manifest that includes commit metadata."""
         with Tract.open() as t:
             mock = MockLLMClient(_pass_response())
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
             _seed_commits(t, n=2, tag="finding")
-            t.branch("analysis", switch=False)
+            t.branches.create("analysis", switch=False)
 
-            t.gate("check", event="pre_transition", check="Has findings")
+            t.middleware.gate("check", event="pre_transition", check="Has findings")
             t.transition("analysis")
 
             # Inspect what the LLM was sent
@@ -254,13 +254,13 @@ class TestGateWithCondition:
         """Gate does not fire when condition returns False for the target."""
         with Tract.open() as t:
             mock = MockLLMClient(_fail_response("Would block if called"))
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
             _seed_commits(t, n=1)
-            t.branch("other_branch", switch=False)
+            t.branches.create("other_branch", switch=False)
 
             # Gate only fires when target is "synthesis"
-            t.gate(
+            t.middleware.gate(
                 "synthesis-gate",
                 event="pre_transition",
                 check="Requires deep research",
@@ -278,12 +278,12 @@ class TestGateWithCondition:
         """Gate fires when condition returns True for the target."""
         with Tract.open() as t:
             mock = MockLLMClient(_fail_response("Blocked"))
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
             _seed_commits(t, n=1)
-            t.branch("synthesis", switch=False)
+            t.branches.create("synthesis", switch=False)
 
-            t.gate(
+            t.middleware.gate(
                 "synthesis-gate",
                 event="pre_transition",
                 check="Requires deep research",
@@ -301,13 +301,13 @@ class TestGateWithCondition:
         """Same gate: skips for one branch, blocks for another."""
         with Tract.open() as t:
             mock = MockLLMClient(_fail_response("Not ready"))
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
             _seed_commits(t, n=1)
-            t.branch("drafts", switch=False)
-            t.branch("synthesis", switch=False)
+            t.branches.create("drafts", switch=False)
+            t.branches.create("synthesis", switch=False)
 
-            t.gate(
+            t.middleware.gate(
                 "synth-only",
                 event="pre_transition",
                 check="Needs at least 5 findings",
@@ -320,7 +320,7 @@ class TestGateWithCondition:
             assert len(mock.calls) == 0
 
             # Switch back
-            t.switch("main")
+            t.branches.switch("main")
 
             # Synthesis: blocks (condition=True, LLM returns FAIL)
             with pytest.raises(BlockedError):
@@ -337,12 +337,12 @@ class TestGateFailOpenOnLLMError:
         """When LLM raises, gate fails open and transition succeeds."""
         with Tract.open() as t:
             error_client = ErrorLLMClient()
-            t.configure_llm(error_client)
+            t.config.configure_llm(error_client)
 
             _seed_commits(t, n=2)
-            t.branch("next", switch=False)
+            t.branches.create("next", switch=False)
 
-            t.gate(
+            t.middleware.gate(
                 "fragile-gate",
                 event="pre_transition",
                 check="Some criterion",
@@ -358,12 +358,12 @@ class TestGateFailOpenOnLLMError:
 
         with Tract.open() as t:
             error_client = ErrorLLMClient()
-            t.configure_llm(error_client)
+            t.config.configure_llm(error_client)
 
             _seed_commits(t, n=1)
-            t.branch("dest", switch=False)
+            t.branches.create("dest", switch=False)
 
-            t.gate("warn-gate", event="pre_transition", check="criterion")
+            t.middleware.gate("warn-gate", event="pre_transition", check="criterion")
 
             with caplog.at_level(logging.WARNING, logger="tract.gate"):
                 t.transition("dest")
@@ -380,9 +380,9 @@ class TestGateOnPreCommit:
         """A gate on pre_commit blocks t.commit() when LLM returns FAIL."""
         with Tract.open() as t:
             mock = MockLLMClient(_fail_response("Content does not meet standards"))
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            t.gate(
+            t.middleware.gate(
                 "content-quality",
                 event="pre_commit",
                 check="Content must be substantive and well-structured",
@@ -402,9 +402,9 @@ class TestGateOnPreCommit:
         """After removing a pre_commit gate, commits succeed normally."""
         with Tract.open() as t:
             mock = MockLLMClient(_fail_response("Blocked"))
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            t.gate(
+            t.middleware.gate(
                 "blocker",
                 event="pre_commit",
                 check="Must be formatted correctly",
@@ -418,8 +418,8 @@ class TestGateOnPreCommit:
                 )
 
             # Remove the gate
-            t.remove_gate("blocker")
-            assert t.list_gates() == []
+            t.middleware.remove_gate("blocker")
+            assert t.middleware.list_gates() == []
 
             # Now commit should succeed (no gate to block)
             info = t.commit(
@@ -433,9 +433,9 @@ class TestGateOnPreCommit:
         """A pre_commit gate that returns PASS allows the commit through."""
         with Tract.open() as t:
             mock = MockLLMClient(_pass_response("Content looks good"))
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            t.gate(
+            t.middleware.gate(
                 "quality-pass",
                 event="pre_commit",
                 check="Content must be substantive",
@@ -480,13 +480,13 @@ class TestMultipleGates:
 
         with Tract.open() as t:
             seq_mock = SequenceMockClient()
-            t.configure_llm(seq_mock)
+            t.config.configure_llm(seq_mock)
 
             _seed_commits(t, n=2)
-            t.branch("target", switch=False)
+            t.branches.create("target", switch=False)
 
-            t.gate("gate-a", event="pre_transition", check="Check A")
-            t.gate("gate-b", event="pre_transition", check="Check B")
+            t.middleware.gate("gate-a", event="pre_transition", check="Check A")
+            t.middleware.gate("gate-b", event="pre_transition", check="Check B")
 
             # Gate-a passes, gate-b fails
             with pytest.raises(BlockedError) as exc_info:
@@ -499,13 +499,13 @@ class TestMultipleGates:
         """list_gates() returns names of all registered gates."""
         with Tract.open() as t:
             mock = MockLLMClient(_pass_response())
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            t.gate("alpha", event="pre_commit", check="a")
-            t.gate("beta", event="pre_transition", check="b")
-            t.gate("gamma", event="pre_compile", check="c")
+            t.middleware.gate("alpha", event="pre_commit", check="a")
+            t.middleware.gate("beta", event="pre_transition", check="b")
+            t.middleware.gate("gamma", event="pre_compile", check="c")
 
-            names = t.list_gates()
+            names = t.middleware.list_gates()
             assert set(names) == {"alpha", "beta", "gamma"}
 
 
@@ -519,53 +519,53 @@ class TestStaleGatesCleanup:
         removes it from the _gates dict."""
         with Tract.open() as t:
             mock = MockLLMClient(_pass_response())
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            handler_id = t.gate("my-gate", event="pre_commit", check="test")
-            assert "my-gate" in t.list_gates()
+            handler_id = t.middleware.gate("my-gate", event="pre_commit", check="test")
+            assert "my-gate" in t.middleware.list_gates()
 
             # Remove via remove_middleware (not remove_gate)
-            t.remove_middleware(handler_id)
+            t.middleware.remove(handler_id)
 
             # _gates should be cleaned up too
-            assert "my-gate" not in t.list_gates()
+            assert "my-gate" not in t.middleware.list_gates()
 
     def test_reregister_after_direct_removal(self):
         """After remove_middleware() removes a gate, re-registering the
         same name should succeed."""
         with Tract.open() as t:
             mock = MockLLMClient(_pass_response())
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            handler_id = t.gate("reuse-me", event="pre_commit", check="v1")
-            t.remove_middleware(handler_id)
+            handler_id = t.middleware.gate("reuse-me", event="pre_commit", check="v1")
+            t.middleware.remove(handler_id)
 
             # Should not raise "already registered"
-            t.gate("reuse-me", event="pre_commit", check="v2")
-            assert "reuse-me" in t.list_gates()
+            t.middleware.gate("reuse-me", event="pre_commit", check="v2")
+            assert "reuse-me" in t.middleware.list_gates()
 
 
 # ---------------------------------------------------------------------------
-# Invalid event via t.gate()
+# Invalid event via t.middleware.gate()
 # ---------------------------------------------------------------------------
 
 class TestGateInvalidEvent:
     def test_invalid_event_raises_value_error(self):
-        """t.gate() with a bad event string raises ValueError."""
+        """t.middleware.gate() with a bad event string raises ValueError."""
         with Tract.open() as t:
             mock = MockLLMClient(_pass_response())
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
             with pytest.raises(ValueError, match="Unknown middleware event"):
-                t.gate("bad", event="not_a_real_event", check="test")  # type: ignore[arg-type]
+                t.middleware.gate("bad", event="not_a_real_event", check="test")  # type: ignore[arg-type]
 
     def test_gate_return_value_is_handler_id(self):
-        """t.gate() returns a handler ID string usable with remove_middleware()."""
+        """t.middleware.gate() returns a handler ID string usable with remove_middleware()."""
         with Tract.open() as t:
             mock = MockLLMClient(_pass_response())
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            handler_id = t.gate("test-gate", event="pre_commit", check="test")
+            handler_id = t.middleware.gate("test-gate", event="pre_commit", check="test")
             assert isinstance(handler_id, str)
             assert len(handler_id) == 12  # uuid hex prefix
 
@@ -603,12 +603,12 @@ class TestGateFailThenPass:
 
         with Tract.open() as t:
             toggle = ToggleMockClient()
-            t.configure_llm(toggle)
+            t.config.configure_llm(toggle)
 
             _seed_commits(t, n=2)
-            t.branch("synthesis", switch=False)
+            t.branches.create("synthesis", switch=False)
 
-            t.gate(
+            t.middleware.gate(
                 "depth-check",
                 event="pre_transition",
                 check="Research must have sufficient depth",
@@ -656,7 +656,7 @@ class TestParseResponseNullReason:
 
 class TestGatePostEventValidation:
     """Gates block via BlockedError. Post_* events fire after the operation
-    is already complete, making blocking misleading.  t.gate() should reject
+    is already complete, making blocking misleading.  t.middleware.gate() should reject
     post_* events at registration time."""
 
     @pytest.mark.parametrize("event", [
@@ -669,10 +669,10 @@ class TestGatePostEventValidation:
         """Registering a gate on a post_* event raises ValueError."""
         with Tract.open() as t:
             mock = MockLLMClient(_pass_response())
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
             with pytest.raises(ValueError, match="post_\\*"):
-                t.gate("bad-gate", event=event, check="test")  # type: ignore[arg-type]
+                t.middleware.gate("bad-gate", event=event, check="test")  # type: ignore[arg-type]
 
     @pytest.mark.parametrize("event", [
         "pre_commit",
@@ -688,20 +688,20 @@ class TestGatePostEventValidation:
         """All pre_* events should be valid for gate registration."""
         with Tract.open() as t:
             mock = MockLLMClient(_pass_response())
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            handler_id = t.gate(f"gate-{event}", event=event, check="test")  # type: ignore[arg-type]
+            handler_id = t.middleware.gate(f"gate-{event}", event=event, check="test")  # type: ignore[arg-type]
             assert isinstance(handler_id, str)
-            assert f"gate-{event}" in t.list_gates()
+            assert f"gate-{event}" in t.middleware.list_gates()
 
 
 class TestManifestMethod:
-    """Tests for t.manifest() — the public API for build_manifest."""
+    """Tests for t.search.manifest() — the public API for build_manifest."""
 
     def test_manifest_returns_string(self):
         with Tract.open() as t:
             t.system("Hello")
-            m = t.manifest()
+            m = t.search.manifest()
             assert isinstance(m, str)
             assert "CONTEXT MANIFEST" in m
 
@@ -709,21 +709,21 @@ class TestManifestMethod:
         with Tract.open() as t:
             t.system("System prompt")
             t.user("User message")
-            m = t.manifest()
+            m = t.search.manifest()
             assert "COMMIT LOG" in m
             assert "Commits shown: 2" in m
 
     def test_manifest_contains_config(self):
         with Tract.open() as t:
-            t.configure(stage="research")
-            m = t.manifest()
+            t.config.set(stage="research")
+            m = t.search.manifest()
             assert "research" in m
 
     def test_manifest_max_log_entries(self):
         with Tract.open() as t:
             for i in range(10):
                 t.user(f"Message {i}")
-            m = t.manifest(max_log_entries=3)
+            m = t.search.manifest(max_log_entries=3)
             assert "Commits shown: 3" in m
 
     def test_manifest_safe_from_middleware(self):
@@ -736,8 +736,8 @@ class TestManifestMethod:
             calls.append(ctx.event)
 
         with Tract.open() as t:
-            t.use("pre_compile", spy)
+            t.middleware.add("pre_compile", spy)
             t.system("Hello")
-            _ = t.manifest()
+            _ = t.search.manifest()
             # pre_compile should NOT have been called by manifest()
             assert "pre_compile" not in calls

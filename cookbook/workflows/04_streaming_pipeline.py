@@ -38,20 +38,20 @@ def main() -> None:
     ) as t:
 
         # Stage configuration
-        t.configure(stage="research", temperature=0.8)
+        t.config.set(stage="research", temperature=0.8)
 
         # Gate: require commits before synthesis
         def synthesis_gate(ctx: MiddlewareContext):
             if ctx.target != "synthesize":
                 return
-            commits = len(ctx.tract.log())
+            commits = len(ctx.tract.search.log())
             if commits < 3:
                 raise BlockedError(
                     "pre_transition",
                     [f"Need >= 3 commits for synthesis (have {commits})"],
                 )
 
-        t.use("pre_transition", synthesis_gate)
+        t.middleware.add("pre_transition", synthesis_gate)
 
         t.system(
             "You are a research assistant. Work through stages:\n"
@@ -66,7 +66,7 @@ def main() -> None:
         print("=== Stage 1: Research ===")
 
         with StreamPrinter(title="Research", border_style="cyan") as printer:
-            result1 = t.run(
+            result1 = t.llm.run(
                 "Research the concept of 'eventual consistency' in distributed systems. "
                 "List 3-4 key points about how it works and why it matters.",
                 max_steps=5,
@@ -82,10 +82,10 @@ def main() -> None:
 
         # Manually transition since the agent didn't have the tool
         t.transition("synthesize", handoff="Summarize the research findings")
-        t.configure(stage="synthesize", temperature=0.3)
+        t.config.set(stage="synthesize", temperature=0.3)
 
         with StreamPrinter(title="Synthesis", border_style="green") as printer:
-            result2 = t.run(
+            result2 = t.llm.run(
                 "Now write a concise 2-paragraph summary of eventual consistency "
                 "based on the research above.",
                 max_steps=3,
@@ -100,9 +100,9 @@ def main() -> None:
         print(f"\n=== Final State ===")
         print(f"  Research: {result1.status} ({result1.steps} steps)")
         print(f"  Synthesis: {result2.status} ({result2.steps} steps)")
-        configs = t.get_all_configs()
+        configs = t.config.get_all()
         print(f"  Active configs: {configs}")
-        print(f"  Total commits: {len(t.log())}")
+        print(f"  Total commits: {len(t.search.log())}")
 
 
 if __name__ == "__main__":

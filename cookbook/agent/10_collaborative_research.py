@@ -135,11 +135,11 @@ def _configure_child(child: "Tract", *, temperature: float = 0.5) -> None:
         base_url=llm.base_url,
         default_model=MODEL_ID,
     )
-    child.configure_llm(client)
+    child.config.configure_llm(client)
     child._llm_state.owns_llm_client = True
     child._llm_state.default_config = LLMConfig(model=MODEL_ID, temperature=temperature)
     child._llm_state.auto_message_enabled = True
-    child.configure_operations(message=LLMConfig(model=llm.small, temperature=0.0))
+    child.config.configure_operations(message=LLMConfig(model=llm.small, temperature=0.0))
 
 
 # =====================================================================
@@ -180,11 +180,11 @@ def main() -> None:
         base_url=llm.base_url,
         default_model=MODEL_ID,
     )
-    coordinator.configure_llm(coord_client)
+    coordinator.config.configure_llm(coord_client)
     coordinator._llm_state.owns_llm_client = True
     coordinator._llm_state.default_config = LLMConfig(model=MODEL_ID, temperature=0.3)
     coordinator._llm_state.auto_message_enabled = True
-    coordinator.configure_operations(message=LLMConfig(model=llm.small, temperature=0.0))
+    coordinator.config.configure_operations(message=LLMConfig(model=llm.small, temperature=0.0))
 
     # Seed the research question
     coordinator.system(
@@ -207,7 +207,7 @@ def main() -> None:
     for tag_name in ["pro", "con", "risk", "opportunity",
                      "performance", "devex", "business",
                      "consensus", "disagreement", "recommendation"]:
-        coordinator.register_tag(tag_name)
+        coordinator.tags.register(tag_name)
 
     print(f"  Coordinator tract created")
     print(f"  Registered 10 research tags")
@@ -243,7 +243,7 @@ def main() -> None:
               f"(temp={analyst['temperature']})")
 
     # =================================================================
-    # 3. Research: each child does independent analysis via t.chat()
+    # 3. Research: each child does independent analysis via t.llm.chat()
     # =================================================================
 
     print("\n=== Independent Research Phase ===\n")
@@ -255,7 +255,7 @@ def main() -> None:
         print(f"\n--- {analyst['title']} ---\n")
 
         # Each child gets its own research prompt
-        response = child.chat(
+        response = child.llm.chat(
             analyst["prompt"],
             max_tokens=600,
         )
@@ -265,10 +265,10 @@ def main() -> None:
         print(f"  Findings preview:\n    {preview}...")
 
         # Tag the response commit with the analyst's domain
-        child.tag(response.commit_info.commit_hash, analyst["name"])
+        child.tags.add(response.commit_info.commit_hash, analyst["name"])
 
         # Show child status
-        status = child.status()
+        status = child.search.status()
         print(f"\n  Tokens: {status.token_count}, "
               f"Commits: {status.commit_count}")
 
@@ -288,7 +288,7 @@ def main() -> None:
         analyst = entry["analyst"]
 
         # Child generates its own executive summary
-        summary_response = child.chat(
+        summary_response = child.llm.chat(
             f"Summarize your findings as the {analyst['title']}. "
             f"Use bullet points. Label each finding as PRO, CON, or RISK. "
             f"Keep it under 200 words. Start with your top-line verdict.",
@@ -307,7 +307,7 @@ def main() -> None:
 
         # Tag the collapse commit in the coordinator
         if result.parent_commit_hash:
-            coordinator.tag(result.parent_commit_hash, analyst["name"])
+            coordinator.tags.add(result.parent_commit_hash, analyst["name"])
 
         print(f"  {analyst['title']}: "
               f"{result.source_tokens} tokens -> "
@@ -324,7 +324,7 @@ def main() -> None:
 
     print("\n=== Synthesis: Consensus Analysis ===\n")
 
-    response = coordinator.chat(
+    response = coordinator.llm.chat(
         "All three analyst reports are now in your context. Produce a "
         "FINAL RECOMMENDATION with these sections:\n\n"
         "1. CONSENSUS -- Points where all analysts agree\n"
@@ -349,8 +349,8 @@ def main() -> None:
     print("\n\n=== Tag & Persist ===\n")
 
     # Tag the synthesis commit
-    coordinator.tag(response.commit_info.commit_hash, "recommendation")
-    coordinator.tag(response.commit_info.commit_hash, "consensus")
+    coordinator.tags.add(response.commit_info.commit_hash, "recommendation")
+    coordinator.tags.add(response.commit_info.commit_hash, "consensus")
 
     # Store confidence metadata on the synthesis commit
     # (metadata is set at commit time, so we record it as a follow-up note)
@@ -374,7 +374,7 @@ def main() -> None:
     print("=== Final State ===\n")
 
     # Coordinator status
-    status = coordinator.status()
+    status = coordinator.search.status()
     print(f"  Coordinator: {status.token_count} tokens, "
           f"{status.commit_count} commits")
     print(f"  Branch: {status.branch_name}")
@@ -387,12 +387,12 @@ def main() -> None:
 
     # Show tag distribution (immutable auto-tags + registered tags)
     print(f"\n  Tag registry:")
-    for entry in coordinator.list_tags():
+    for entry in coordinator.tags.list():
         print(f"    {entry['name']:20s} count={entry['count']}")
 
     # Show the commit log
     print(f"\n  Coordinator log (last 10):")
-    for ci in coordinator.log()[-10:]:
+    for ci in coordinator.search.log()[-10:]:
         tags_str = f" [{', '.join(ci.tags)}]" if ci.tags else ""
         msg = (ci.message or "")[:45]
         print(f"    {ci.commit_hash[:8]}  {ci.content_type:12s}{tags_str}  {msg}")

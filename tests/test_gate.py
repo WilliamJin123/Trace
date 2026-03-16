@@ -89,17 +89,17 @@ def _make_tract_mock(
     config: dict[str, Any] | None = None,
     client: Any | None = None,
 ) -> MagicMock:
-    """Create a mock Tract with log/config/llm methods wired up."""
+    """Create a mock Tract with search/config/llm methods wired up."""
     mock = MagicMock()
-    mock.log.return_value = commits or []
-    mock.get_all_configs.return_value = config or {}
+    mock.search.log.return_value = commits or []
+    mock.config.get_all.return_value = config or {}
     mock.current_branch = "main"
     mock.head = "a" * 40
 
     if client is not None:
-        mock._resolve_llm_client.return_value = client
+        mock.config._resolve_llm_client.return_value = client
     else:
-        mock._resolve_llm_client.side_effect = RuntimeError("No LLM client")
+        mock.config._resolve_llm_client.side_effect = RuntimeError("No LLM client")
 
     return mock
 
@@ -248,7 +248,7 @@ class TestLLMClientResolution:
         gate = SemanticGate(name="op-check", check="x")
         gate(ctx)
 
-        tract_mock._resolve_llm_client.assert_called_once_with("gate")
+        tract_mock.config._resolve_llm_client.assert_called_once_with("gate")
 
 
 # ---------------------------------------------------------------------------
@@ -318,7 +318,7 @@ class TestBuildManifest:
         # Tract.log() receives the limit
         gate = SemanticGate(name="m4", check="x", max_log_entries=10)
         gate._build_manifest(tract_mock)
-        tract_mock.log.assert_called_once_with(limit=10)
+        tract_mock.search.log.assert_called_once_with(limit=10)
 
 
 # ---------------------------------------------------------------------------
@@ -502,7 +502,7 @@ class TestEdgeCases:
         """If get_all_configs raises, manifest still builds."""
         client = FakeLLMClient()
         tract_mock = _make_tract_mock(client=client)
-        tract_mock.get_all_configs.side_effect = Exception("config error")
+        tract_mock.config.get_all.side_effect = Exception("config error")
         ctx = _make_ctx(tract_mock)
 
         gate = SemanticGate(name="cfg-err", check="x")

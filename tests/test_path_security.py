@@ -118,22 +118,22 @@ class TestSaveWorkflowPathTraversal:
 
     def test_rejects_forward_slash(self, tract_mem):
         with pytest.raises(ValueError, match="must not contain"):
-            tract_mem.save_workflow("../../evil", code="x = 1")
+            tract_mem.persistence.save_workflow("../../evil", code="x = 1")
 
     def test_rejects_backslash(self, tract_mem):
         with pytest.raises(ValueError, match="must not contain"):
-            tract_mem.save_workflow("..\\evil", code="x = 1")
+            tract_mem.persistence.save_workflow("..\\evil", code="x = 1")
 
     def test_rejects_dot_dot(self, tract_mem):
         with pytest.raises(ValueError, match="must not contain"):
-            tract_mem.save_workflow("..", code="x = 1")
+            tract_mem.persistence.save_workflow("..", code="x = 1")
 
     def test_rejects_slash_in_name(self, tract_mem):
         with pytest.raises(ValueError, match="must not contain"):
-            tract_mem.save_workflow("sub/workflow", code="x = 1")
+            tract_mem.persistence.save_workflow("sub/workflow", code="x = 1")
 
     def test_valid_name_works(self, tract_file):
-        path = tract_file.save_workflow("my_workflow", code="x = 1")
+        path = tract_file.persistence.save_workflow("my_workflow", code="x = 1")
         assert path.name == "my_workflow.py"
         assert path.exists()
         assert path.read_text() == "x = 1"

@@ -71,7 +71,7 @@ class TestSendMessage:
         )
 
         # Find the message in child's log
-        log = child.log(limit=5)
+        log = child.search.log(limit=5)
         # The most recent commit should be the agent message
         found = False
         for entry in log:
@@ -94,9 +94,9 @@ class TestSendMessage:
         )
 
         # Check that the commit has the expected tags
-        log = child.log(limit=1)
+        log = child.search.log(limit=1)
         assert len(log) == 1
-        tags = child.get_tags(log[0].commit_hash)
+        tags = child.tags.get(log[0].commit_hash)
         assert "agent_message" in tags
         assert "urgent" in tags
         assert "priority" in tags
@@ -119,13 +119,13 @@ class TestInheritTools:
             {"type": "function", "function": {"name": "search", "parameters": {}}},
             {"type": "function", "function": {"name": "calculate", "parameters": {}}},
         ]
-        parent.set_tools(tools)
+        parent.tools.set(tools)
 
         child = session.spawn(
             parent, purpose="tool user", inherit_tools=True
         )
 
-        child_tools = child.get_tools()
+        child_tools = child.tools.get()
         assert child_tools is not None
         assert len(child_tools) == 2
         names = {t["function"]["name"] for t in child_tools}
@@ -138,25 +138,25 @@ class TestInheritTools:
         tools = [
             {"type": "function", "function": {"name": "search", "parameters": {}}},
         ]
-        parent.set_tools(tools)
+        parent.tools.set(tools)
 
         child = session.spawn(parent, purpose="no tools")
 
-        child_tools = child.get_tools()
+        child_tools = child.tools.get()
         assert child_tools is None
 
     def test_inherit_tools_no_parent_tools(self, tmp_path):
         """inherit_tools=True with no parent tools sets child tools to None."""
         session, parent = _create_session_with_parent(tmp_path)
         # Parent has no tools set
-        assert parent.get_tools() is None
+        assert parent.tools.get() is None
 
         child = session.spawn(
             parent, purpose="task", inherit_tools=True
         )
 
         # Child should also have no tools (parent had None)
-        assert child.get_tools() is None
+        assert child.tools.get() is None
 
 
 # ---------------------------------------------------------------------------
@@ -250,26 +250,26 @@ class TestTractLevelAPI:
     """Tests for Tract.send_to_child()."""
 
     def test_tract_send_to_child(self, tmp_path):
-        """t.send_to_child() creates message in child tract."""
+        """t.spawn.send_to_child() creates message in child tract."""
         session, parent = _create_session_with_parent(tmp_path)
         child = session.spawn(parent, purpose="send test")
 
-        commit_hash = parent.send_to_child(
+        commit_hash = parent.spawn.send_to_child(
             child.tract_id, "Instructions for you."
         )
         assert commit_hash is not None
 
         # Verify the message is in child via find()
-        messages = child.find(tag="agent_message")
+        messages = child.search.find(tag="agent_message")
         assert len(messages) == 1
         assert messages[0].metadata["from_tract_id"] == parent.tract_id
 
     def test_tract_send_to_child_no_session_raises(self, tmp_path):
-        """t.send_to_child() without session raises SessionError."""
+        """t.spawn.send_to_child() without session raises SessionError."""
         from tract import Tract
 
         t = Tract.open()
         t.commit(InstructionContent(text="standalone"))
         with pytest.raises(SessionError):
-            t.send_to_child("some-child-id", "hello")
+            t.spawn.send_to_child("some-child-id", "hello")
         t.close()

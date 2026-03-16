@@ -76,7 +76,7 @@ def main() -> None:
         # Task: two independent, conflicting proposals
         print("  --- Task ---")
         log = StepLogger()
-        result = t.run(
+        result = t.llm.run(
             "Write two short proposals:\n"
             "A) Why microservices is the right call\n"
             "B) Why monolith is the right call\n\n"
@@ -89,16 +89,16 @@ def main() -> None:
 
         # Report — show each branch's compiled context
         print("\n  --- Final state ---")
-        branches = t.list_branches()
+        branches = t.branches.list()
         print(f"  Branches: {[b.name for b in branches]}")
         print(f"  Current: {t.current_branch}")
 
         original = t.current_branch
         for branch in branches:
-            t.switch(branch.name)
+            t.branches.switch(branch.name)
             print(f"\n  [{branch.name}]:")
             t.compile().pprint(style="compact")
-        t.switch(original)
+        t.branches.switch(original)
 
         if len(branches) > 1:
             print(f"\n  Agent created {len(branches) - 1} branch(es) for isolation.")

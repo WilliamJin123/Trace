@@ -55,7 +55,7 @@ def main() -> None:
     # On failure: diagnosis committed as steering message, LLM retried.
     # hide_retries=True (default): SKIP-annotates failed attempts.
 
-    # response = t.chat(
+    # response = t.llm.chat(
     #     "Give me 3 languages as JSON.",
     #     validator=validate_json_list,
     #     max_retries=3,        # retry up to 3 times
@@ -65,10 +65,10 @@ def main() -> None:
     # response.commit_info.metadata  # has retry_attempts if retries occurred
     #
     # # Keep retry artifacts visible:
-    # t.chat("...", validator=fn, hide_retries=False)
+    # t.llm.chat("...", validator=fn, hide_retries=False)
     #
     # # generate() has the same interface:
-    # t.generate(validator=validate_person, max_retries=3)
+    # t.llm.generate(validator=validate_person, max_retries=3)
 
     print("2. chat/generate(validator=, max_retries=, hide_retries=)")
 
@@ -82,7 +82,7 @@ def main() -> None:
     assert err.last_result == "some text"  # usable for fallback
 
     # try:
-    #     t.chat("...", validator=impossible_fn, max_retries=2)
+    #     t.llm.chat("...", validator=impossible_fn, max_retries=2)
     # except RetryExhaustedError as e:
     #     fallback = e.last_result  # use last output as fallback
 
@@ -109,11 +109,11 @@ def main() -> None:
         return (True, None)
 
     # Instead of validator on compress(), use retain_match on annotate:
-    # t.annotate(commit_hash, Priority.IMPORTANT,
+    # t.annotations.set(commit_hash, Priority.IMPORTANT,
     #     retain_match=["B-tree", "LSM", "write-ahead"],
     #     retain_match_mode="substring",
     # )
-    # t.compress(target_tokens=200)  # retain_match enforced automatically
+    # t.compression.compress(target_tokens=200)  # retain_match enforced automatically
 
     print("4. compress + retain_match: deterministic compression safety")
 
@@ -127,7 +127,7 @@ def main() -> None:
     # =================================================================
     # Two-layer safety: regex (hard) + validator (soft).
 
-    # t.annotate(report.commit_hash, Priority.IMPORTANT,
+    # t.annotations.set(report.commit_hash, Priority.IMPORTANT,
     #     retain="Preserve dollar amounts and percentages",
     #     retain_match=[
     #         r"\$4[,.]?2[,.]?M",   # revenue pattern
@@ -136,7 +136,7 @@ def main() -> None:
     #     retain_match_mode="regex",
     # )
     #
-    # t.compress(target_tokens=200)  # retain_match patterns enforced automatically
+    # t.compression.compress(target_tokens=200)  # retain_match patterns enforced automatically
 
     print("5. retain_match: regex patterns for compression safety")
 
@@ -153,12 +153,12 @@ def main() -> None:
             return (False, f"Missing: {missing}")
         return (True, None)
 
-    # t.annotate(commit_hash, Priority.IMPORTANT,
+    # t.annotations.set(commit_hash, Priority.IMPORTANT,
     #     retain="Organize by: auth, encryption, access control.",
     #     retain_match=[r"(?i)(jwt|token)", r"(?i)(aes|tls)", r"(?i)(rbac|role)"],
     #     retain_match_mode="regex",
     # )
-    # t.compress(
+    # t.compression.compress(
     #     target_tokens=150,
     #     instructions="Organize by: auth, encryption, access control.",
     # )

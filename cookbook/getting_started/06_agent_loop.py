@@ -9,7 +9,7 @@ Patterns shown:
   3. run() with callbacks   -- on_step monitoring
   4. LoopResult inspection  -- status, steps, tool_calls, token usage
 
-Demonstrates: Tract.open(llm_client=), t.run(), LoopResult, on_step
+Demonstrates: Tract.open(llm_client=), t.llm.run(), LoopResult, on_step
 
 No LLM required.
 """
@@ -141,7 +141,7 @@ def main() -> None:
         t.system("You are a helpful calculator assistant.")
 
         # One call does everything: compile -> LLM -> tools -> repeat
-        result = t.run(
+        result = t.llm.run(
             "What is 6 times 7?",
             tools=TOOL_DEFS,
             tool_handlers={"calculator": calculator, "take_note": take_note},

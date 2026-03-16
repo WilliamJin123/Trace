@@ -8,7 +8,7 @@ commits as SKIP and reconfiguring the stage when it detects a phase shift.
 The maintainer is NOT scripted. It makes a real LLM call to decide what
 actions to take. If the context is clean, it takes zero actions.
 
-Demonstrates: t.maintain(), condition callbacks, last_result observability,
+Demonstrates: t.middleware.maintain(), condition callbacks, last_result observability,
 list_maintainers().
 
 Requires: LLM API key (uses Cerebras provider)
@@ -81,10 +81,10 @@ def main() -> None:
             "for building resilient supply chains. Commit each distinct "
             "finding separately so the research log shows clear progression."
         )
-        t.configure(stage="research")
+        t.config.set(stage="research")
 
         # --- Register semantic maintainer ---------------------------------
-        t.maintain(
+        t.middleware.maintain(
             name="context-health",
             event="post_commit",
             instructions=(
@@ -96,11 +96,11 @@ def main() -> None:
             ),
             actions=["annotate", "configure"],
             model=llm.small,
-            condition=lambda ctx: len(ctx.tract.log()) > 5,
+            condition=lambda ctx: len(ctx.tract.search.log()) > 5,
         )
 
         print(f"  Branch: {t.current_branch}")
-        print(f"  Maintainers: {t.list_maintainers()}")
+        print(f"  Maintainers: {t.middleware.list_maintainers()}")
         print(f"  Fires on: post_commit (when log > 5 entries)")
 
         # --- Phase 1: Broad research --------------------------------------
@@ -108,7 +108,7 @@ def main() -> None:
         print("Phase 1: Broad Research")
         print("=" * 70 + "\n")
 
-        result = t.run(
+        result = t.llm.run(
             "Research strategies for building resilient supply chains. "
             "Cover geographic diversification, inventory management, and "
             "supplier relationships. Commit each finding as you go.",
@@ -121,7 +121,7 @@ def main() -> None:
         )
         result.pprint()
 
-        entries = t.log(limit=20)
+        entries = t.search.log(limit=20)
         print(f"\n  Commits after Phase 1: {len(entries)}")
         for entry in entries[:6]:
             msg = (entry.message or "(no message)")[:60]
@@ -136,7 +136,7 @@ def main() -> None:
         print("Phase 2: Specific Recommendations")
         print("=" * 70 + "\n")
 
-        result = t.run(
+        result = t.llm.run(
             "Shift from broad research to specific, actionable recommendations "
             "for a mid-size manufacturer. Commit each recommendation.",
             max_steps=8,
@@ -153,11 +153,11 @@ def main() -> None:
         print("Final State")
         print("=" * 70 + "\n")
 
-        entries = t.log(limit=30)
+        entries = t.search.log(limit=30)
         print(f"  Branch: {t.current_branch}")
         print(f"  Total commits: {len(entries)}")
-        print(f"  Maintainers: {t.list_maintainers()}")
-        print(f"  Tokens: {t.status().token_count}")
+        print(f"  Maintainers: {t.middleware.list_maintainers()}")
+        print(f"  Tokens: {t.search.status().token_count}")
 
         print(f"\n  Maintainer 'context-health' last_result:")
         _print_result(_get_maintainer_handler(t, "context-health"))
@@ -170,7 +170,7 @@ def main() -> None:
             if hasattr(e, "priority") and e.priority.name == "SKIP"
         )
         print(f"\n  Commits marked SKIP by maintainer: {skip_count}")
-        print(f"  Current stage: {t.get_config('stage')}")
+        print(f"  Current stage: {t.config.get('stage')}")
 
     # --- Why semantic maintenance matters ---------------------------------
     print("\n" + "=" * 70)

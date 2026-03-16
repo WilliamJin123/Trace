@@ -200,7 +200,7 @@ class TestRegistryFunctions:
 class TestTractTemplateIntegration:
     def test_apply_template_creates_directive(self):
         with Tract.open() as t:
-            info = t.apply_template("code_review", language="Python")
+            info = t.templates.apply("code_review", language="Python")
             assert info.commit_hash
             assert info.message == "directive: code_review"
 
@@ -212,7 +212,7 @@ class TestTractTemplateIntegration:
 
     def test_apply_template_custom_directive_name(self):
         with Tract.open() as t:
-            info = t.apply_template(
+            info = t.templates.apply(
                 "code_review", directive_name="my_review", language="Rust"
             )
             assert info.message == "directive: my_review"
@@ -220,16 +220,16 @@ class TestTractTemplateIntegration:
     def test_apply_template_unknown_raises(self):
         with Tract.open() as t:
             with pytest.raises(KeyError, match="nonexistent"):
-                t.apply_template("nonexistent")
+                t.templates.apply("nonexistent")
 
     def test_apply_template_missing_params_raises(self):
         with Tract.open() as t:
             with pytest.raises(ValueError, match="Unresolved"):
-                t.apply_template("safety_guardrails")  # needs domain + threshold
+                t.templates.apply("safety_guardrails")  # needs domain + threshold
 
     def test_list_templates_from_tract(self):
         with Tract.open() as t:
-            templates = t.list_templates()
+            templates = t.templates.list()
             assert len(templates) >= 9
             names = {tpl.name for tpl in templates}
             assert "code_review" in names
@@ -238,8 +238,8 @@ class TestTractTemplateIntegration:
     def test_apply_template_directive_deduplication(self):
         """Applying the same template twice should deduplicate (latest wins)."""
         with Tract.open() as t:
-            t.apply_template("code_review", language="Python")
-            t.apply_template("code_review", language="Rust")
+            t.templates.apply("code_review", language="Python")
+            t.templates.apply("code_review", language="Rust")
 
             ctx = t.compile()
             messages = ctx.to_dicts()
@@ -251,7 +251,7 @@ class TestTractTemplateIntegration:
 
     def test_apply_template_with_multiple_params(self):
         with Tract.open() as t:
-            info = t.apply_template(
+            info = t.templates.apply(
                 "brand_voice",
                 tone="professional",
                 audience="developers",

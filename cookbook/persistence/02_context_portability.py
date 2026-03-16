@@ -13,8 +13,8 @@ Patterns shown:
   5. Branch Export               -- export a specific branch's context
   6. Export After Compression    -- compressed context stays compact after export
 
-Demonstrates: t.export_state(), t.load_state(), t.compile(), t.branch(),
-              t.switch(), t.compress(content=), t.annotate(), json.dump/load,
+Demonstrates: t.persistence.export_state(), t.persistence.load_state(), t.compile(), t.branches.create(),
+              t.branches.switch(), t.compression.compress(content=), t.annotations.set(), json.dump/load,
               Tract.open()
 
 No LLM required.
@@ -92,7 +92,7 @@ def main() -> None:
                 "Use RFC 7807 Problem Details: type, title, status, detail, instance."
             )
 
-            state = t.export_state()
+            state = t.persistence.export_state()
 
         # Write to disk
         with open(tmp_path, "w", encoding="utf-8") as f:
@@ -107,7 +107,7 @@ def main() -> None:
             loaded_state = json.load(f)
 
         with Tract.open() as t2:
-            loaded_count = t2.load_state(loaded_state)
+            loaded_count = t2.persistence.load_state(loaded_state)
             ctx = t2.compile()
             text = ctx.to_text()
             assert "RFC 7807" in text
@@ -154,7 +154,7 @@ def main() -> None:
         )
 
         # Export Agent A's full context
-        handoff = agent_a.export_state()
+        handoff = agent_a.persistence.export_state()
         a_count = len(handoff["commits"])
 
     # Agent B: continue with Agent A's context
@@ -163,7 +163,7 @@ def main() -> None:
         agent_b.system("You are a technical writer.")
 
         # Import Agent A's research
-        imported = agent_b.load_state(handoff)
+        imported = agent_b.persistence.load_state(handoff)
         print(f"  Agent A produced {a_count} commits")
         print(f"  Agent B imported {imported} commits")
 
@@ -215,10 +215,10 @@ def main() -> None:
         )
 
         # Full export (with blobs)
-        full_state = t.export_state(include_blobs=True)
+        full_state = t.persistence.export_state(include_blobs=True)
 
         # Metadata-only export (no blobs)
-        meta_state = t.export_state(include_blobs=False)
+        meta_state = t.persistence.export_state(include_blobs=False)
 
     full_size = len(json.dumps(full_state))
     meta_size = len(json.dumps(meta_state))
@@ -238,7 +238,7 @@ def main() -> None:
     # Attempting to load metadata-only export loads zero commits
     # because load_state skips entries without payload
     with Tract.open() as t2:
-        loaded = t2.load_state(meta_state)
+        loaded = t2.persistence.load_state(meta_state)
         assert loaded == 0, "Metadata-only export should not load any commits"
         print(f"  load_state on metadata-only: {loaded} commits (expected 0)")
 
@@ -265,7 +265,7 @@ def main() -> None:
         t.assistant("Q1 roadmap: Auth system, API v2, Dashboard redesign.")
 
         # Create a feature branch with additional work
-        t.branch("feature/auth")
+        t.branches.create("feature/auth")
         t.user("Detail the auth system plan.")
         t.assistant(
             "Auth plan: OAuth2 + PKCE, JWT with refresh rotation, "
@@ -275,13 +275,13 @@ def main() -> None:
         t.assistant("SSO via SAML 2.0 for enterprise customers.")
 
         # Export from the feature branch
-        feature_state = t.export_state()
+        feature_state = t.persistence.export_state()
         feature_commits = len(feature_state["commits"])
         feature_branch = feature_state["branch"]
 
         # Switch to main and export
-        t.switch("main")
-        main_state = t.export_state()
+        t.branches.switch("main")
+        main_state = t.persistence.export_state()
         main_commits = len(main_state["commits"])
         main_branch = main_state["branch"]
 
@@ -300,7 +300,7 @@ def main() -> None:
 
     # Import feature branch into a new tract
     with Tract.open() as t2:
-        loaded = t2.load_state(feature_state)
+        loaded = t2.persistence.load_state(feature_state)
         ctx = t2.compile()
         text = ctx.to_text()
         assert "SAML 2.0" in text
@@ -335,13 +335,13 @@ def main() -> None:
                 f"for edge case {i}. Consider extracting validation into a helper."
             )
 
-        pre_compress_state = t.export_state()
+        pre_compress_state = t.persistence.export_state()
         pre_count = len(pre_compress_state["commits"])
         pre_ctx = t.compile()
         pre_tokens = pre_ctx.token_count
 
         # Manual compression: replace the 10 review messages with a summary
-        t.compress(
+        t.compression.compress(
             content=(
                 "Code review summary: All 5 functions reviewed. Common themes: "
                 "add error handling for edge cases, extract validation helpers. "
@@ -349,7 +349,7 @@ def main() -> None:
             )
         )
 
-        post_compress_state = t.export_state()
+        post_compress_state = t.persistence.export_state()
         post_count = len(post_compress_state["commits"])
         post_ctx = t.compile()
         post_tokens = post_ctx.token_count
@@ -361,7 +361,7 @@ def main() -> None:
 
     # Import the compressed state into a fresh tract
     with Tract.open() as t2:
-        loaded = t2.load_state(post_compress_state)
+        loaded = t2.persistence.load_state(post_compress_state)
         ctx = t2.compile()
         text = ctx.to_text()
         assert "code review" in text.lower() or "Code review summary" in text

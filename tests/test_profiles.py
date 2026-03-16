@@ -176,51 +176,51 @@ class TestWorkflowProfile:
 class TestTractLoadProfile:
     def test_applies_config(self):
         with Tract.open() as t:
-            t.load_profile("coding")
-            assert t.get_config("temperature") == 0.3
-            assert t.get_config("compile_strategy") == "messages"
+            t.templates.load_profile("coding")
+            assert t.config.get("temperature") == 0.3
+            assert t.config.get("compile_strategy") == "messages"
 
     def test_applies_directives(self):
         with Tract.open() as t:
-            t.load_profile("coding")
+            t.templates.load_profile("coding")
             # Directives are committed as InstructionContent
-            log = t.log()
+            log = t.search.log()
             messages = [ci.message for ci in log]
             assert any("directive: methodology" in m for m in messages)
             assert any("directive: code_quality" in m for m in messages)
 
     def test_skip_directives(self):
         with Tract.open() as t:
-            t.load_profile("coding", apply_directives=False)
+            t.templates.load_profile("coding", apply_directives=False)
             # Config should still be applied
-            assert t.get_config("temperature") == 0.3
+            assert t.config.get("temperature") == 0.3
             # But no directives
-            log = t.log()
+            log = t.search.log()
             messages = [ci.message for ci in log]
             assert not any("directive:" in m for m in messages)
 
     def test_stores_active_profile(self):
         with Tract.open() as t:
-            t.load_profile("research")
-            assert t.active_profile is not None
-            assert t.active_profile.name == "research"
+            t.templates.load_profile("research")
+            assert t.templates.active_profile is not None
+            assert t.templates.active_profile.name == "research"
 
     def test_unknown_profile_raises(self):
         with Tract.open() as t:
             with pytest.raises(KeyError, match="not found"):
-                t.load_profile("nonexistent")
+                t.templates.load_profile("nonexistent")
 
     def test_load_research_profile(self):
         with Tract.open() as t:
-            t.load_profile("research")
-            assert t.get_config("temperature") == 0.5
-            assert t.get_config("compile_strategy") == "full"
+            t.templates.load_profile("research")
+            assert t.config.get("temperature") == 0.5
+            assert t.config.get("compile_strategy") == "full"
 
     def test_load_ecommerce_profile(self):
         with Tract.open() as t:
-            t.load_profile("ecommerce")
-            assert t.get_config("temperature") == 0.6
-            assert t.get_config("compile_strategy") == "messages"
+            t.templates.load_profile("ecommerce")
+            assert t.config.get("temperature") == 0.6
+            assert t.config.get("compile_strategy") == "messages"
 
     def test_load_profile_with_templates(self):
         """Profile with directive_templates should apply them."""
@@ -232,8 +232,8 @@ class TestTractLoadProfile:
         register_profile(custom)
         try:
             with Tract.open() as t:
-                t.load_profile("_tmpl_test")
-                log = t.log()
+                t.templates.load_profile("_tmpl_test")
+                log = t.search.log()
                 messages = [ci.message for ci in log]
                 assert any("directive: output_format" in m for m in messages)
         finally:
@@ -248,56 +248,56 @@ class TestTractLoadProfile:
 class TestTractApplyStage:
     def test_applies_stage_config(self):
         with Tract.open() as t:
-            t.load_profile("coding")
-            t.apply_stage("design")
-            assert t.get_config("temperature") == 0.5
-            assert t.get_config("compile_strategy") == "full"
+            t.templates.load_profile("coding")
+            t.templates.apply_stage("design")
+            assert t.config.get("temperature") == 0.5
+            assert t.config.get("compile_strategy") == "full"
 
     def test_apply_different_stages(self):
         with Tract.open() as t:
-            t.load_profile("coding")
-            t.apply_stage("test")
-            assert t.get_config("temperature") == 0.1
+            t.templates.load_profile("coding")
+            t.templates.apply_stage("test")
+            assert t.config.get("temperature") == 0.1
 
-            t.apply_stage("review")
-            assert t.get_config("temperature") == 0.4
-            assert t.get_config("compile_strategy") == "adaptive"
+            t.templates.apply_stage("review")
+            assert t.config.get("temperature") == 0.4
+            assert t.config.get("compile_strategy") == "adaptive"
 
     def test_error_without_profile(self):
         with Tract.open() as t:
             with pytest.raises(ValueError, match="No workflow profile loaded"):
-                t.apply_stage("design")
+                t.templates.apply_stage("design")
 
     def test_error_for_unknown_stage(self):
         with Tract.open() as t:
-            t.load_profile("coding")
+            t.templates.load_profile("coding")
             with pytest.raises(ValueError, match="not in profile"):
-                t.apply_stage("nonexistent_stage")
+                t.templates.apply_stage("nonexistent_stage")
 
     def test_error_lists_available_stages(self):
         with Tract.open() as t:
-            t.load_profile("coding")
+            t.templates.load_profile("coding")
             with pytest.raises(ValueError, match="design"):
-                t.apply_stage("bogus")
+                t.templates.apply_stage("bogus")
 
     def test_apply_research_stages(self):
         with Tract.open() as t:
-            t.load_profile("research")
-            t.apply_stage("ingest")
-            assert t.get_config("temperature") == 0.3
+            t.templates.load_profile("research")
+            t.templates.apply_stage("ingest")
+            assert t.config.get("temperature") == 0.3
 
-            t.apply_stage("synthesize")
-            assert t.get_config("temperature") == 0.6
-            assert t.get_config("compile_strategy") == "adaptive"
+            t.templates.apply_stage("synthesize")
+            assert t.config.get("temperature") == 0.6
+            assert t.config.get("compile_strategy") == "adaptive"
 
     def test_apply_ecommerce_stages(self):
         with Tract.open() as t:
-            t.load_profile("ecommerce")
-            t.apply_stage("creative")
-            assert t.get_config("temperature") == 0.8
+            t.templates.load_profile("ecommerce")
+            t.templates.apply_stage("creative")
+            assert t.config.get("temperature") == 0.8
 
-            t.apply_stage("analysis")
-            assert t.get_config("temperature") == 0.2
+            t.templates.apply_stage("analysis")
+            assert t.config.get("temperature") == 0.2
 
 
 # ---------------------------------------------------------------------------
@@ -308,19 +308,19 @@ class TestTractApplyStage:
 class TestActiveProfileProperty:
     def test_none_by_default(self):
         with Tract.open() as t:
-            assert t.active_profile is None
+            assert t.templates.active_profile is None
 
     def test_set_after_load(self):
         with Tract.open() as t:
-            t.load_profile("coding")
-            assert t.active_profile is CODING
+            t.templates.load_profile("coding")
+            assert t.templates.active_profile is CODING
 
     def test_replaced_on_second_load(self):
         with Tract.open() as t:
-            t.load_profile("coding")
-            assert t.active_profile is CODING
-            t.load_profile("research")
-            assert t.active_profile is RESEARCH
+            t.templates.load_profile("coding")
+            assert t.templates.active_profile is CODING
+            t.templates.load_profile("research")
+            assert t.templates.active_profile is RESEARCH
 
 
 # ---------------------------------------------------------------------------
@@ -343,26 +343,26 @@ class TestCustomProfileEndToEnd:
         register_profile(custom)
         try:
             with Tract.open() as t:
-                t.load_profile("_e2e_test")
+                t.templates.load_profile("_e2e_test")
 
                 # Base config applied
-                assert t.get_config("temperature") == 0.5
-                assert t.get_config("compile_strategy") == "full"
+                assert t.config.get("temperature") == 0.5
+                assert t.config.get("compile_strategy") == "full"
 
                 # Directive applied
-                log_msgs = [ci.message for ci in t.log()]
+                log_msgs = [ci.message for ci in t.search.log()]
                 assert any("directive: rule" in m for m in log_msgs)
 
                 # Switch to explore stage
-                t.apply_stage("explore")
-                assert t.get_config("temperature") == 0.9
+                t.templates.apply_stage("explore")
+                assert t.config.get("temperature") == 0.9
                 # compile_strategy not overridden in this stage, still "full"
-                assert t.get_config("compile_strategy") == "full"
+                assert t.config.get("compile_strategy") == "full"
 
                 # Switch to execute stage
-                t.apply_stage("execute")
-                assert t.get_config("temperature") == 0.1
-                assert t.get_config("compile_strategy") == "messages"
+                t.templates.apply_stage("execute")
+                assert t.config.get("temperature") == 0.1
+                assert t.config.get("compile_strategy") == "messages"
         finally:
             BUILT_IN_PROFILES.pop("_e2e_test", None)
 

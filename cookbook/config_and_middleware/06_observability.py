@@ -12,9 +12,9 @@ Patterns shown:
   4. Stage Timing              -- measure time spent in each workflow stage
   5. Compression Efficiency    -- pre/post token counts and compression ratios
 
-Demonstrates: t.use(), post_commit metadata capture, pre_compile / pre_compress /
+Demonstrates: t.middleware.add(), post_commit metadata capture, pre_compile / pre_compress /
               pre_transition / post_transition hooks, closure-based state,
-              t.compile().token_count, t.log() for audit, t.compress()
+              t.compile().token_count, t.search.log() for audit, t.compression.compress()
 
 Why middleware beats logging wrappers:
   - Every operation fires automatically -- nothing to forget
@@ -90,7 +90,7 @@ def main() -> None:
             llm_metrics["total_output_tokens"] += output_tokens
             llm_metrics["total_cost_usd"] += cost
 
-        tracker_id = t.use("post_commit", track_llm_calls)
+        tracker_id = t.middleware.add("post_commit", track_llm_calls)
 
         # Simulate a conversation with metadata mimicking real LLM responses
         t.system("You are a financial analyst.")
@@ -126,7 +126,7 @@ def main() -> None:
                     f"cost=${call['cost_usd']:.4f}"
                 )
 
-        t.remove_middleware(tracker_id)
+        t.middleware.remove(tracker_id)
 
     # =================================================================
     # 2. Token Budget Dashboard
@@ -179,8 +179,8 @@ def main() -> None:
             if ctx.target:
                 budget["current_stage"] = ctx.target
 
-        token_id = t.use("post_commit", track_stage_tokens)
-        stage_id = t.use("post_transition", update_stage_on_transition)
+        token_id = t.middleware.add("post_commit", track_stage_tokens)
+        stage_id = t.middleware.add("post_transition", update_stage_on_transition)
 
         # --- Research stage ---
         t.system("You are a market researcher.")
@@ -252,8 +252,8 @@ def main() -> None:
             for w in budget["warnings"]:
                 print(f"  {w}")
 
-        t.remove_middleware(token_id)
-        t.remove_middleware(stage_id)
+        t.middleware.remove(token_id)
+        t.middleware.remove(stage_id)
 
     # =================================================================
     # 3. Operation Audit Trail
@@ -332,12 +332,12 @@ def main() -> None:
 
         # Register all audit handlers
         ids = [
-            t.use("post_commit", audit_commits),
-            t.use("pre_compile", audit_compiles),
-            t.use("pre_compress", audit_compress),
-            t.use("pre_merge", audit_merge),
-            t.use("pre_transition", audit_transitions),
-            t.use("post_transition", audit_transitions),
+            t.middleware.add("post_commit", audit_commits),
+            t.middleware.add("pre_compile", audit_compiles),
+            t.middleware.add("pre_compress", audit_compress),
+            t.middleware.add("pre_merge", audit_merge),
+            t.middleware.add("pre_transition", audit_transitions),
+            t.middleware.add("post_transition", audit_transitions),
         ]
 
         # --- Generate a variety of operations ---
@@ -354,13 +354,13 @@ def main() -> None:
         t.compile()
 
         # Compress
-        t.compress(content="[Summary] Planning and implementation phases completed.")
+        t.compression.compress(content="[Summary] Planning and implementation phases completed.")
 
         # Merge (branch back to main for another merge)
-        t.branch("hotfix")
+        t.branches.create("hotfix")
         t.user("Fix critical auth bypass vulnerability.")
         t.assistant("Patched auth bypass in session validation.")
-        t.switch("implementation")
+        t.branches.switch("implementation")
         t.merge("hotfix")
 
         # --- Print audit trail ---
@@ -402,7 +402,7 @@ def main() -> None:
         print("  Verified: all operation types captured in audit trail")
 
         for mid in ids:
-            t.remove_middleware(mid)
+            t.middleware.remove(mid)
 
     # =================================================================
     # 4. Stage Timing
@@ -439,8 +439,8 @@ def main() -> None:
             stage_timing["current_stage"] = ctx.target or ctx.branch
             stage_timing["stage_start"] = time.monotonic()
 
-        pre_id = t.use("pre_transition", on_pre_transition)
-        post_id = t.use("post_transition", on_post_transition)
+        pre_id = t.middleware.add("pre_transition", on_pre_transition)
+        post_id = t.middleware.add("post_transition", on_post_transition)
 
         # --- Research stage: simulate work ---
         t.system("You are a research analyst.")
@@ -494,8 +494,8 @@ def main() -> None:
         assert total_time > 0, "Total time should be positive"
         print("  Verified: all stages timed correctly")
 
-        t.remove_middleware(pre_id)
-        t.remove_middleware(post_id)
+        t.middleware.remove(pre_id)
+        t.middleware.remove(post_id)
 
     # =================================================================
     # 5. Compression Efficiency Metrics
@@ -527,7 +527,7 @@ def main() -> None:
                 "branch": ctx.branch,
             }
 
-        compress_id = t.use("pre_compress", snapshot_before_compress)
+        compress_id = t.middleware.add("pre_compress", snapshot_before_compress)
 
         # --- Build a conversation to compress ---
         t.system("You are a customer support agent.")
@@ -555,7 +555,7 @@ def main() -> None:
         print(f"  Before compression: {messages_before} messages, {tokens_before} tokens")
 
         # --- Compress with manual summary ---
-        result = t.compress(
+        result = t.compression.compress(
             content=(
                 "[Support Session Summary] 8 tickets handled: "
                 "password reset, billing, feature request (API webhooks, Q2), "
@@ -619,7 +619,7 @@ def main() -> None:
         assert retained >= 3, "Summary should retain most key terms"
         print("  Verified: compression reduced tokens and preserved key information")
 
-        t.remove_middleware(compress_id)
+        t.middleware.remove(compress_id)
 
     # =================================================================
     # Summary
@@ -644,7 +644,7 @@ def main() -> None:
     print("    - Automatic: fires on every operation, nothing to forget")
     print("    - Structured: MiddlewareContext gives branch, HEAD, commit")
     print("    - Composable: stack multiple monitors on the same event")
-    print("    - Removable: t.remove_middleware() for clean teardown")
+    print("    - Removable: t.middleware.remove() for clean teardown")
     print("    - No coupling: observers don't modify the operations")
     print()
     print("Done.")

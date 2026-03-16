@@ -10,8 +10,8 @@ Patterns shown:
   4. Directive templates    -- profile templates inject parameterized guidance
   5. Stage gating           -- middleware blocks premature transitions
 
-Demonstrates: t.load_profile(), t.apply_stage(), t.get_config(),
-              t.directive(), t.use(), WorkflowProfile, DirectiveTemplate
+Demonstrates: t.load_profile(), t.apply_stage(), t.config.get(),
+              t.directive(), t.middleware.add(), WorkflowProfile, DirectiveTemplate
 
 No LLM required.
 """
@@ -70,11 +70,11 @@ def profile_loading_and_stages():
     with Tract.open() as t:
         # Load the coding profile -- applies base config + directives
         t.load_profile("coding")
-        print(f"  Active profile: {t.active_profile.name}")
+        print(f"  Active profile: {t.templates.active_profile.name}")
 
         # Base config from the profile
-        base_temp = t.get_config("temperature")
-        base_strategy = t.get_config("compile_strategy")
+        base_temp = t.config.get("temperature")
+        base_strategy = t.config.get("compile_strategy")
         print(f"  Base config: temperature={base_temp}, strategy={base_strategy}")
 
         assert base_temp == 0.3
@@ -89,10 +89,10 @@ def profile_loading_and_stages():
             stages_visited.append(stage_name)
 
             # Create a branch for this stage's work
-            t.branch(stage_name, switch=True)
+            t.branches.create(stage_name, switch=True)
 
-            temp = t.get_config("temperature")
-            strategy = t.get_config("compile_strategy")
+            temp = t.config.get("temperature")
+            strategy = t.config.get("compile_strategy")
             print(f"  Stage '{stage_name}': temperature={temp}, strategy={strategy}")
 
             assert temp == expected_config["temperature"], (
@@ -107,7 +107,7 @@ def profile_loading_and_stages():
             t.user(f"Working on {stage_name} phase...")
             t.assistant(f"Completed {stage_name} work.")
 
-            t.switch("main")
+            t.branches.switch("main")
 
         print()
         print(f"  Stages visited: {stages_visited}")
@@ -211,7 +211,7 @@ def stage_gating_with_middleware():
                     )
                 gate_state["current_index"] = requested_idx
 
-        gate_id = t.use("pre_commit", stage_gate)
+        gate_id = t.middleware.add("pre_commit", stage_gate)
 
         # Walk stages in order -- should succeed
         for stage in stage_order:
@@ -234,7 +234,7 @@ def stage_gating_with_middleware():
 
         assert blocked, "Skipping stages should be blocked"
 
-        t.remove_middleware(gate_id)
+        t.middleware.remove(gate_id)
 
     print("  All assertions passed.")
     print()
@@ -252,18 +252,18 @@ def research_profile_walkthrough():
 
     with Tract.open() as t:
         t.load_profile("research")
-        print(f"  Profile: {t.active_profile.name}")
-        print(f"  Base temp: {t.get_config('temperature')}")
+        print(f"  Profile: {t.templates.active_profile.name}")
+        print(f"  Base temp: {t.config.get('temperature')}")
 
         research = get_workflow_profile("research")
         stage_data = {}
 
         for stage_name in research.stages:
             t.apply_stage(stage_name)
-            t.branch(stage_name, switch=True)
+            t.branches.create(stage_name, switch=True)
 
-            temp = t.get_config("temperature")
-            strategy = t.get_config("compile_strategy")
+            temp = t.config.get("temperature")
+            strategy = t.config.get("compile_strategy")
 
             # Simulate stage-specific work
             t.user(f"Execute {stage_name} phase for AI market research.")
@@ -280,7 +280,7 @@ def research_profile_walkthrough():
             print(f"  [{stage_name}] temp={temp}, strategy={strategy}, "
                   f"msgs={len(ctx.messages)}")
 
-            t.switch("main")
+            t.branches.switch("main")
 
         print()
 
@@ -318,10 +318,10 @@ def main() -> None:
     print("  Pattern                      Tract API Used")
     print("  ---------------------------  -----------------------------------")
     print("  Profile discovery            list_workflow_profiles(), get_workflow_profile()")
-    print("  Profile loading              t.load_profile(), t.active_profile")
-    print("  Stage transitions            t.apply_stage(), t.get_config()")
+    print("  Profile loading              t.load_profile(), t.templates.active_profile")
+    print("  Stage transitions            t.apply_stage(), t.config.get()")
     print("  Directive injection          t.directive() via profile.directives")
-    print("  Stage gating                 t.use('pre_commit', gate_fn)")
+    print("  Stage gating                 t.middleware.add('pre_commit', gate_fn)")
     print()
     print("Done.")
 

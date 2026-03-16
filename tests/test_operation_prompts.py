@@ -18,13 +18,13 @@ class TestOperationPrompts:
         """configure_prompts() accepts OperationPrompts instance."""
         t = Tract.open()
         prompts = OperationPrompts(compress="You are a concise summarizer.")
-        t.configure_prompts(prompts)
+        t.config.configure_prompts(prompts)
         assert t.operation_prompts.compress == "You are a concise summarizer."
 
     def test_configure_with_kwargs(self):
         """configure_prompts() accepts keyword arguments."""
         t = Tract.open()
-        t.configure_prompts(compress="Summarize concisely.", merge="Merge context.")
+        t.config.configure_prompts(compress="Summarize concisely.", merge="Merge context.")
         assert t.operation_prompts.compress == "Summarize concisely."
         assert t.operation_prompts.merge == "Merge context."
 
@@ -32,18 +32,18 @@ class TestOperationPrompts:
         """configure_prompts() rejects mixed positional and keyword args."""
         t = Tract.open()
         with pytest.raises(TypeError):
-            t.configure_prompts(OperationPrompts(), compress="test")
+            t.config.configure_prompts(OperationPrompts(), compress="test")
 
     def test_configure_rejects_unknown_operation(self):
         """configure_prompts() rejects unknown operation names."""
         t = Tract.open()
         with pytest.raises(ValueError, match="Unknown operation"):
-            t.configure_prompts(unknown="test")
+            t.config.configure_prompts(unknown="test")
 
     def test_explicit_system_prompt_beats_operation_prompts(self):
         """Explicit system_prompt parameter takes precedence over OperationPrompts."""
         t = Tract.open()
-        t.configure_prompts(compress="Operation default prompt")
+        t.config.configure_prompts(compress="Operation default prompt")
         # We can't easily test compress without an LLM, but we can verify
         # the attribute is set and would be used as fallback
         assert t.operation_prompts.compress == "Operation default prompt"
@@ -52,14 +52,14 @@ class TestOperationPrompts:
         """operation_prompts property returns the current prompts."""
         t = Tract.open()
         assert t.operation_prompts == OperationPrompts()
-        t.configure_prompts(compress="Compress mode")
+        t.config.configure_prompts(compress="Compress mode")
         assert t.operation_prompts.compress == "Compress mode"
 
     def test_config_history_logs_prompt_changes(self):
         """configure_prompts() logs to config history."""
         t = Tract.open()
-        t.configure_prompts(compress="Summarize")
-        history = t.config_history(change_type="prompts")
+        t.config.configure_prompts(compress="Summarize")
+        history = t.config.history(change_type="prompts")
         # In-memory DB: config_history may or may not have entries
         # (depends on persistence repo availability)
         assert isinstance(history, list)

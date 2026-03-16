@@ -1,8 +1,8 @@
 """Tests for the middleware system: registration, execution, blocking, recursion guard.
 
 Covers:
-- t.use() registers handler, returns ID
-- t.remove_middleware(id) removes handler
+- t.middleware.add() registers handler, returns ID
+- t.middleware.remove(id) removes handler
 - Middleware fires in registration order
 - pre_commit middleware fires before commit
 - post_commit middleware fires after commit
@@ -36,30 +36,30 @@ from tract.middleware import MiddlewareContext, VALID_EVENTS
 
 
 class TestMiddlewareRegistration:
-    """t.use() and t.remove_middleware()."""
+    """t.middleware.add() and t.middleware.remove()."""
 
     def test_use_returns_id(self):
-        """t.use() returns a string handler ID."""
+        """t.middleware.add() returns a string handler ID."""
         with Tract.open() as t:
-            handler_id = t.use("pre_commit", lambda ctx: None)
+            handler_id = t.middleware.add("pre_commit", lambda ctx: None)
             assert isinstance(handler_id, str)
             assert len(handler_id) > 0
 
     def test_use_returns_unique_ids(self):
-        """Each t.use() call returns a unique ID."""
+        """Each t.middleware.add() call returns a unique ID."""
         with Tract.open() as t:
-            id1 = t.use("pre_commit", lambda ctx: None)
-            id2 = t.use("pre_commit", lambda ctx: None)
+            id1 = t.middleware.add("pre_commit", lambda ctx: None)
+            id2 = t.middleware.add("pre_commit", lambda ctx: None)
             assert id1 != id2
 
     def test_remove_middleware_by_id(self):
-        """t.remove_middleware(id) removes the handler."""
+        """t.middleware.remove(id) removes the handler."""
         calls = []
         with Tract.open() as t:
-            handler_id = t.use("post_commit", lambda ctx: calls.append("fired"))
+            handler_id = t.middleware.add("post_commit", lambda ctx: calls.append("fired"))
             t.user("Before removal")
             assert len(calls) == 1
-            t.remove_middleware(handler_id)
+            t.middleware.remove(handler_id)
             t.user("After removal")
             assert len(calls) == 1  # handler no longer fires
 
@@ -67,19 +67,19 @@ class TestMiddlewareRegistration:
         """Removing a nonexistent handler ID raises ValueError."""
         with Tract.open() as t:
             with pytest.raises(ValueError, match="not found"):
-                t.remove_middleware("nonexistent-id")
+                t.middleware.remove("nonexistent-id")
 
     def test_invalid_event_raises(self):
         """Registering on an invalid event raises ValueError."""
         with Tract.open() as t:
             with pytest.raises(ValueError, match="Unknown middleware event"):
-                t.use("invalid_event", lambda ctx: None)
+                t.middleware.add("invalid_event", lambda ctx: None)
 
     def test_valid_events_are_recognized(self):
         """All valid events from VALID_EVENTS are accepted."""
         with Tract.open() as t:
             for event in VALID_EVENTS:
-                handler_id = t.use(event, lambda ctx: None)
+                handler_id = t.middleware.add(event, lambda ctx: None)
                 assert isinstance(handler_id, str)
 
 
@@ -95,9 +95,9 @@ class TestMiddlewareOrder:
         """Multiple handlers on the same event fire in registration order."""
         order = []
         with Tract.open() as t:
-            t.use("post_commit", lambda ctx: order.append("first"))
-            t.use("post_commit", lambda ctx: order.append("second"))
-            t.use("post_commit", lambda ctx: order.append("third"))
+            t.middleware.add("post_commit", lambda ctx: order.append("first"))
+            t.middleware.add("post_commit", lambda ctx: order.append("second"))
+            t.middleware.add("post_commit", lambda ctx: order.append("third"))
             t.user("trigger")
             assert order == ["first", "second", "third"]
 
@@ -106,8 +106,8 @@ class TestMiddlewareOrder:
         pre_calls = []
         post_calls = []
         with Tract.open() as t:
-            t.use("pre_commit", lambda ctx: pre_calls.append(1))
-            t.use("post_commit", lambda ctx: post_calls.append(1))
+            t.middleware.add("pre_commit", lambda ctx: pre_calls.append(1))
+            t.middleware.add("post_commit", lambda ctx: post_calls.append(1))
             t.user("trigger")
             assert len(pre_calls) == 1
             assert len(post_calls) == 1
@@ -128,7 +128,7 @@ class TestMiddlewareEvents:
             def pre_handler(ctx):
                 # At this point, head should not yet reflect the new commit
                 events.append(("pre", t.head))
-            t.use("pre_commit", pre_handler)
+            t.middleware.add("pre_commit", pre_handler)
             old_head = t.head
             t.user("Hello")
             assert events[0] == ("pre", old_head)
@@ -139,7 +139,7 @@ class TestMiddlewareEvents:
         with Tract.open() as t:
             def post_handler(ctx):
                 events.append(("post", ctx.commit))
-            t.use("post_commit", post_handler)
+            t.middleware.add("post_commit", post_handler)
             info = t.user("Hello")
             assert len(events) == 1
             assert events[0][1] is not None
@@ -149,7 +149,7 @@ class TestMiddlewareEvents:
         """pre_compile fires when compile() is called."""
         fired = []
         with Tract.open() as t:
-            t.use("pre_compile", lambda ctx: fired.append(True))
+            t.middleware.add("pre_compile", lambda ctx: fired.append(True))
             t.user("Hello")
             t.compile()
             assert len(fired) == 1
@@ -159,7 +159,7 @@ class TestMiddlewareEvents:
         events = []
         with Tract.open() as t:
             t.user("Setup")
-            t.use("pre_transition", lambda ctx: events.append(("pre", ctx.target)))
+            t.middleware.add("pre_transition", lambda ctx: events.append(("pre", ctx.target)))
             t.transition("feature")
             assert len(events) == 1
             assert events[0] == ("pre", "feature")
@@ -169,7 +169,7 @@ class TestMiddlewareEvents:
         events = []
         with Tract.open() as t:
             t.user("Setup")
-            t.use("post_transition", lambda ctx: events.append(("post", ctx.target)))
+            t.middleware.add("post_transition", lambda ctx: events.append(("post", ctx.target)))
             t.transition("feature")
             assert len(events) == 1
             assert events[0] == ("post", "feature")
@@ -188,7 +188,7 @@ class TestMiddlewareBlocking:
         with Tract.open() as t:
             def blocker(ctx):
                 raise BlockedError("pre_commit", "Not allowed")
-            t.use("pre_commit", blocker)
+            t.middleware.add("pre_commit", blocker)
             with pytest.raises(BlockedError, match="Not allowed"):
                 t.user("Should be blocked")
             # Verify no commit was made
@@ -198,7 +198,7 @@ class TestMiddlewareBlocking:
         """pre_compile handler raising BlockedError prevents compile."""
         with Tract.open() as t:
             t.user("Hello")
-            t.use("pre_compile", lambda ctx: (_ for _ in ()).throw(
+            t.middleware.add("pre_compile", lambda ctx: (_ for _ in ()).throw(
                 BlockedError("pre_compile", "Compile blocked")
             ))
             with pytest.raises(BlockedError, match="Compile blocked"):
@@ -210,7 +210,7 @@ class TestMiddlewareBlocking:
             t.user("Setup")
             def blocker(ctx):
                 raise BlockedError("pre_transition", "Cannot transition")
-            t.use("pre_transition", blocker)
+            t.middleware.add("pre_transition", blocker)
             with pytest.raises(BlockedError, match="Cannot transition"):
                 t.transition("feature")
             # Should still be on main
@@ -232,7 +232,7 @@ class TestMiddlewareBlocking:
         with Tract.open() as t:
             def post_blocker(ctx):
                 raise BlockedError("post_commit", "Post-commit error")
-            t.use("post_commit", post_blocker)
+            t.middleware.add("post_commit", post_blocker)
             with pytest.raises(BlockedError, match="Post-commit error"):
                 t.user("Hello")
 
@@ -245,8 +245,8 @@ class TestMiddlewareBlocking:
                 raise BlockedError("pre_commit", "blocked")
             def second(ctx):
                 calls.append("second")
-            t.use("pre_commit", first)
-            t.use("pre_commit", second)
+            t.middleware.add("pre_commit", first)
+            t.middleware.add("pre_commit", second)
             with pytest.raises(BlockedError):
                 t.user("trigger")
             assert calls == ["first"]  # second never called
@@ -268,7 +268,7 @@ class TestMiddlewareRecursionGuard:
                 calls.append("enter")
                 # This would trigger pre_commit again, but recursion guard prevents it
                 t.commit(DialogueContent(role="system", text="inner"))
-            t.use("pre_commit", recursive_handler)
+            t.middleware.add("pre_commit", recursive_handler)
             t.user("outer")
             # The handler fires once for outer, and the inner commit
             # does NOT re-trigger the pre_commit handler
@@ -279,10 +279,10 @@ class TestMiddlewareRecursionGuard:
         compile_calls = []
         with Tract.open() as t:
             t.user("Setup")  # Need at least one commit for compile
-            t.use("pre_compile", lambda ctx: compile_calls.append(True))
+            t.middleware.add("pre_compile", lambda ctx: compile_calls.append(True))
             def commit_handler(ctx):
                 t.compile()  # This fires pre_compile (different event)
-            t.use("post_commit", commit_handler)
+            t.middleware.add("post_commit", commit_handler)
             t.user("trigger")
             # pre_compile should have fired from within the post_commit handler
             assert len(compile_calls) >= 1
@@ -303,7 +303,7 @@ class TestMiddlewareContext:
             t.user("Setup")  # Establish a head
             def handler(ctx):
                 captured.append(ctx)
-            t.use("pre_commit", handler)
+            t.middleware.add("pre_commit", handler)
             t.user("Hello")
             assert len(captured) == 1
             ctx = captured[0]
@@ -317,7 +317,7 @@ class TestMiddlewareContext:
         """post_commit context has commit set to CommitInfo."""
         captured = []
         with Tract.open() as t:
-            t.use("post_commit", lambda ctx: captured.append(ctx))
+            t.middleware.add("post_commit", lambda ctx: captured.append(ctx))
             info = t.user("Hello")
             ctx = captured[0]
             assert ctx.event == "post_commit"
@@ -329,7 +329,7 @@ class TestMiddlewareContext:
         captured = []
         with Tract.open() as t:
             t.user("Setup")
-            t.use("pre_transition", lambda ctx: captured.append(ctx))
+            t.middleware.add("pre_transition", lambda ctx: captured.append(ctx))
             t.transition("feature")
             ctx = captured[0]
             assert ctx.target == "feature"
@@ -339,7 +339,7 @@ class TestMiddlewareContext:
         from dataclasses import FrozenInstanceError
         with Tract.open() as t:
             captured = []
-            t.use("post_commit", lambda ctx: captured.append(ctx))
+            t.middleware.add("post_commit", lambda ctx: captured.append(ctx))
             t.user("Hello")
             ctx = captured[0]
             with pytest.raises(FrozenInstanceError):

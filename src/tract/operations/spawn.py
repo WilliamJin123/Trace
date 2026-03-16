@@ -259,9 +259,9 @@ def spawn_tract(
 
     # Inherit tools from parent if requested
     if inherit_tools:
-        parent_tools = parent_tract.get_tools()
+        parent_tools = parent_tract.tools.get()
         if parent_tools is not None:
-            child.set_tools(parent_tools)
+            child.tools.set(parent_tools)
 
     return child
 

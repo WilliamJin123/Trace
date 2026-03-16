@@ -103,7 +103,7 @@ class TestAutoSplit:
         })
         mock = MockLLMClient(split_response)
         t = Tract.open()
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
         hashes = _seed_commits(t, 3)
 
         result = auto_split(t, hashes[1])
@@ -120,7 +120,7 @@ class TestAutoSplit:
         """auto_split returns original hash on LLM error (fail-open)."""
         error_client = ErrorLLMClient()
         t = Tract.open()
-        t.configure_llm(error_client)
+        t.config.configure_llm(error_client)
         hashes = _seed_commits(t, 3)
 
         result = auto_split(t, hashes[1])
@@ -152,7 +152,7 @@ class TestAutoSplit:
         })
         mock = MockLLMClient(response)
         t = Tract.open()
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
         hashes = _seed_commits(t, 2)
 
         result = auto_split(t, hashes[0])
@@ -173,14 +173,14 @@ class TestAutoSplit:
         })
         mock = MockLLMClient(split_response)
         t = Tract.open()
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
         hashes = _seed_commits(t, 2)
 
         result = auto_split(t, hashes[0])
 
         assert result.split_count == 2
         # Verify the original commit got SKIP annotation
-        log_entries = t.log(limit=50)
+        log_entries = t.search.log(limit=50)
         original_entry = None
         for e in log_entries:
             if e.commit_hash == hashes[0]:
@@ -207,25 +207,25 @@ class TestAutoRebase:
         })
         mock = MockLLMClient(rebase_response)
         t = Tract.open()
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
         _seed_commits(t, 3)
 
         # Create a feature branch and add a commit
-        t.branch("feature")
+        t.branches.create("feature")
         t.commit(
             {"content_type": "dialogue", "role": "user", "text": "Feature work"},
             message="feature commit",
         )
 
         # Go back to main and add a commit
-        t.checkout("main")
+        t.branches.checkout("main")
         t.commit(
             {"content_type": "dialogue", "role": "user", "text": "Main update"},
             message="main update",
         )
 
         # Switch to feature and auto_rebase
-        t.checkout("feature")
+        t.branches.checkout("feature")
         result = auto_rebase(t)
 
         assert isinstance(result, AutoRebaseResult)
@@ -243,7 +243,7 @@ class TestAutoRebase:
         })
         mock = MockLLMClient(response)
         t = Tract.open()
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
         _seed_commits(t, 3)
 
         result = auto_rebase(t)
@@ -258,7 +258,7 @@ class TestAutoRebase:
         """auto_rebase returns rebased=False on LLM error."""
         error_client = ErrorLLMClient()
         t = Tract.open()
-        t.configure_llm(error_client)
+        t.config.configure_llm(error_client)
         _seed_commits(t, 3)
 
         result = auto_rebase(t)
@@ -295,7 +295,7 @@ class TestAutoBranch:
         })
         mock = MockLLMClient(response)
         t = Tract.open()
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
         _seed_commits(t, 3)
 
         result = auto_branch(t, context="Starting auth implementation")
@@ -318,7 +318,7 @@ class TestAutoBranch:
         })
         mock = MockLLMClient(response)
         t = Tract.open()
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
         _seed_commits(t, 3)
 
         result = auto_branch(t, context="Continuing current work")
@@ -332,7 +332,7 @@ class TestAutoBranch:
         """auto_branch returns branched=False on LLM error."""
         error_client = ErrorLLMClient()
         t = Tract.open()
-        t.configure_llm(error_client)
+        t.config.configure_llm(error_client)
         _seed_commits(t, 3)
 
         result = auto_branch(t, context="Some context")
@@ -456,7 +456,7 @@ class TestTractIntegration:
     """Tests for Tract API methods that delegate to autonomous module."""
 
     def test_t_auto_split(self):
-        """t.auto_split() delegates to auto_split function."""
+        """t.intelligence.auto_split() delegates to auto_split function."""
         split_response = json.dumps({
             "reasoning": "Split content",
             "pieces": [
@@ -466,10 +466,10 @@ class TestTractIntegration:
         })
         mock = MockLLMClient(split_response)
         t = Tract.open()
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
         hashes = _seed_commits(t, 3)
 
-        result = t.auto_split(hashes[1])
+        result = t.intelligence.auto_split(hashes[1])
 
         assert isinstance(result, AutoSplitResult)
         assert result.split_count == 2
@@ -477,7 +477,7 @@ class TestTractIntegration:
         t.close()
 
     def test_t_auto_rebase(self):
-        """t.auto_rebase() delegates to auto_rebase function."""
+        """t.intelligence.auto_rebase() delegates to auto_rebase function."""
         response = json.dumps({
             "reasoning": "No rebase needed",
             "should_rebase": False,
@@ -485,17 +485,17 @@ class TestTractIntegration:
         })
         mock = MockLLMClient(response)
         t = Tract.open()
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
         _seed_commits(t, 3)
 
-        result = t.auto_rebase()
+        result = t.intelligence.auto_rebase()
 
         assert isinstance(result, AutoRebaseResult)
         assert result.rebased is False
         t.close()
 
     def test_t_auto_branch(self):
-        """t.auto_branch() delegates to auto_branch function."""
+        """t.intelligence.auto_branch() delegates to auto_branch function."""
         response = json.dumps({
             "reasoning": "New feature needs isolation",
             "should_branch": True,
@@ -503,10 +503,10 @@ class TestTractIntegration:
         })
         mock = MockLLMClient(response)
         t = Tract.open()
-        t.configure_llm(mock)
+        t.config.configure_llm(mock)
         _seed_commits(t, 3)
 
-        result = t.auto_branch(context="Starting new feature")
+        result = t.intelligence.auto_branch(context="Starting new feature")
 
         assert isinstance(result, AutoBranchResult)
         assert result.branched is True

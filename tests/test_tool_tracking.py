@@ -167,7 +167,7 @@ class TestCommitTools:
         )
 
         # Retrieve tools for this commit
-        retrieved = t.get_commit_tools(info.commit_hash)
+        retrieved = t.tools.get_for_commit(info.commit_hash)
         assert len(retrieved) == 2
         assert retrieved[0] == TOOL_GET_WEATHER
         assert retrieved[1] == TOOL_SEARCH
@@ -178,7 +178,7 @@ class TestCommitTools:
         t = Tract.open()
         info = t.commit(InstructionContent(text="No tools here"))
 
-        retrieved = t.get_commit_tools(info.commit_hash)
+        retrieved = t.tools.get_for_commit(info.commit_hash)
         assert retrieved == []
         t.close()
 
@@ -196,8 +196,8 @@ class TestCommitTools:
         )
 
         # Both commits reference the same tool
-        tools1 = t.get_commit_tools(info1.commit_hash)
-        tools2 = t.get_commit_tools(info2.commit_hash)
+        tools1 = t.tools.get_for_commit(info1.commit_hash)
+        tools2 = t.tools.get_for_commit(info2.commit_hash)
         assert tools1 == tools2 == [TOOL_GET_WEATHER]
 
         # Content-addressed: only one row in tool_definitions
@@ -214,7 +214,7 @@ class TestCommitTools:
             tools=tools,
         )
 
-        retrieved = t.get_commit_tools(info.commit_hash)
+        retrieved = t.tools.get_for_commit(info.commit_hash)
         assert len(retrieved) == 3
         assert retrieved[0] == TOOL_SEARCH
         assert retrieved[1] == TOOL_GET_WEATHER
@@ -233,51 +233,51 @@ class TestSetGetTools:
     def test_set_tools_auto_links(self):
         """set_tools() causes subsequent commits to auto-link tools."""
         t = Tract.open()
-        t.set_tools([TOOL_GET_WEATHER])
+        t.tools.set([TOOL_GET_WEATHER])
 
         info1 = t.commit(InstructionContent(text="System prompt"))
         info2 = t.user("Hello!")
 
-        assert t.get_commit_tools(info1.commit_hash) == [TOOL_GET_WEATHER]
-        assert t.get_commit_tools(info2.commit_hash) == [TOOL_GET_WEATHER]
+        assert t.tools.get_for_commit(info1.commit_hash) == [TOOL_GET_WEATHER]
+        assert t.tools.get_for_commit(info2.commit_hash) == [TOOL_GET_WEATHER]
         t.close()
 
     def test_set_tools_clear(self):
         """set_tools(None) clears auto-linking."""
         t = Tract.open()
-        t.set_tools([TOOL_SEARCH])
+        t.tools.set([TOOL_SEARCH])
 
         info1 = t.commit(InstructionContent(text="With tools"))
-        t.set_tools(None)
+        t.tools.set(None)
         info2 = t.commit(InstructionContent(text="Without tools"))
 
-        assert len(t.get_commit_tools(info1.commit_hash)) == 1
-        assert t.get_commit_tools(info2.commit_hash) == []
+        assert len(t.tools.get_for_commit(info1.commit_hash)) == 1
+        assert t.tools.get_for_commit(info2.commit_hash) == []
         t.close()
 
     def test_get_tools_returns_current(self):
         """get_tools() returns what was set via set_tools()."""
         t = Tract.open()
-        assert t.get_tools() is None
+        assert t.tools.get() is None
 
-        t.set_tools([TOOL_CALC])
-        assert t.get_tools() == [TOOL_CALC]
+        t.tools.set([TOOL_CALC])
+        assert t.tools.get() == [TOOL_CALC]
 
-        t.set_tools(None)
-        assert t.get_tools() is None
+        t.tools.set(None)
+        assert t.tools.get() is None
         t.close()
 
     def test_explicit_tools_override_set_tools(self):
         """Explicit tools= on commit() overrides set_tools()."""
         t = Tract.open()
-        t.set_tools([TOOL_GET_WEATHER])
+        t.tools.set([TOOL_GET_WEATHER])
 
         info = t.commit(
             InstructionContent(text="Override"),
             tools=[TOOL_SEARCH],
         )
 
-        retrieved = t.get_commit_tools(info.commit_hash)
+        retrieved = t.tools.get_for_commit(info.commit_hash)
         assert retrieved == [TOOL_SEARCH]
         t.close()
 

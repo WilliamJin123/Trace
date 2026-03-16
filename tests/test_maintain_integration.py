@@ -1,7 +1,7 @@
 """Integration tests for SemanticMaintainer through the Tract API.
 
 Tests maintainer registration, removal, listing, and action execution
-using ``t.maintain()``, ``t.remove_maintainer()``, ``t.list_maintainers()``
+using ``t.middleware.maintain()``, ``t.middleware.remove_maintainer()``, ``t.middleware.list_maintainers()``
 with a mock LLM client (no real LLM calls).
 """
 
@@ -62,7 +62,7 @@ class ErrorLLMClient:
 
 def _seed_commits(t: Tract, n: int = 3, tag: str = "research") -> list[str]:
     """Add *n* commits tagged with *tag*. Returns list of commit hashes."""
-    t.register_tag(tag, f"Auto-registered for test")
+    t.tags.register(tag, f"Auto-registered for test")
     hashes = []
     for i in range(n):
         info = t.commit(
@@ -91,32 +91,32 @@ def _noop_response() -> str:
 
 class TestMaintainerRegistrationAndRemoval:
     def test_register_list_remove(self):
-        """Register a maintainer via t.maintain(), verify in list, remove, verify gone."""
+        """Register a maintainer via t.middleware.maintain(), verify in list, remove, verify gone."""
         with Tract.open() as t:
             mock = MockLLMClient(_noop_response())
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            assert t.list_maintainers() == []
+            assert t.middleware.list_maintainers() == []
 
-            t.maintain(
+            t.middleware.maintain(
                 "cleanup",
                 event="post_commit",
                 instructions="Mark old commits as SKIP",
                 actions=["annotate"],
             )
 
-            assert "cleanup" in t.list_maintainers()
-            assert len(t.list_maintainers()) == 1
+            assert "cleanup" in t.middleware.list_maintainers()
+            assert len(t.middleware.list_maintainers()) == 1
 
-            t.remove_maintainer("cleanup")
+            t.middleware.remove_maintainer("cleanup")
 
-            assert t.list_maintainers() == []
+            assert t.middleware.list_maintainers() == []
 
     def test_remove_nonexistent_raises(self):
         """Removing a maintainer that doesn't exist raises ValueError."""
         with Tract.open() as t:
             with pytest.raises(ValueError, match="not found"):
-                t.remove_maintainer("no-such-maintainer")
+                t.middleware.remove_maintainer("no-such-maintainer")
 
 
 # ---------------------------------------------------------------------------
@@ -128,23 +128,23 @@ class TestDuplicateNameRejected:
         """Registering two maintainers with the same name raises ValueError."""
         with Tract.open() as t:
             mock = MockLLMClient(_noop_response())
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            t.maintain("unique-m", event="post_commit", instructions="a", actions=["gc"])
+            t.middleware.maintain("unique-m", event="post_commit", instructions="a", actions=["gc"])
 
             with pytest.raises(ValueError, match="already registered"):
-                t.maintain("unique-m", event="post_transition", instructions="b", actions=["gc"])
+                t.middleware.maintain("unique-m", event="post_transition", instructions="b", actions=["gc"])
 
     def test_reregister_after_removal_succeeds(self):
         """After removing a maintainer, the same name can be reused."""
         with Tract.open() as t:
             mock = MockLLMClient(_noop_response())
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            t.maintain("reusable", event="post_commit", instructions="v1", actions=["gc"])
-            t.remove_maintainer("reusable")
-            t.maintain("reusable", event="post_commit", instructions="v2", actions=["gc"])
-            assert "reusable" in t.list_maintainers()
+            t.middleware.maintain("reusable", event="post_commit", instructions="v1", actions=["gc"])
+            t.middleware.remove_maintainer("reusable")
+            t.middleware.maintain("reusable", event="post_commit", instructions="v2", actions=["gc"])
+            assert "reusable" in t.middleware.list_maintainers()
 
 
 # ---------------------------------------------------------------------------
@@ -165,9 +165,9 @@ class TestMaintainerAnnotateAction:
                 {"type": "annotate", "target": prefix, "priority": "skip"},
             ])
             mock = MockLLMClient(response)
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            t.maintain(
+            t.middleware.maintain(
                 "auto-skip",
                 event="post_commit",
                 instructions="Mark old tool_io as SKIP",
@@ -184,7 +184,7 @@ class TestMaintainerAnnotateAction:
             assert len(mock.calls) == 1
 
             # Verify the annotation was applied
-            annotations = t.get_annotations(target_hash)
+            annotations = t.annotations.get(target_hash)
             assert any(a.priority == Priority.SKIP for a in annotations)
 
 
@@ -202,9 +202,9 @@ class TestMaintainerConfigureAction:
                 {"type": "configure", "key": "stage", "value": "implementation"},
             ])
             mock = MockLLMClient(response)
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            t.maintain(
+            t.middleware.maintain(
                 "stage-setter",
                 event="post_commit",
                 instructions="Set stage based on content",
@@ -219,7 +219,7 @@ class TestMaintainerConfigureAction:
 
             assert len(mock.calls) == 1
             # Verify config was set
-            assert t.get_config("stage") == "implementation"
+            assert t.config.get("stage") == "implementation"
 
 
 # ---------------------------------------------------------------------------
@@ -236,9 +236,9 @@ class TestMaintainerDirectiveAction:
                 {"type": "directive", "name": "current-focus", "text": "Focus on testing"},
             ])
             mock = MockLLMClient(response)
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            t.maintain(
+            t.middleware.maintain(
                 "directive-setter",
                 event="post_commit",
                 instructions="Add focus directives",
@@ -253,7 +253,7 @@ class TestMaintainerDirectiveAction:
 
             assert len(mock.calls) == 1
             # Verify directive was created by checking log
-            entries = t.log(limit=1)
+            entries = t.search.log(limit=1)
             assert entries[0].content_type == "instruction"
 
 
@@ -269,9 +269,9 @@ class TestMaintainerGCAction:
 
             response = _action_response("Running gc", [{"type": "gc"}])
             mock = MockLLMClient(response)
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            t.maintain(
+            t.middleware.maintain(
                 "auto-gc",
                 event="post_commit",
                 instructions="Run gc periodically",
@@ -296,16 +296,16 @@ class TestMaintainerSkipsDisallowed:
         """LLM returns an action type not in allowed list -- it's silently skipped."""
         with Tract.open() as t:
             _seed_commits(t, n=1)
-            hashes = [e.commit_hash for e in t.log(limit=1)]
+            hashes = [e.commit_hash for e in t.search.log(limit=1)]
 
             response = _action_response("Trying everything", [
                 {"type": "gc"},  # allowed
                 {"type": "annotate", "target": hashes[0][:8], "priority": "skip"},  # NOT allowed
             ])
             mock = MockLLMClient(response)
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            t.maintain(
+            t.middleware.maintain(
                 "restricted",
                 event="post_commit",
                 instructions="Do everything",
@@ -323,7 +323,7 @@ class TestMaintainerSkipsDisallowed:
             # (we don't have direct access to last_result through the API,
             #  but the fact that no error was raised and annotation was not
             #  applied confirms filtering worked)
-            annotations = t.get_annotations(hashes[0])
+            annotations = t.annotations.get(hashes[0])
             # Should have no SKIP annotation
             assert not any(a.priority == Priority.SKIP for a in annotations)
 
@@ -340,9 +340,9 @@ class TestMaintainerCondition:
 
             response = _action_response("Would do stuff", [{"type": "gc"}])
             mock = MockLLMClient(response)
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            t.maintain(
+            t.middleware.maintain(
                 "conditional",
                 event="post_commit",
                 instructions="Do things",
@@ -371,9 +371,9 @@ class TestMaintainerFailOpen:
             _seed_commits(t, n=1)
 
             error_client = ErrorLLMClient()
-            t.configure_llm(error_client)
+            t.config.configure_llm(error_client)
 
-            t.maintain(
+            t.middleware.maintain(
                 "fragile",
                 event="post_commit",
                 instructions="Do maintenance",
@@ -394,9 +394,9 @@ class TestMaintainerFailOpen:
             _seed_commits(t, n=1)
 
             error_client = ErrorLLMClient()
-            t.configure_llm(error_client)
+            t.config.configure_llm(error_client)
 
-            t.maintain(
+            t.middleware.maintain(
                 "warn-m",
                 event="post_commit",
                 instructions="Do things",
@@ -424,10 +424,10 @@ class TestMultipleMaintainers:
 
             # Both return no-op responses
             mock = MockLLMClient(_noop_response())
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            t.maintain("m-alpha", event="post_commit", instructions="a", actions=["gc"])
-            t.maintain("m-beta", event="post_commit", instructions="b", actions=["gc"])
+            t.middleware.maintain("m-alpha", event="post_commit", instructions="a", actions=["gc"])
+            t.middleware.maintain("m-beta", event="post_commit", instructions="b", actions=["gc"])
 
             # Trigger
             t.commit(
@@ -442,13 +442,13 @@ class TestMultipleMaintainers:
         """list_maintainers() returns names of all registered maintainers."""
         with Tract.open() as t:
             mock = MockLLMClient(_noop_response())
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            t.maintain("alpha", event="post_commit", instructions="a", actions=["gc"])
-            t.maintain("beta", event="post_transition", instructions="b", actions=["gc"])
-            t.maintain("gamma", event="pre_compile", instructions="c", actions=["annotate"])
+            t.middleware.maintain("alpha", event="post_commit", instructions="a", actions=["gc"])
+            t.middleware.maintain("beta", event="post_transition", instructions="b", actions=["gc"])
+            t.middleware.maintain("gamma", event="pre_compile", instructions="c", actions=["annotate"])
 
-            names = t.list_maintainers()
+            names = t.middleware.list_maintainers()
             assert set(names) == {"alpha", "beta", "gamma"}
 
 
@@ -462,34 +462,34 @@ class TestStaleMaintainersCleanup:
         also removes it from the _maintainers dict."""
         with Tract.open() as t:
             mock = MockLLMClient(_noop_response())
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            handler_id = t.maintain(
+            handler_id = t.middleware.maintain(
                 "my-m", event="post_commit", instructions="x", actions=["gc"],
             )
-            assert "my-m" in t.list_maintainers()
+            assert "my-m" in t.middleware.list_maintainers()
 
             # Remove via remove_middleware (not remove_maintainer)
-            t.remove_middleware(handler_id)
+            t.middleware.remove(handler_id)
 
             # _maintainers should be cleaned up
-            assert "my-m" not in t.list_maintainers()
+            assert "my-m" not in t.middleware.list_maintainers()
 
     def test_reregister_after_direct_removal(self):
         """After remove_middleware() removes a maintainer, re-registering
         the same name should succeed."""
         with Tract.open() as t:
             mock = MockLLMClient(_noop_response())
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            handler_id = t.maintain(
+            handler_id = t.middleware.maintain(
                 "reuse-me", event="post_commit", instructions="v1", actions=["gc"],
             )
-            t.remove_middleware(handler_id)
+            t.middleware.remove(handler_id)
 
             # Should not raise "already registered"
-            t.maintain("reuse-me", event="post_commit", instructions="v2", actions=["gc"])
-            assert "reuse-me" in t.list_maintainers()
+            t.middleware.maintain("reuse-me", event="post_commit", instructions="v2", actions=["gc"])
+            assert "reuse-me" in t.middleware.list_maintainers()
 
 
 # ---------------------------------------------------------------------------
@@ -498,13 +498,13 @@ class TestStaleMaintainersCleanup:
 
 class TestMaintainerEdgeCases:
     def test_invalid_event_raises_value_error(self):
-        """t.maintain() with a bad event string raises ValueError."""
+        """t.middleware.maintain() with a bad event string raises ValueError."""
         with Tract.open() as t:
             mock = MockLLMClient(_noop_response())
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
             with pytest.raises(ValueError, match="Unknown middleware event"):
-                t.maintain(
+                t.middleware.maintain(
                     "bad",
                     event="not_a_real_event",  # type: ignore[arg-type]
                     instructions="test",
@@ -512,12 +512,12 @@ class TestMaintainerEdgeCases:
                 )
 
     def test_maintain_return_value_is_handler_id(self):
-        """t.maintain() returns a handler ID string."""
+        """t.middleware.maintain() returns a handler ID string."""
         with Tract.open() as t:
             mock = MockLLMClient(_noop_response())
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            handler_id = t.maintain(
+            handler_id = t.middleware.maintain(
                 "test-m", event="post_commit", instructions="x", actions=["gc"],
             )
             assert isinstance(handler_id, str)
@@ -527,9 +527,9 @@ class TestMaintainerEdgeCases:
         """When actions=None, all valid action types are allowed."""
         with Tract.open() as t:
             mock = MockLLMClient(_noop_response())
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            t.maintain(
+            t.middleware.maintain(
                 "all-actions",
                 event="post_commit",
                 instructions="Do everything",
@@ -538,16 +538,16 @@ class TestMaintainerEdgeCases:
 
             # The handler should have all actions
             # We can verify by checking the middleware was registered
-            assert "all-actions" in t.list_maintainers()
+            assert "all-actions" in t.middleware.list_maintainers()
 
     def test_invalid_action_type_raises(self):
         """Passing an invalid action type raises ValueError."""
         with Tract.open() as t:
             mock = MockLLMClient(_noop_response())
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
             with pytest.raises(ValueError, match="Invalid action types"):
-                t.maintain(
+                t.middleware.maintain(
                     "bad-actions",
                     event="post_commit",
                     instructions="x",
@@ -564,13 +564,13 @@ class TestGateAndMaintainerCoexistence:
         """A gate and a maintainer can coexist on different events."""
         with Tract.open() as t:
             mock = MockLLMClient(json.dumps({"result": "pass", "reason": "ok"}))
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            t.gate("quality", event="pre_commit", check="Content is good")
-            t.maintain("cleanup", event="post_commit", instructions="Clean up", actions=["gc"])
+            t.middleware.gate("quality", event="pre_commit", check="Content is good")
+            t.middleware.maintain("cleanup", event="post_commit", instructions="Clean up", actions=["gc"])
 
-            assert "quality" in t.list_gates()
-            assert "cleanup" in t.list_maintainers()
+            assert "quality" in t.middleware.list_gates()
+            assert "cleanup" in t.middleware.list_maintainers()
 
             # Commit should trigger both (gate then maintainer)
             # Override mock to return appropriate responses
@@ -600,7 +600,7 @@ class TestGateAndMaintainerCoexistence:
                     pass
 
             dual = DualMockClient()
-            t.configure_llm(dual)
+            t.config.configure_llm(dual)
 
             t.commit(
                 {"content_type": "dialogue", "role": "user", "text": "test"},
@@ -627,9 +627,9 @@ class TestMaintainerBlockAction:
                 {"type": "block", "reason": "Context is in bad state"},
             ])
             mock = MockLLMClient(response)
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            t.maintain(
+            t.middleware.maintain(
                 "blocker",
                 event="post_commit",
                 instructions="Block if bad state",
@@ -654,9 +654,9 @@ class TestMaintainerBlockAction:
                 {"type": "block", "reason": "Pausing after config"},
             ])
             mock = MockLLMClient(response)
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            t.maintain(
+            t.middleware.maintain(
                 "config-then-block",
                 event="post_commit",
                 instructions="Configure then block",
@@ -670,7 +670,7 @@ class TestMaintainerBlockAction:
                 )
 
             # The configure action should have executed before the block
-            assert t.get_config("stage") == "blocked"
+            assert t.config.get("stage") == "blocked"
 
 
 # ---------------------------------------------------------------------------
@@ -704,16 +704,16 @@ class SequenceMockClient:
 
 class TestMaintainerPeeking:
     def test_peeking_through_tract_api(self):
-        """t.maintain() with max_peeks passes through to handler."""
+        """t.middleware.maintain() with max_peeks passes through to handler."""
         with Tract.open() as t:
             _seed_commits(t, n=2)
 
             # LLM skips peeking and returns actions directly
             response = _action_response("No peek needed", [])
             mock = MockLLMClient(response)
-            t.configure_llm(mock)
+            t.config.configure_llm(mock)
 
-            t.maintain(
+            t.middleware.maintain(
                 "peek-maintainer",
                 event="post_commit",
                 instructions="Check content quality",
@@ -745,9 +745,9 @@ class TestMaintainerPeeking:
             pass2_resp = _action_response("Reviewed content", [])
 
             client = SequenceMockClient([pass1_resp, pass2_resp])
-            t.configure_llm(client)
+            t.config.configure_llm(client)
 
-            t.maintain(
+            t.middleware.maintain(
                 "content-peek",
                 event="post_commit",
                 instructions="Inspect commit content",
@@ -783,9 +783,9 @@ class TestMaintainerPeeking:
             pass2_resp = _action_response("Done", [])
 
             client = SequenceMockClient([pass1_resp, pass2_resp])
-            t.configure_llm(client)
+            t.config.configure_llm(client)
 
-            t.maintain(
+            t.middleware.maintain(
                 "capped-peek",
                 event="post_commit",
                 instructions="x",

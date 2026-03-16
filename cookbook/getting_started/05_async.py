@@ -69,12 +69,12 @@ async def main() -> None:
     ) as t:
 
         t.system("You are a helpful assistant. Be concise.")
-        t.configure(temperature=0.7)
+        t.config.set(temperature=0.7)
 
         # --- 1. achat() -- async single-turn Q&A ---
 
         print("=== achat() ===")
-        response = await t.achat("What is the capital of France?")
+        response = await t.llm.achat("What is the capital of France?")
         print(f"  Response: {(response.text or '(no response)')[:200]}")
         print(f"  Tokens: {response.usage}")
 
@@ -85,7 +85,7 @@ async def main() -> None:
         print("\n=== arun() with async tools ===")
         log = StepLogger()
 
-        result = await t.arun(
+        result = await t.llm.arun(
             "Look up Python and Rust, then compare them briefly.",
             max_steps=8,
             tools=CUSTOM_TOOLS,
@@ -103,7 +103,7 @@ async def main() -> None:
         before = t.compile()
         print(f"  Before: {before.token_count} tokens, {before.commit_count} commits")
 
-        compressed = await t.acompress(
+        compressed = await t.compression.acompress(
             content="User asked about Python and Rust, agent compared them.",
         )
         after = t.compile()

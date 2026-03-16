@@ -96,7 +96,7 @@ def main() -> None:
         # --- Stage: Research (generous 10K budget) ---
         t.system("You are a market research analyst.")
         t.directive("research", "Gather comprehensive information on competitors.")
-        t.configure(compile_strategy="full")
+        t.config.set(compile_strategy="full")
 
         # Simulate research data gathering -- each finding is substantial
         research_data = [
@@ -127,7 +127,7 @@ def main() -> None:
             t.user(data, message=msg)
             t.assistant(f"Recorded: {msg}.")
 
-        research_status = t.status()
+        research_status = t.search.status()
         print(f"\n  Research stage:")
         print(f"    Budget: {research_status.token_budget_max} tokens")
         print(f"    Used:   {research_status.token_count} tokens")
@@ -135,19 +135,19 @@ def main() -> None:
 
         # --- Pin critical finding before compression ---
         # The market trends finding is essential -- pin it to survive compression
-        log_entries = t.log()
+        log_entries = t.search.log()
         for entry in log_entries:
             if entry.message and "Market trends" in (entry.message or ""):
-                t.annotate(entry.commit_hash, Priority.PINNED,
+                t.annotations.set(entry.commit_hash, Priority.PINNED,
                            reason="Critical market trend data")
                 break
 
         # --- Stage: Generation (compress research, focus budget) ---
         t.transition("generation")
-        t.configure(compile_strategy="full")
+        t.config.set(compile_strategy="full")
 
         # Compress the research into a tight summary to free budget
-        result = t.compress(
+        result = t.compression.compress(
             content=(
                 "Market research summary: Three main competitors. "
                 "A ($50M, enterprise, AI copilot), B ($25M, SMB, freemium), "
@@ -157,7 +157,7 @@ def main() -> None:
         )
         print(f"\n  Generation stage (after compressing research):")
         result.pprint()
-        gen_status = t.status()
+        gen_status = t.search.status()
         gen_status.pprint()
 
     # =================================================================
@@ -177,9 +177,9 @@ def main() -> None:
     config = TractConfig(token_budget=TokenBudgetConfig(max_tokens=BUDGET))
     with Tract.open(config=config) as t:
         t.system("You are a senior software architect conducting a code review.")
-        t.configure(auto_compress_threshold=THRESHOLD)
+        t.config.set(auto_compress_threshold=THRESHOLD)
 
-        threshold = t.get_config("auto_compress_threshold")
+        threshold = t.config.get("auto_compress_threshold")
         print(f"\n  Budget: {BUDGET} tokens, threshold: {threshold} tokens "
               f"({threshold / BUDGET:.0%})")
 
@@ -247,13 +247,13 @@ def main() -> None:
             t.user(review, message=f"Code review: {topic}")
             t.assistant(summary, message=f"Summary: {topic}")
 
-            status = t.status()
+            status = t.search.status()
             pct = status.token_count / BUDGET * 100
 
             if status.token_count > threshold and compressed_count == 0:
                 print(f"    [{topic}] {status.token_count} tokens ({pct:.0f}%) "
                       f"-- THRESHOLD ({threshold}) EXCEEDED")
-                result = t.compress(
+                result = t.compression.compress(
                     content=(
                         "Code review progress: auth module has critical P0 issues "
                         "(MD5 hashing, no session expiry, SQL injection). Payment "
@@ -262,7 +262,7 @@ def main() -> None:
                     ),
                 )
                 compressed_count += 1
-                after = t.status()
+                after = t.search.status()
                 print(f"    Compressed: {result.original_tokens} -> "
                       f"{result.compressed_tokens} tokens")
                 print(f"    Context after: {after.token_count} tokens "
@@ -270,7 +270,7 @@ def main() -> None:
             elif status.token_count > threshold and compressed_count > 0:
                 print(f"    [{topic}] {status.token_count} tokens ({pct:.0f}%) "
                       f"-- THRESHOLD EXCEEDED (2nd compression)")
-                result = t.compress(
+                result = t.compression.compress(
                     content=(
                         "Full code review: 5 modules reviewed. P0: auth (MD5, session, "
                         "SQLi), payments (retry, PCI, webhooks). P1: API (CORS, "
@@ -279,7 +279,7 @@ def main() -> None:
                     ),
                 )
                 compressed_count += 1
-                after = t.status()
+                after = t.search.status()
                 print(f"    Compressed: {result.original_tokens} -> "
                       f"{result.compressed_tokens} tokens")
                 print(f"    Context after: {after.token_count} tokens "
@@ -287,7 +287,7 @@ def main() -> None:
             else:
                 print(f"    [{topic}] {status.token_count} tokens ({pct:.0f}%)")
 
-        final = t.status()
+        final = t.search.status()
         print(f"\n  Final: {final.token_count} / {BUDGET} tokens ({final.token_count / BUDGET:.0%})")
         print(f"  Compressions triggered: {compressed_count}")
 
@@ -326,7 +326,7 @@ def main() -> None:
                         f"growth healthy, competitive response needed",
             )
 
-        total_commits = len(t.log())
+        total_commits = len(t.search.log())
         print(f"\n  Built conversation: {total_commits} commits "
               f"(8 Q&A turns + system)")
 
@@ -457,17 +457,17 @@ def main() -> None:
             # Early pins (supplier audit) test that compression preserves them.
             # Late pins (risk scoring, mitigation) test they persist in final context.
             if step_name in ("Supplier audit", "Risk scoring", "Mitigation plan"):
-                t.annotate(ci.commit_hash, Priority.PINNED,
+                t.annotations.set(ci.commit_hash, Priority.PINNED,
                            reason=f"Critical: {step_name}")
                 pinned_findings.append(step_name)
 
-            status = t.status()
+            status = t.search.status()
             pct = status.token_count / BUDGET * 100
 
             # Compress when approaching budget
             if status.token_count > BUDGET * 0.80:
                 before = status.token_count
-                result = t.compress(
+                result = t.compression.compress(
                     content=(
                         f"Supply chain investigation (steps 1-{i + 1}): "
                         f"Audited 15 suppliers, 3 flagged. Key risks: Acme (financial, "
@@ -475,7 +475,7 @@ def main() -> None:
                         f"Gamma single-source for 3 components, $12M revenue at risk."
                     ),
                 )
-                after = t.status()
+                after = t.search.status()
                 compression_events.append({
                     "step": step_name,
                     "before": before,
@@ -489,7 +489,7 @@ def main() -> None:
                 print(f"    Step {i + 1} [{step_name}]: "
                       f"{status.token_count} tokens ({pct:.0f}%)")
 
-        final = t.status()
+        final = t.search.status()
         print(f"\n  Final state:")
         print(f"    Tokens: {final.token_count} / {BUDGET} "
               f"({final.token_count / BUDGET:.0%})")
@@ -541,7 +541,7 @@ def main() -> None:
             message="Plan: 5 phases (pipeline, training, serving, integration, optimization)",
         )
 
-        status = t.status()
+        status = t.search.status()
         stages["planning"] = {
             "tokens": status.token_count,
             "commits": status.commit_count,
@@ -588,7 +588,7 @@ def main() -> None:
             message="Design: TF Serving + Envoy + Istio, MLflow registry, $12K/mo",
         )
 
-        status = t.status()
+        status = t.search.status()
         stages["design"] = {
             "tokens": status.token_count,
             "commits": status.commit_count,
@@ -596,7 +596,7 @@ def main() -> None:
         }
 
         # Compress planning + early design to free budget for implementation
-        result = t.compress(
+        result = t.compression.compress(
             content=(
                 "Project: recommendation engine for e-commerce. Budget $500K, 6mo, "
                 "5 engineers. 5 phases: pipeline, training, serving, integration, "
@@ -607,7 +607,7 @@ def main() -> None:
             ),
         )
 
-        post_compress = t.status()
+        post_compress = t.search.status()
         stages["design"]["compressed_to"] = post_compress.token_count
         stages["design"]["tokens_saved"] = status.token_count - post_compress.token_count
 
@@ -675,7 +675,7 @@ def main() -> None:
             t.user(user_text, message=user_msg)
             t.assistant(asst_text, message=asst_msg)
 
-        status = t.status()
+        status = t.search.status()
         stages["implementation"] = {
             "tokens": status.token_count,
             "commits": status.commit_count,
@@ -694,7 +694,7 @@ def main() -> None:
             print(f"  {stage_name:<20} {info['tokens']:>8} {info['commits']:>8}   "
                   f"{notes}")
 
-        final = t.status()
+        final = t.search.status()
         print(f"\n  Budget summary:")
         print(f"    Total budget:     {BUDGET} tokens")
         print(f"    Current usage:    {final.token_count} tokens "
@@ -760,7 +760,7 @@ def main() -> None:
                         f"growth healthy, competitive response needed",
             )
 
-        total_commits = len(t.log())
+        total_commits = len(t.search.log())
         print(f"\n  Built conversation: {total_commits} commits")
 
         # --- recent_ratio=0.7: keep last 70% of commits at full detail ---

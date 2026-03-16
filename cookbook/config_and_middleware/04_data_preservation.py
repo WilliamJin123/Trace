@@ -5,7 +5,7 @@ specific content from being compressed away:
 
   - Priority.PINNED annotation: hard protection at the engine level
   - t.directive(): PINNED by default, survives compression
-  - t.configure(): set auto_compress_threshold to control triggers
+  - t.config.set(): set auto_compress_threshold to control triggers
   - pre_compress middleware: block compression conditionally
 
 The layered defense:
@@ -14,7 +14,7 @@ The layered defense:
   Layer 3: Middleware -> programmatic guards (tag checks, thresholds)
   Layer 4: Config -> auto_compress_threshold controls triggers
 
-Demonstrates: Priority.PINNED, t.annotate(), t.directive(),
+Demonstrates: Priority.PINNED, t.annotations.set(), t.directive(),
               pre_compress middleware, BlockedError
 
 No LLM required.
@@ -31,8 +31,8 @@ def main() -> None:
 
         print("=== Building History ===\n")
 
-        t.register_tag("important")
-        t.register_tag("credentials")
+        t.tags.register("important")
+        t.tags.register("credentials")
 
         t.system("You are a helpful assistant.")
         t.user("What is Python?")
@@ -47,14 +47,14 @@ def main() -> None:
         t.user("What about list comprehensions?")
         t.assistant("List comprehensions are concise ways to create lists.")
 
-        print(f"  Total commits: {len(t.log())}")
+        print(f"  Total commits: {len(t.search.log())}")
         print(f"  Important commit: {important.commit_hash[:8]} (tagged: {important.tags})")
 
         # --- Annotate with PINNED ---
 
         print("\n=== Priority Annotation ===\n")
 
-        t.annotate(important.commit_hash, Priority.PINNED, reason="credential data")
+        t.annotations.set(important.commit_hash, Priority.PINNED, reason="credential data")
 
         print(f"  Pinned commit: {important.commit_hash[:8]}")
         print("  PINNED commits are preserved by the compression engine")
@@ -77,14 +77,14 @@ def main() -> None:
 
         def protect_credentials(ctx: MiddlewareContext):
             """Block compression when credential-tagged commits exist."""
-            for ci in ctx.tract.log():
+            for ci in ctx.tract.search.log():
                 if "credentials" in (ci.tags or []):
                     raise BlockedError(
                         "pre_compress",
                         ["Cannot compress: credential-tagged commits present"],
                     )
 
-        cred_id = t.use("pre_compress", protect_credentials)
+        cred_id = t.middleware.add("pre_compress", protect_credentials)
         print(f"  Registered pre_compress guard: {cred_id}")
         print("  When compression is attempted, handler checks for credential tags")
 
@@ -94,14 +94,14 @@ def main() -> None:
 
         def require_min_history(ctx: MiddlewareContext):
             """Require at least 20 commits before allowing compression."""
-            count = len(ctx.tract.log())
+            count = len(ctx.tract.search.log())
             if count < 20:
                 raise BlockedError(
                     "pre_compress",
                     [f"Too few commits to compress: {count} (need >= 20)"],
                 )
 
-        hist_id = t.use("pre_compress", require_min_history)
+        hist_id = t.middleware.add("pre_compress", require_min_history)
         print(f"  Registered pre_compress threshold: {hist_id}")
         print("  Compression requires at least 20 commits in the log")
 
@@ -109,8 +109,8 @@ def main() -> None:
 
         print("\n=== Auto-Compress Threshold Config ===\n")
 
-        t.configure(auto_compress_threshold=100)
-        threshold = t.get_config("auto_compress_threshold")
+        t.config.set(auto_compress_threshold=100)
+        threshold = t.config.get("auto_compress_threshold")
         print(f"  auto_compress_threshold: {threshold}")
         print("  Automatic compression triggers only after 100 commits")
 
@@ -125,7 +125,7 @@ def main() -> None:
         # --- Show protected content in log ---
 
         print("\n=== Log ===\n")
-        pprint_log(t.log())
+        pprint_log(t.search.log())
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ No JSON schema, no handler dicts, no manual merging -- just decorate and go.
 
 Demonstrates three patterns:
   1. @t.tool             -- basic registration from type hints + docstring
-  2. @t.tool(name=...)   -- override name or description
+  2. @t.toolkit.tool(name=...)   -- override name or description
   3. Python REPL tool    -- agent can execute code and see the output
 
 Compare with 03_custom_tools.py which shows the manual approach (tool defs
@@ -107,21 +107,21 @@ def main() -> None:
         print("=== Registering tools with @t.tool ===\n")
 
         # Decorate existing functions
-        t.tool(calculator)
-        t.tool(python_repl)
+        t.toolkit.tool(calculator)
+        t.toolkit.tool(python_repl)
 
         # Or use the decorator syntax inline
-        @t.tool(name="notes", description="Scratchpad for keeping notes")
+        @t.toolkit.tool(name="notes", description="Scratchpad for keeping notes")
         def _notepad(action: str, text: str = "") -> str:
             return note_pad(action, text)
 
         # See what's registered
-        for name, td in t.custom_tools.items():
+        for name, td in t.toolkit.custom_tools.items():
             print(f"  {name:15s}  {td.description[:60]}")
 
         # Verify they show up in as_tools()
-        all_tools = t.as_tools(profile="full", format="openai")
-        custom_names = {name for name in t.custom_tools}
+        all_tools = t.toolkit.as_tools(profile="full", format="openai")
+        custom_names = {name for name in t.toolkit.custom_tools}
         in_tools = {
             td["function"]["name"]
             for td in all_tools
@@ -141,7 +141,7 @@ def main() -> None:
             "through problems step by step. Show your work."
         )
 
-        result = t.run(
+        result = t.llm.run(
             "I need to figure out compound interest.\n\n"
             "Use the Python REPL to calculate how much $10,000 grows to "
             "after 5 years at 7% annual interest, compounded monthly.\n\n"
@@ -169,7 +169,7 @@ def main() -> None:
         print(f"  Status: {result.status}")
         print(f"  Steps:  {result.steps}")
         print(f"  Tools:  {result.tool_calls} calls")
-        print(f"  Custom tools registered: {sorted(t.custom_tools.keys())}")
+        print(f"  Custom tools registered: {sorted(t.toolkit.custom_tools.keys())}")
 
 
 if __name__ == "__main__":

@@ -71,7 +71,7 @@ def main() -> None:
         print()
 
         # --- Stage configs (temperature, compile strategy per stage) ---
-        t.configure(
+        t.config.set(
             stage="planning",
             temperature=0.9,
             compile_strategy="full",
@@ -98,7 +98,7 @@ def main() -> None:
         def require_tests_for_impl(ctx: MiddlewareContext):
             if ctx.target != "implementation":
                 return
-            test_commits = ctx.tract.find(
+            test_commits = ctx.tract.search.find(
                 content="def test_", content_type="assistant", limit=5
             )
             if len(test_commits) < 1:
@@ -112,7 +112,7 @@ def main() -> None:
         def require_passing_tests_for_review(ctx: MiddlewareContext):
             if ctx.target != "review":
                 return
-            results = ctx.tract.find(
+            results = ctx.tract.search.find(
                 metadata_key="test_status", limit=10
             )
             passing = [
@@ -126,8 +126,8 @@ def main() -> None:
                     "Fix failing tests first.",
                 )
 
-        t.use("pre_transition", require_tests_for_impl)
-        t.use("pre_transition", require_passing_tests_for_review)
+        t.middleware.add("pre_transition", require_tests_for_impl)
+        t.middleware.add("pre_transition", require_passing_tests_for_review)
 
         # --- System prompt ---
         t.system(
@@ -156,7 +156,7 @@ def main() -> None:
         print("  Config: temperature=0.9, strategy=full")
         print("  Goal: analyze requirements, identify edge cases\n")
 
-        result = t.run(
+        result = t.llm.run(
             "Analyze the email validation requirements. List:\n"
             "1. The valid email patterns to accept (with examples)\n"
             "2. The invalid patterns to reject (with examples)\n"
@@ -170,7 +170,7 @@ def main() -> None:
             on_tool_result=log.on_tool_result,
         )
 
-        planning_status = t.status()
+        planning_status = t.search.status()
         print(f"\n  Planning complete: {planning_status.commit_count} commits, "
               f"{planning_status.token_count} tokens")
 
@@ -182,7 +182,7 @@ def main() -> None:
 
         print("\n=== Context Management: Compress Planning ===\n")
 
-        compress_result = t.compress(
+        compress_result = t.compression.compress(
             content="Email validation planning summary: Function validate_email(email) -> bool. "
             "Valid patterns: user@domain.tld, user+tag@domain.com, user@sub.domain.com, "
             "first.last@domain.com. Invalid patterns: missing @, no domain, spaces, "
@@ -203,9 +203,9 @@ def main() -> None:
         # The agent transitions to test_writing at the end of planning via
         # the transition tool (which fires pre_transition middleware).
         # Here we just set the temperature for the test-writing stage.
-        t.configure(stage="test_writing", temperature=0.3)
+        t.config.set(stage="test_writing", temperature=0.3)
 
-        result = t.run(
+        result = t.llm.run(
             "Write comprehensive pytest test cases for validate_email().\n\n"
             "Include tests for:\n"
             "- Valid emails: basic, plus-addressing, subdomains, dots in local\n"
@@ -222,9 +222,9 @@ def main() -> None:
         )
 
         # --- Pin test cases so they survive future compression ---
-        test_commits = t.find(content="def test_", content_type="assistant", limit=5)
+        test_commits = t.search.find(content="def test_", content_type="assistant", limit=5)
         for tc in test_commits:
-            t.annotate(tc.commit_hash, Priority.PINNED, reason="TDD: tests are source of truth")
+            t.annotations.set(tc.commit_hash, Priority.PINNED, reason="TDD: tests are source of truth")
             print(f"  Pinned test commit: {tc.commit_hash[:8]}")
 
         print(f"  Tests written and pinned ({len(test_commits)} commit(s))")
@@ -240,12 +240,12 @@ def main() -> None:
         # The agent transitions to implementation at the end of test_writing
         # via the transition tool (gate requires test commits to exist).
         # Here we just set the temperature for the implementation stage.
-        t.configure(stage="implementation", temperature=0.3)
+        t.config.set(stage="implementation", temperature=0.3)
 
         # Create isolated branch for first attempt
-        t.branch("attempt/1", switch=True)
+        t.branches.create("attempt/1", switch=True)
 
-        result = t.run(
+        result = t.llm.run(
             "Implement validate_email(email: str) -> bool.\n\n"
             "Requirements:\n"
             "- Split on '@' to get local part and domain\n"
@@ -273,9 +273,9 @@ def main() -> None:
         print("\n=== Stage 4: Verification (attempt/1) ===\n")
 
         # Verification is harness-driven (no gate on this stage).
-        t.configure(stage="verification", temperature=0.1)
+        t.config.set(stage="verification", temperature=0.1)
 
-        result = t.run(
+        result = t.llm.run(
             "Mentally run each test case against the implementation.\n"
             "For each test, trace through the logic and determine if it would\n"
             "pass or fail. Be precise -- check every edge case.\n\n"
@@ -293,7 +293,7 @@ def main() -> None:
         )
 
         # Check test results via metadata search
-        test_results = t.find(metadata_key="test_status", limit=5)
+        test_results = t.search.find(metadata_key="test_status", limit=5)
         attempt1_passed = any(
             r.metadata and r.metadata.get("test_status") == "pass"
             for r in test_results
@@ -323,13 +323,13 @@ def main() -> None:
             # --- Self-correction via diff ---
             # Compare attempt/1 against the main branch to see what diverged
             print("  Analyzing attempt/1 via diff...")
-            diff_result = t.compare(branch_a="main", branch_b="attempt/1")
+            diff_result = t.search.compare(branch_a="main", branch_b="attempt/1")
             diff_result.pprint(stat_only=True)
 
             # Switch back to main and branch for attempt/2
-            t.switch("main")
-            t.branch("attempt/2", switch=True)
-            t.configure(stage="implementation", temperature=0.3)
+            t.branches.switch("main")
+            t.branches.create("attempt/2", switch=True)
+            t.config.set(stage="implementation", temperature=0.3)
 
             # Gather failure context from attempt/1
             failure_context = ""
@@ -337,7 +337,7 @@ def main() -> None:
                 if r.metadata and r.metadata.get("failures"):
                     failure_context = f"Failed tests: {r.metadata['failures']}"
 
-            result = t.run(
+            result = t.llm.run(
                 f"The first implementation attempt had issues.\n"
                 f"{failure_context}\n\n"
                 "Write an IMPROVED validate_email(email: str) -> bool.\n"
@@ -358,13 +358,13 @@ def main() -> None:
 
             # --- Cross-branch comparison ---
             print("\n  Comparing attempt/1 vs attempt/2...")
-            cross_diff = t.compare(branch_a="attempt/1", branch_b="attempt/2")
+            cross_diff = t.search.compare(branch_a="attempt/1", branch_b="attempt/2")
             cross_diff.pprint(stat_only=True)
 
             # Verify attempt/2
-            t.configure(stage="verification", temperature=0.1)
+            t.config.set(stage="verification", temperature=0.1)
 
-            result = t.run(
+            result = t.llm.run(
                 "Mentally run each test case against this IMPROVED implementation.\n"
                 "Trace through carefully. Commit results with metadata:\n"
                 "  test_status: 'pass' or 'fail'\n"
@@ -379,7 +379,7 @@ def main() -> None:
             )
 
             # Check attempt/2 results
-            test_results_2 = t.find(metadata_key="test_status", limit=5)
+            test_results_2 = t.search.find(metadata_key="test_status", limit=5)
             attempt2_passed = any(
                 r.metadata and r.metadata.get("test_status") == "pass"
                 for r in test_results_2
@@ -391,7 +391,7 @@ def main() -> None:
             # --- Merge winning attempt back to main ---
             print("\n  Merging successful attempt into main...")
             winning_branch = "attempt/2" if attempt2_passed else "attempt/1"
-            t.switch("main")
+            t.branches.switch("main")
             merge_result = t.merge(winning_branch, strategy="theirs")
             print(f"  Merged '{winning_branch}' -> main "
                   f"(type: {merge_result.merge_type})")
@@ -399,7 +399,7 @@ def main() -> None:
         else:
             # Attempt 1 passed -- merge it back
             print("\n  Merging attempt/1 into main...")
-            t.switch("main")
+            t.branches.switch("main")
             merge_result = t.merge("attempt/1", strategy="theirs")
             print(f"  Merged 'attempt/1' -> main "
                   f"(type: {merge_result.merge_type})")
@@ -413,15 +413,15 @@ def main() -> None:
         print("\n=== Stage 6: Review ===\n")
 
         # Compress iteration history before review (save tokens)
-        pre_review_tokens = t.status().token_count
+        pre_review_tokens = t.search.status().token_count
         if pre_review_tokens > 1500:
-            compress_result = t.compress(
+            compress_result = t.compression.compress(
                 content="Implementation complete. Email validator written and tested. "
                 "Tests cover: valid basic emails, plus-addressing, subdomains, "
                 "dot handling, rejection of invalid formats (missing @, spaces, "
                 "double dots, missing TLD). All tests passing.",
             )
-            post_review_tokens = t.status().token_count
+            post_review_tokens = t.search.status().token_count
             print(f"  Compressed iteration context: {pre_review_tokens} -> "
                   f"{post_review_tokens} tokens")
 
@@ -455,9 +455,9 @@ def main() -> None:
             print("  (Review stage skipped because quality gate rejected transition)")
 
         if review_allowed:
-            t.configure(stage="review", temperature=0.1)
+            t.config.set(stage="review", temperature=0.1)
 
-            result = t.run(
+            result = t.llm.run(
                 "Perform a final code review of the email validator.\n\n"
                 "Evaluate:\n"
                 "1. Correctness: Does it handle all specified cases?\n"
@@ -482,28 +482,28 @@ def main() -> None:
 
         # Branches created during workflow
         print("  Branches:")
-        for b in t.list_branches():
+        for b in t.branches.list():
             marker = "*" if b.is_current else " "
             print(f"    {marker} {b.name}")
 
         # Pinned commits (survived all compressions)
-        pinned = t.pinned()
+        pinned = t.search.pinned()
         print(f"\n  Pinned commits (survived compression): {len(pinned)}")
         for p in pinned[:5]:
             print(f"    {p.commit_hash[:8]}  {p.content_type:10s}  {(p.message or '')[:50]}")
 
         # Searchable history: find all test-related commits
-        test_artifacts = t.find(content="validate_email", limit=10)
+        test_artifacts = t.search.find(content="validate_email", limit=10)
         print(f"\n  Commits mentioning 'validate_email': {len(test_artifacts)}")
 
         # Final compiled context stats
-        final_status = t.status()
+        final_status = t.search.status()
         print(f"\n  Final: {final_status.commit_count} commits, "
               f"{final_status.token_count} tokens")
 
         # Commit history
         print(f"\n  Log (last 10 commits):")
-        pprint_log(t.log(limit=10))
+        pprint_log(t.search.log(limit=10))
 
         print(f"\n{'=' * 70}")
         print("WHY TRACT > NAIVE PROMPT CHAINS:")

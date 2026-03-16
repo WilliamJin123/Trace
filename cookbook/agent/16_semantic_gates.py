@@ -16,7 +16,7 @@ whether the commit log shows substantive analysis from multiple angles.
 If the initial research happens to be deep enough, the gate passes on
 the first attempt (and that's fine -- honest behavior).
 
-Demonstrates: t.gate() for registering semantic gates, condition
+Demonstrates: t.middleware.gate() for registering semantic gates, condition
 callbacks for efficient pre-checks, BlockedError recovery, genuine
 agent interaction with quality enforcement.
 
@@ -68,17 +68,17 @@ def main() -> None:
             "commit each distinct finding or perspective separately so your "
             "research log shows breadth and depth."
         )
-        t.configure(stage="research")
+        t.config.set(stage="research")
 
         # Create the synthesis branch (but stay on main for research)
-        t.branch("synthesis", switch=False)
+        t.branches.create("synthesis", switch=False)
 
         # ─── Register semantic gate ───────────────────────────────
         # The gate fires on pre_transition, but ONLY when transitioning
         # to "synthesis". It uses a cheap model to judge whether the
         # research commits show substantive analysis from genuinely
         # distinct angles.
-        t.gate(
+        t.middleware.gate(
             "research-depth",
             event="pre_transition",
             check=(
@@ -95,7 +95,7 @@ def main() -> None:
         )
 
         print(f"  Branch: {t.current_branch}")
-        print(f"  Gates registered: {t.list_gates()}")
+        print(f"  Gates registered: {t.middleware.list_gates()}")
         print(f"  Gate fires on: pre_transition (to synthesis only)")
 
         # ─── Phase 1: Initial research ────────────────────────────
@@ -105,7 +105,7 @@ def main() -> None:
         print("Phase 1: Initial Research")
         print("=" * 70 + "\n")
 
-        result = t.run(
+        result = t.llm.run(
             "Research the trade-offs of microservices vs monolith architecture. "
             "Focus on ONE specific angle (e.g., deployment complexity OR data "
             "consistency). Commit your findings as you go. Keep it focused.",
@@ -119,7 +119,7 @@ def main() -> None:
         result.pprint()
 
         # Show what was committed
-        entries = t.log(limit=20)
+        entries = t.search.log(limit=20)
         print(f"\n  Commits after Phase 1: {len(entries)}")
         for entry in entries[:5]:
             msg = (entry.message or "(no message)")[:60]
@@ -148,7 +148,7 @@ def main() -> None:
             print("Phase 2: Expanding Research (Different Angle)")
             print("=" * 70 + "\n")
 
-            result = t.run(
+            result = t.llm.run(
                 "The quality gate blocked our transition to synthesis because "
                 "the research lacks diverse perspectives. Research from a "
                 "COMPLETELY DIFFERENT angle than before. If you covered "
@@ -164,7 +164,7 @@ def main() -> None:
             )
             result.pprint()
 
-            entries = t.log(limit=20)
+            entries = t.search.log(limit=20)
             print(f"\n  Total commits after Phase 2: {len(entries)}")
             for entry in entries[:8]:
                 msg = (entry.message or "(no message)")[:60]
@@ -189,12 +189,12 @@ def main() -> None:
 
         print(f"  Current branch: {t.current_branch}")
 
-        entries = t.log(limit=50)
+        entries = t.search.log(limit=50)
         print(f"  Total commits: {len(entries)}")
 
-        print(f"  Gates: {t.list_gates()}")
+        print(f"  Gates: {t.middleware.list_gates()}")
 
-        status = t.status()
+        status = t.search.status()
         print(f"  Tokens: {status.token_count}")
 
         # Show the compiled context summary

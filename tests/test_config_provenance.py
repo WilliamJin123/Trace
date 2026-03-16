@@ -14,8 +14,8 @@ class TestConfigProvenance:
         """configure_operations() creates a config change log entry."""
         from tract.models.config import LLMConfig
         t = Tract.open()
-        t.configure_operations(chat=LLMConfig(model="gpt-4o"))
-        history = t.config_history()
+        t.config.configure_operations(chat=LLMConfig(model="gpt-4o"))
+        history = t.config.history()
         assert len(history) >= 1
         entry = history[0]
         assert entry["change_type"] == "operation_config"
@@ -26,8 +26,8 @@ class TestConfigProvenance:
         t = Tract.open()
         mock_client = MagicMock()
         mock_client.chat = MagicMock(return_value={})
-        t.configure_llm(mock_client)
-        history = t.config_history()
+        t.config.configure_llm(mock_client)
+        history = t.config.history()
         assert len(history) >= 1
         entry = history[0]
         assert entry["change_type"] == "llm_client"
@@ -37,8 +37,8 @@ class TestConfigProvenance:
         from unittest.mock import MagicMock
         t = Tract.open()
         mock_client = MagicMock()
-        t.configure_clients(chat=mock_client)
-        history = t.config_history()
+        t.config.configure_clients(chat=mock_client)
+        history = t.config.history()
         assert len(history) >= 1
         entry = history[0]
         assert entry["change_type"] == "operation_client"
@@ -47,9 +47,9 @@ class TestConfigProvenance:
         """config_history() returns entries in reverse chronological order."""
         from tract.models.config import LLMConfig
         t = Tract.open()
-        t.configure_operations(chat=LLMConfig(model="gpt-4o"))
-        t.configure_operations(chat=LLMConfig(model="gpt-3.5-turbo"))
-        history = t.config_history()
+        t.config.configure_operations(chat=LLMConfig(model="gpt-4o"))
+        t.config.configure_operations(chat=LLMConfig(model="gpt-3.5-turbo"))
+        history = t.config.history()
         assert len(history) >= 2
         # First entry should be more recent
         assert history[0]["created_at"] >= history[1]["created_at"]
@@ -59,11 +59,11 @@ class TestConfigProvenance:
         from tract.models.config import LLMConfig
         from unittest.mock import MagicMock
         t = Tract.open()
-        t.configure_operations(chat=LLMConfig(model="gpt-4o"))
+        t.config.configure_operations(chat=LLMConfig(model="gpt-4o"))
         mock_client = MagicMock()
         mock_client.chat = MagicMock(return_value={})
-        t.configure_llm(mock_client)
-        history = t.config_history(change_type="operation_config")
+        t.config.configure_llm(mock_client)
+        history = t.config.history(change_type="operation_config")
         assert all(e["change_type"] == "operation_config" for e in history)
 
     def test_config_history_no_persistence_repo(self):
@@ -71,5 +71,5 @@ class TestConfigProvenance:
         from tract.models.config import LLMConfig
         t = Tract.open()
         # Even with in-memory, config_history should work (may return [] or actual entries)
-        history = t.config_history()
+        history = t.config.history()
         assert isinstance(history, list)

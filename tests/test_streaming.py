@@ -232,7 +232,7 @@ class TestLoopStreaming:
             task="Check status",
             config=LoopConfig(max_steps=3),
             llm_client=StreamingToolClient(),
-            tools=t.as_tools(format="openai", tool_names=["status"]),
+            tools=t.toolkit.as_tools(format="openai", tool_names=["status"]),
             on_token=lambda text: chunks.append(text),
         )
 
@@ -252,10 +252,10 @@ class TestTractRunStreaming:
         """Tract.run() passes on_token through to the loop."""
         t = Tract.open()
         t.system("Be helpful.")
-        t.configure_llm(MockStreamingClient())
+        t.config.configure_llm(MockStreamingClient())
 
         chunks = []
-        result = t.run(
+        result = t.llm.run(
             "Hello",
             max_steps=1,
             tools=[],
@@ -270,9 +270,9 @@ class TestTractRunStreaming:
         """Tract.run(stream=True) enables streaming."""
         t = Tract.open()
         t.system("Be helpful.")
-        t.configure_llm(MockStreamingClient())
+        t.config.configure_llm(MockStreamingClient())
 
-        result = t.run(
+        result = t.llm.run(
             "Hello",
             max_steps=1,
             tools=[],

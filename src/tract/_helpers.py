@@ -22,7 +22,7 @@ def resolve_llm_client(
 ) -> Any | None:
     """Try to resolve an LLM client by cascading through *operation_names*.
 
-    Each name is passed to ``tract._resolve_llm_client(name)`` in order.
+    Each name is passed to ``tract.config._resolve_llm_client(name)`` in order.
     The first one that succeeds is returned.  If **all** raise
     ``RuntimeError``, the function returns ``None`` (fail-open).
 
@@ -36,7 +36,7 @@ def resolve_llm_client(
     """
     for name in operation_names:
         try:
-            return tract._resolve_llm_client(name)
+            return tract.config._resolve_llm_client(name)
         except RuntimeError:
             continue
     return None

@@ -11,8 +11,8 @@ Patterns shown:
   4. Token Budget Exhaustion       -- step_budget in LoopConfig
   5. Config-Driven Fallback        -- fall back to simpler model config
 
-Demonstrates: t.compress(), t.branch(), t.merge(), t.switch(),
-              t.use(), t.configure(), BlockedError, LoopConfig
+Demonstrates: t.compression.compress(), t.branches.create(), t.merge(), t.branches.switch(),
+              t.middleware.add(), t.config.set(), BlockedError, LoopConfig
 
 No LLM required.
 """
@@ -66,7 +66,7 @@ def compression_fallback_chain() -> None:
         succeeded_strategy = None
         for name, summary_content in strategies:
             try:
-                t.compress(content=summary_content)
+                t.compression.compress(content=summary_content)
                 ctx_after = t.compile()
                 reduction = (1 - ctx_after.token_count / original_tokens) * 100
                 print(f"  Strategy '{name}': {len(ctx_after.messages)} messages, "
@@ -105,30 +105,30 @@ def branch_isolated_retries() -> None:
         print(f"  Main branch: {main_msgs} messages at [{main_head[:8]}]")
 
         # Attempt 1: complex model (will fail)
-        t.branch("attempt_1", switch=True)
+        t.branches.create("attempt_1", switch=True)
         t.assistant("Trying Monte Carlo simulation with 10k iterations...")
         t.assistant("ERROR: Variance too high, model diverged.")
-        attempt_1_msgs = len(t.log())
+        attempt_1_msgs = len(t.search.log())
         print(f"  Attempt 1 (branch): {attempt_1_msgs} commits -- FAILED")
-        t.switch("main")  # abandon branch
+        t.branches.switch("main")  # abandon branch
 
         # Attempt 2: simpler model (will fail too)
-        t.branch("attempt_2", switch=True)
+        t.branches.create("attempt_2", switch=True)
         t.assistant("Trying linear regression with seasonality...")
         t.assistant("ERROR: R-squared too low (0.23), unreliable.")
-        print(f"  Attempt 2 (branch): {len(t.log())} commits -- FAILED")
-        t.switch("main")  # abandon branch
+        print(f"  Attempt 2 (branch): {len(t.search.log())} commits -- FAILED")
+        t.branches.switch("main")  # abandon branch
 
         # Attempt 3: basic model (succeeds)
-        t.branch("attempt_3", switch=True)
+        t.branches.create("attempt_3", switch=True)
         t.assistant(
             "Using 3-month moving average: projected Q4 revenue $2.1M. "
             "Confidence: moderate. Method: simple, robust to noise."
         )
-        print(f"  Attempt 3 (branch): {len(t.log())} commits -- SUCCESS")
+        print(f"  Attempt 3 (branch): {len(t.search.log())} commits -- SUCCESS")
 
         # Merge only the successful attempt
-        t.switch("main")
+        t.branches.switch("main")
         merge_result = t.merge("attempt_3")
         print(f"  Merged attempt_3: {merge_result.merge_type}")
 
@@ -176,7 +176,7 @@ def middleware_circuit_breaker() -> None:
                     f"Reset required before proceeding.",
                 )
 
-        mw_id = t.use("pre_commit", circuit_breaker_mw)
+        mw_id = t.middleware.add("pre_commit", circuit_breaker_mw)
         print(f"  Circuit breaker registered (threshold={breaker['threshold']})")
 
         # Simulate a series of API calls, some failing
@@ -234,7 +234,7 @@ def middleware_circuit_breaker() -> None:
         t.assistant("200 OK: healthy")
         print("  OK: GET /health (after reset)")
 
-        t.remove_middleware(mw_id)
+        t.middleware.remove(mw_id)
 
     print()
     print("PASSED")
@@ -349,10 +349,10 @@ def config_driven_fallback() -> None:
         for cfg in configs:
             # Create a branch for each attempt
             branch_name = f"config_{cfg['name']}"
-            t.branch(branch_name, switch=True)
+            t.branches.create(branch_name, switch=True)
 
             # Apply this config
-            t.configure(
+            t.config.set(
                 model=cfg["model"],
                 temperature=cfg["temperature"],
                 max_tokens=cfg["max_tokens"],
@@ -368,7 +368,7 @@ def config_driven_fallback() -> None:
                     metadata={"error": True, "config": cfg["name"]},
                 )
                 print(f"    FAILED: {cfg['name']}")
-                t.switch("main")
+                t.branches.switch("main")
                 continue
 
             # Success path
@@ -382,7 +382,7 @@ def config_driven_fallback() -> None:
             succeeded = cfg["name"]
             print(f"    SUCCESS: {cfg['name']}")
 
-            t.switch("main")
+            t.branches.switch("main")
             t.merge(branch_name)
             break
 

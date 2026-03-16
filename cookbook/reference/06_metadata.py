@@ -17,29 +17,29 @@ def main() -> None:
 
     # Auto-classification: every commit gets tags based on content type/role
     sys_ci = t.system("You are a research assistant.")
-    print(f"system()    auto-tags: {t.get_tags(sys_ci.commit_hash)}")
+    print(f"system()    auto-tags: {t.tags.get(sys_ci.commit_hash)}")
 
     usr_ci = t.user("Summarize the attention paper.")
-    print(f"user()      auto-tags: {t.get_tags(usr_ci.commit_hash)}")
+    print(f"user()      auto-tags: {t.tags.get(usr_ci.commit_hash)}")
 
     ast_ci = t.assistant("The Transformer replaces recurrence with self-attention.")
-    print(f"assistant() auto-tags: {t.get_tags(ast_ci.commit_hash)}")
+    print(f"assistant() auto-tags: {t.tags.get(ast_ci.commit_hash)}")
 
     # Explicit tags at commit time (merge with auto-tags, immutable)
     obs_ci = t.user("Sparse attention scales linearly.", tags=["observation"])
-    print(f"user(tags=) all tags: {t.get_tags(obs_ci.commit_hash)}")
+    print(f"user(tags=) all tags: {t.tags.get(obs_ci.commit_hash)}")
 
     # Mutable annotation tags (add/remove after the fact)
-    t.tag(ast_ci.commit_hash, "decision")
-    print(f"after tag():   {t.get_tags(ast_ci.commit_hash)}")
+    t.tags.add(ast_ci.commit_hash, "decision")
+    print(f"after tag():   {t.tags.get(ast_ci.commit_hash)}")
 
-    removed = t.untag(ast_ci.commit_hash, "decision")  # returns True if existed
-    print(f"after untag(): {t.get_tags(ast_ci.commit_hash)} (removed={removed})")
+    removed = t.tags.remove(ast_ci.commit_hash, "decision")  # returns True if existed
+    print(f"after untag(): {t.tags.get(ast_ci.commit_hash)} (removed={removed})")
 
     # Tag registry: register custom tags with descriptions
-    t.register_tag("dead_end", "Agent determined this path was unproductive")
+    t.tags.register("dead_end", "Agent determined this path was unproductive")
     ci = t.assistant("Approach A failed.")
-    t.tag(ci.commit_hash, "dead_end")
+    t.tags.add(ci.commit_hash, "dead_end")
 
     t.close()
 
@@ -54,15 +54,15 @@ def main() -> None:
     t.assistant("Q4 revenue is strongest.", tags=["decision"])
 
     # match="any" (OR): commits with reasoning OR observation
-    any_hits = t.query_by_tags(["reasoning", "observation"], match="any")
+    any_hits = t.tags.query(["reasoning", "observation"], match="any")
     print(f"\nany-match: {len(any_hits)} commits")
 
     # match="all" (AND): commits with BOTH reasoning AND decision
-    all_hits = t.query_by_tags(["reasoning", "decision"], match="all")
+    all_hits = t.tags.query(["reasoning", "decision"], match="all")
     print(f"all-match: {len(all_hits)} commits")
 
     # log(tags=) filters the commit log
-    reasoning_log = t.log(tags=["reasoning"])
+    reasoning_log = t.search.log(tags=["reasoning"])
     print(f"log(tags=['reasoning']): {len(reasoning_log)} entries")
     t.close()
 
@@ -82,25 +82,25 @@ def main() -> None:
     t.assistant("INT4 cuts memory 4x with <1% accuracy loss.")
 
     # Unpin the system prompt (allow compression to summarize it)
-    t.annotate(sys_ci.commit_hash, Priority.NORMAL, reason="temporary persona")
+    t.annotations.set(sys_ci.commit_hash, Priority.NORMAL, reason="temporary persona")
 
     # Skip verbose content (hidden from compile, still in history)
-    t.annotate(verbose.commit_hash, Priority.SKIP, reason="user narrowed focus")
+    t.annotations.set(verbose.commit_hash, Priority.SKIP, reason="user narrowed focus")
 
     ctx = t.compile()
     print(f"after SKIP: {len(ctx.messages)} messages (verbose hidden)")
 
     # Reset back to normal
-    t.annotate(verbose.commit_hash, Priority.NORMAL)
+    t.annotations.set(verbose.commit_hash, Priority.NORMAL)
     ctx = t.compile()
     print(f"after reset: {len(ctx.messages)} messages (restored)")
 
     # Convenience filters
-    print(f"skipped: {len(t.skipped())} commits")
-    print(f"pinned:  {len(t.pinned())} commits")
+    print(f"skipped: {len(t.search.skipped())} commits")
+    print(f"pinned:  {len(t.search.pinned())} commits")
 
     # Effective priority visible in log()
-    pprint_log(list(reversed(t.log())))
+    pprint_log(list(reversed(t.search.log())))
 
     t.close()
 
@@ -125,7 +125,7 @@ def main() -> None:
     print(f"compiled system: {sys_msg}")
 
     # Both versions preserved in log for audit
-    log = t.log()
+    log = t.search.log()
     edit_count = sum(1 for e in log if e.operation.value == "edit")
     print(f"log: {len(log)} entries, {edit_count} edits")
     t.close()

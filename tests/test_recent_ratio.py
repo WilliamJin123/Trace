@@ -229,19 +229,19 @@ class TestConfigureIntegration:
     def test_compile_recent_ratio_accepted_by_configure(self):
         """configure() accepts compile_recent_ratio as a well-known key."""
         t = Tract.open()
-        t.configure(compile_recent_ratio=0.7)
-        val = t.get_config("compile_recent_ratio")
+        t.config.set(compile_recent_ratio=0.7)
+        val = t.config.get("compile_recent_ratio")
         assert val == 0.7
 
     def test_configure_rejects_wrong_type(self):
         """configure() rejects non-numeric compile_recent_ratio."""
         t = Tract.open()
         with pytest.raises(ValueError, match="compile_recent_ratio"):
-            t.configure(compile_recent_ratio="high")
+            t.config.set(compile_recent_ratio="high")
 
     def test_configure_int_ratio_accepted(self):
         """configure() accepts int for compile_recent_ratio (e.g. 1)."""
         t = Tract.open()
-        t.configure(compile_recent_ratio=1)
-        val = t.get_config("compile_recent_ratio")
+        t.config.set(compile_recent_ratio=1)
+        val = t.config.get("compile_recent_ratio")
         assert val == 1

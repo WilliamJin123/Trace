@@ -66,14 +66,14 @@ def main() -> None:
         )
 
         # Get a deliberately brief initial answer
-        r1 = t.chat("Explain how a compiler works in one sentence.")
+        r1 = t.llm.chat("Explain how a compiler works in one sentence.")
         original_hash = r1.commit_info.commit_hash
         print(f"  Initial answer [{original_hash[:8]}]: {(r1.text or '(no response)')[:120]}")
 
         # Ask to improve — no mention of tools, edit operations, or hashes
         print("\n  --- Task ---")
         log = StepLogger()
-        result = t.run(
+        result = t.llm.run(
             "That answer is too brief. Expand it to cover lexing, parsing, "
             "optimization, and code generation. Improve your original answer "
             "rather than writing a new one from scratch.",
@@ -86,13 +86,13 @@ def main() -> None:
         t.compile().pprint(style="compact")
 
         # Check if the agent used edit operations
-        edits = [e for e in t.log(limit=30) if e.operation.value == "edit"]
+        edits = [e for e in t.search.log(limit=30) if e.operation.value == "edit"]
         if edits:
             print(f"\n  Agent used {len(edits)} edit operation(s) to revise in place.")
-            history = t.edit_history(original_hash)
+            history = t.search.edit_history(original_hash)
             for i, version in enumerate(history):
                 label = "ORIGINAL" if i == 0 else f"EDIT {i}"
-                content = t.get_content(version)
+                content = t.search.get_content(version)
                 text = str(content)[:100]
                 print(f"  v{i} ({label}) [{version.commit_hash[:8]}]: {text}...")
         else:

@@ -157,10 +157,10 @@ class TestStrategyEdgeCases:
     def test_strategy_does_not_mutate_dag(self):
         """Compiling with any strategy does not change the DAG."""
         t = _make_tract_with_commits(3)
-        log_before = [c.commit_hash for c in t.log()]
+        log_before = [c.commit_hash for c in t.search.log()]
         t.compile(strategy="messages")
         t.compile(strategy="adaptive", strategy_k=2)
-        log_after = [c.commit_hash for c in t.log()]
+        log_after = [c.commit_hash for c in t.search.log()]
         assert log_before == log_after
 
     def test_single_commit_all_strategies(self):
@@ -182,7 +182,7 @@ class TestStrategyWithNonCompilable:
         """Config commits are excluded from compile output with full strategy."""
         t = Tract.open()
         t.user("Hello")
-        t.configure(temperature=0.3)
+        t.config.set(temperature=0.3)
         t.assistant("World")
         compiled = t.compile(strategy="full")
         assert len(compiled.messages) == 2
@@ -191,7 +191,7 @@ class TestStrategyWithNonCompilable:
         """Config commits are excluded from compile output with messages strategy."""
         t = Tract.open()
         t.user("Hello")
-        t.configure(temperature=0.3)
+        t.config.set(temperature=0.3)
         t.assistant("World")
         compiled = t.compile(strategy="messages")
         assert len(compiled.messages) == 2
@@ -200,7 +200,7 @@ class TestStrategyWithNonCompilable:
         """Config commits are excluded from compile output with adaptive strategy."""
         t = Tract.open()
         t.user("Hello")
-        t.configure(temperature=0.3)
+        t.config.set(temperature=0.3)
         t.assistant("World")
         compiled = t.compile(strategy="adaptive")
         assert len(compiled.messages) == 2

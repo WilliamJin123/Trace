@@ -9,7 +9,7 @@ Patterns shown:
   3. Custom gates       -- pre_transition with domain logic
   4. Composable guards  -- multiple middleware on the same event
 
-Demonstrates: t.use() for custom logic, closures as state,
+Demonstrates: t.middleware.add() for custom logic, closures as state,
               composing multiple handlers, BlockedError
 
 No LLM required.
@@ -44,7 +44,7 @@ def main() -> None:
                     detected_languages.append("javascript")
                     return
 
-        lang_id = t.use("post_commit", detect_language)
+        lang_id = t.middleware.add("post_commit", detect_language)
         print(f"  Registered language detector: {lang_id}")
 
         # --- Custom counter: track user messages ---
@@ -68,7 +68,7 @@ def main() -> None:
                     user_count["n"] += 1
                     user_count["total_chars"] += len(getattr(pending, "text", ""))
 
-        counter_id = t.use("pre_commit", count_user_messages)
+        counter_id = t.middleware.add("pre_commit", count_user_messages)
         print(f"  Registered user counter: {counter_id}")
 
         # --- Build conversation ---
@@ -83,7 +83,7 @@ def main() -> None:
         t.user("Can you show a JavaScript const example?")
         t.assistant("const add = (a, b) => a + b")
 
-        print(f"  Total commits: {len(t.log())}")
+        print(f"  Total commits: {len(t.search.log())}")
         print(f"  User messages: {user_count['n']}")
         print(f"  Total user chars: {user_count['total_chars']}")
         print(f"  Languages detected: {detected_languages}")
@@ -100,7 +100,7 @@ def main() -> None:
                     [f"Need >= 3 user messages (have {user_count['n']})"],
                 )
 
-        gate_id = t.use("pre_transition", engagement_gate)
+        gate_id = t.middleware.add("pre_transition", engagement_gate)
         print(f"  Registered engagement gate: {gate_id}")
 
         # Test the gate
@@ -112,7 +112,7 @@ def main() -> None:
 
         print("\n=== Composable Guards ===\n")
 
-        t.switch("main")
+        t.branches.switch("main")
 
         blocked_reasons = []
 
@@ -131,8 +131,8 @@ def main() -> None:
                 if word in text:
                     raise BlockedError("pre_commit", [f"Banned word: {word}"])
 
-        len_id = t.use("pre_commit", content_length_guard)
-        prof_id = t.use("pre_commit", profanity_guard)
+        len_id = t.middleware.add("pre_commit", content_length_guard)
+        prof_id = t.middleware.add("pre_commit", profanity_guard)
         print(f"  Guard 1 (length): {len_id}")
         print(f"  Guard 2 (profanity): {prof_id}")
         print("  Both run on pre_commit -- first BlockedError wins")
@@ -146,7 +146,7 @@ def main() -> None:
         print("\n=== Cleanup ===\n")
 
         for hid in [lang_id, counter_id, gate_id, len_id, prof_id]:
-            t.remove_middleware(hid)
+            t.middleware.remove(hid)
         print("  All middleware removed")
 
         # --- Summary ---

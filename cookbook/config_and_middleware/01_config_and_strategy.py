@@ -1,11 +1,11 @@
 """Config and Compile Strategy
 
-t.configure() commits key-value settings to the DAG. Well-known keys are
+t.config.set() commits key-value settings to the DAG. Well-known keys are
 type-checked; unknown keys pass through for custom use.
 
   - Each configure() call commits one or more key-value pairs
   - When multiple calls set the same key, closest to HEAD wins (DAG precedence)
-  - Query with t.get_config() or t.get_all_configs()
+  - Query with t.config.get() or t.config.get_all()
 
 The most common use: selecting the compile strategy that controls how
 tract builds the LLM context window.
@@ -15,7 +15,7 @@ Well-known config keys:
   auto_compress_threshold, compact_tools, compile_strategy,
   compile_strategy_k, handoff_summary_k
 
-Demonstrates: t.configure(), t.get_config(), t.get_all_configs(),
+Demonstrates: t.config.set(), t.config.get(), t.config.get_all(),
               DAG precedence, compile_strategy, strategy comparison
 
 No LLM required.
@@ -31,13 +31,13 @@ def main() -> None:
 
         print("=== Config ===\n")
 
-        t.configure(model="gpt-4o")
-        t.configure(temperature=0.7)
-        t.configure(max_tokens=4096)
+        t.config.set(model="gpt-4o")
+        t.config.set(temperature=0.7)
+        t.config.set(max_tokens=4096)
 
-        print(f"  model:       {t.get_config('model')}")
-        print(f"  temperature: {t.get_config('temperature')}")
-        print(f"  max_tokens:  {t.get_config('max_tokens')}")
+        print(f"  model:       {t.config.get('model')}")
+        print(f"  temperature: {t.config.get('temperature')}")
+        print(f"  max_tokens:  {t.config.get('max_tokens')}")
 
         # --- DAG precedence: closer to HEAD wins ---
 
@@ -47,16 +47,16 @@ def main() -> None:
         t.assistant("Hi there!")
 
         # Override model -- new configure() call is closer to HEAD
-        t.configure(model="claude-sonnet")
+        t.config.set(model="claude-sonnet")
 
-        print(f"  model (overridden): {t.get_config('model')}")
-        print(f"  temperature (unchanged): {t.get_config('temperature')}")
-        print(f"  missing key:  {t.get_config('nonexistent')}")
-        print(f"  with default: {t.get_config('nonexistent', 'fallback')}")
+        print(f"  model (overridden): {t.config.get('model')}")
+        print(f"  temperature (unchanged): {t.config.get('temperature')}")
+        print(f"  missing key:  {t.config.get('nonexistent')}")
+        print(f"  with default: {t.config.get('nonexistent', 'fallback')}")
 
         # Complex values work too
-        t.configure(stop=["END", "DONE", "---"])
-        print(f"  stop (list): {t.get_config('stop')}")
+        t.config.set(stop=["END", "DONE", "---"])
+        print(f"  stop (list): {t.config.get('stop')}")
 
         # --- Build conversation for strategy demos ---
 
@@ -67,15 +67,15 @@ def main() -> None:
             t.user(f"Question {i + 1}: Tell me about topic {i + 1}.")
             t.assistant(f"Answer {i + 1}: Here is information about topic {i + 1}.")
 
-        print(f"  Total commits: {len(t.log())}")
+        print(f"  Total commits: {len(t.search.log())}")
 
         # --- Compile strategy: full ---
 
         print("\n=== Strategy: full ===\n")
 
-        t.configure(compile_strategy="full")
+        t.config.set(compile_strategy="full")
 
-        strategy = t.get_config("compile_strategy")
+        strategy = t.config.get("compile_strategy")
         ctx_full = t.compile(strategy=strategy)
         print(f"  {strategy}: {len(ctx_full.messages)} messages")
 
@@ -83,9 +83,9 @@ def main() -> None:
 
         print("\n=== Strategy: messages (lightweight) ===\n")
 
-        t.configure(compile_strategy="messages", compile_strategy_k=5)
+        t.config.set(compile_strategy="messages", compile_strategy_k=5)
 
-        strategy = t.get_config("compile_strategy")
+        strategy = t.config.get("compile_strategy")
         ctx_messages = t.compile(strategy=strategy)
         print(f"  {strategy}: {len(ctx_messages.messages)} messages (commit-message text only)")
 
@@ -93,10 +93,10 @@ def main() -> None:
 
         print("\n=== Strategy: adaptive ===\n")
 
-        t.configure(compile_strategy="adaptive")
+        t.config.set(compile_strategy="adaptive")
 
-        strategy = t.get_config("compile_strategy")
-        k = t.get_config("compile_strategy_k")
+        strategy = t.config.get("compile_strategy")
+        k = t.config.get("compile_strategy_k")
         ctx_adaptive = t.compile(strategy=strategy, strategy_k=k)
         print(f"  {strategy} (k={k}): {len(ctx_adaptive.messages)} messages")
 
@@ -113,7 +113,7 @@ def main() -> None:
         # --- All active config ---
 
         print("\n=== All Active Configs ===\n")
-        for key, val in sorted(t.get_all_configs().items()):
+        for key, val in sorted(t.config.get_all().items()):
             print(f"  {key}: {val}")
 
 

@@ -77,7 +77,7 @@ def main() -> None:
 
         # Phase 1: Substantial design conversation (fills ~60% of budget)
         print("=== Phase 1: API design ===\n")
-        result = t.run(
+        result = t.llm.run(
             "Design CRUD endpoints for tasks (title, status, assignee). "
             "What URL structure and HTTP methods?",
             max_steps=5, max_tokens=1024,
@@ -85,14 +85,14 @@ def main() -> None:
         )
         result.pprint()
 
-        status = t.status()
+        status = t.search.status()
         pct = status.token_count / status.token_budget_max * 100
         print(f"\n  Context: {status.token_count} tokens ({pct:.0f}% of budget)")
         print(f"  Branch: {t.current_branch}")
 
         # Phase 2: Completely unrelated tangent
         print("\n\n=== Phase 2: Off-topic interruption ===\n")
-        result = t.run(
+        result = t.llm.run(
             "Wait, different topic — plan a team offsite for 15 people "
             "next Friday, $2000 budget. Quick suggestions?",
             max_steps=8, max_tokens=1024,
@@ -100,15 +100,15 @@ def main() -> None:
         )
         result.pprint()
         print(f"\n  Branch: {t.current_branch}")
-        print(f"  All branches: {[b.name for b in t.list_branches()]}")
+        print(f"  All branches: {[b.name for b in t.branches.list()]}")
 
         # Phase 3: Resume API design
         if t.current_branch != "main":
             print(f"  (agent left us on {t.current_branch} — switching to main)")
-            t.switch("main")
+            t.branches.switch("main")
 
         print(f"\n\n=== Phase 3: Resume API design ===\n")
-        result = t.run(
+        result = t.llm.run(
             "Back to the API — what status codes for each endpoint?",
             max_steps=5, max_tokens=1024,
             on_step=log.on_step, on_tool_result=log.on_tool_result,
@@ -117,20 +117,20 @@ def main() -> None:
 
         # Report — show each branch's compiled context
         print("\n\n=== Final State ===\n")
-        branches = t.list_branches()
+        branches = t.branches.list()
         print(f"  Branches: {[b.name for b in branches]}")
         print(f"  Current: {t.current_branch}")
 
-        status = t.status()
+        status = t.search.status()
         pct = status.token_count / status.token_budget_max * 100
         print(f"  Context: {status.token_count} tokens ({pct:.0f}% of budget)")
 
         original = t.current_branch
         for branch in branches:
-            t.switch(branch.name)
+            t.branches.switch(branch.name)
             print(f"\n  [{branch.name}]:")
             t.compile().pprint(style="compact")
-        t.switch(original)
+        t.branches.switch(original)
 
         if len(branches) > 1:
             print(f"\n  Agent created {len(branches) - 1} branch(es) for tangent isolation.")

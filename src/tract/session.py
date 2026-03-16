@@ -416,7 +416,7 @@ class Session:
                 Applied **after** profile directives, so they override any
                 same-named directive from the profile.
             configure: Optional ``{key: value}`` dict passed to
-                ``child.configure(**configure)``.  Applied last, so explicit
+                ``child.config.set(**configure)``.  Applied last, so explicit
                 config wins over profile/stage defaults.
 
         Returns:
@@ -447,7 +447,7 @@ class Session:
         )
         self._tracts[child.tract_id] = child
         child._session_owner = self
-        child._seed_base_tags()
+        child._tags_mgr._seed_base()
 
         # Inherit prompt_dir from parent
         if parent._prompt_dir is not None:
@@ -455,9 +455,9 @@ class Session:
 
         # Apply persona: profile → stage → directives → configure
         if profile is not None:
-            child.load_profile(profile)
+            child.templates.load_profile(profile)
         if stage is not None:
-            child.apply_stage(stage)
+            child.templates.apply_stage(stage)
         if directives:
             from pathlib import Path as _Path
             for dir_name, dir_value in directives.items():
@@ -466,7 +466,7 @@ class Session:
                 else:
                     child.directive(dir_name, dir_value)
         if configure:
-            child.configure(**configure)
+            child.config.set(**configure)
 
         return child
 
@@ -634,14 +634,14 @@ class Session:
 
         branch_existed = False
         try:
-            parent.branch(branch_name, switch=False)
+            parent.branches.create(branch_name, switch=False)
         except BranchExistsError:
             branch_existed = True
 
         # 3. Build a child Tract instance sharing the same tract_id + DB
         #    but with its own HEAD tracking via _BranchScopedRefProxy.
         child_session = self._session_factory()
-        child_config = parent.config
+        child_config = parent._config
 
         child_commit_repo = SqliteCommitRepository(child_session)
         child_blob_repo = SqliteBlobRepository(child_session)
@@ -731,7 +731,7 @@ class Session:
         #    with parent which uses the same tract_id)
         child_key = f"{parent.tract_id}:{branch_name}"
         self._tracts[child_key] = child
-        child._seed_base_tags()
+        child._tags_mgr._seed_base()
 
         return child
 
@@ -1000,9 +1000,9 @@ def _curate_keep_tags(child: Tract, keep_tags: list[str]) -> None:
     chain = _get_commit_chain(child)
 
     for row in chain:
-        commit_tags = set(child.get_tags(row.commit_hash))
+        commit_tags = set(child.tags.get(row.commit_hash))
         if not (commit_tags & tag_set):
-            child.annotate(row.commit_hash, Priority.SKIP, reason="curation:keep_tags")
+            child.annotations.set(row.commit_hash, Priority.SKIP, reason="curation:keep_tags")
 
 
 def _curate_drop(child: Tract, drop_hashes: list[str]) -> None:
@@ -1045,7 +1045,7 @@ def _curate_drop(child: Tract, drop_hashes: list[str]) -> None:
 
     # Apply SKIP annotations
     for h in drop_hashes:
-        child.annotate(h, Priority.SKIP, reason="curation:drop")
+        child.annotations.set(h, Priority.SKIP, reason="curation:drop")
 
 
 def _curate_compact_before(child: Tract, marker_hash: str) -> None:
@@ -1097,11 +1097,11 @@ def _curate_compact_before(child: Tract, marker_hash: str) -> None:
     non_skipped_hashes = [row.commit_hash for row in non_skipped]
 
     # Try to use compress_range if an LLM client is available
-    has_llm = child._has_llm_client("compress")
+    has_llm = child.config._has_llm_client("compress")
 
     if has_llm:
         # Use the Tract.compress() API which handles all wiring
-        child.compress(
+        child.compression.compress(
             commits=non_skipped_hashes,
             triggered_by="curation:compact_before",
         )
@@ -1125,7 +1125,7 @@ def _curate_compact_before(child: Tract, marker_hash: str) -> None:
             summary = "(empty summary)"
 
         # Use Tract.compress() with manual content
-        child.compress(
+        child.compression.compress(
             commits=non_skipped_hashes,
             content=summary,
             triggered_by="curation:compact_before",

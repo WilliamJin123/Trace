@@ -1,7 +1,7 @@
 """Semantic gates for tract middleware.
 
 A SemanticGate is a callable that plugs into tract's middleware system
-via ``t.use(event, gate_instance)``.  When fired, it builds a lightweight
+via ``t.middleware.add(event, gate_instance)``.  When fired, it builds a lightweight
 manifest from the commit log and active config, sends it to an LLM with
 a natural-language criterion, and raises :class:`BlockedError` if the
 criterion is not met.
@@ -14,7 +14,7 @@ Example::
         name="research-complete",
         check="At least 3 commits tagged 'key-finding' exist",
     )
-    t.use("pre_transition", gate)
+    t.middleware.add("pre_transition", gate)
 """
 
 from __future__ import annotations
@@ -50,15 +50,15 @@ def build_manifest(tract: Tract, max_log_entries: int = 30) -> str:
     """Build a text manifest from log entries and active config.
 
     Shared by :class:`SemanticGate` and
-    :class:`~tract.maintain.SemanticMaintainer`.  Uses only ``t.log()``
-    and ``t.get_all_configs()`` — never ``t.status()`` or ``t.compile()``
+    :class:`~tract.maintain.SemanticMaintainer`.  Uses only ``t.search.log()``
+    and ``t.config.get_all()`` — never ``t.search.status()`` or ``t.compile()``
     to avoid middleware recursion.
     """
     branch = tract.current_branch or "(detached)"
     head = tract.head
     head_short = head[:8] if head else "(empty)"
 
-    entries = tract.log(limit=max_log_entries)
+    entries = tract.search.log(limit=max_log_entries)
     shown = len(entries)
 
     lines: list[str] = [
@@ -87,7 +87,7 @@ def build_manifest(tract: Tract, max_log_entries: int = 30) -> str:
 
     # Active configuration
     try:
-        config = tract.get_all_configs()
+        config = tract.config.get_all()
     except Exception:
         config = {}
     if config:
@@ -144,15 +144,15 @@ class GateResult:
 class SemanticGate:
     """LLM-powered quality gate for tract middleware.
 
-    Register with ``t.use(event, gate)`` where *event* is any
+    Register with ``t.middleware.add(event, gate)`` where *event* is any
     :data:`~tract.middleware.MiddlewareEvent`.
 
     When invoked the gate:
 
     1. Runs an optional deterministic ``condition`` callback — returns
        early (passes) if the callback returns ``False``.
-    2. Builds a lightweight manifest from ``t.log()`` and
-       ``t.get_all_configs()`` (never ``t.status()`` or ``t.compile()``
+    2. Builds a lightweight manifest from ``t.search.log()`` and
+       ``t.config.get_all()`` (never ``t.search.status()`` or ``t.compile()``
        which would cause recursion).
     3. Sends the manifest plus the ``check`` criterion to an LLM.
     4. Parses the LLM response for PASS / FAIL.
@@ -251,7 +251,7 @@ class SemanticGate:
         # 2. Resolve LLM client
         tract = ctx.tract
         try:
-            client = tract._resolve_llm_client("gate")
+            client = tract.config._resolve_llm_client("gate")
         except RuntimeError as exc:
             self.last_result = GateResult(
                 gate_name=self.name,
@@ -261,7 +261,7 @@ class SemanticGate:
             )
             raise RuntimeError(
                 f"SemanticGate '{self.name}' requires an LLM client but none "
-                f"is configured.  Call t.configure_llm() or pass api_key= to "
+                f"is configured.  Call t.config.configure_llm() or pass api_key= to "
                 f"Tract.open()."
             ) from exc
 

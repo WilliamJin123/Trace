@@ -126,7 +126,7 @@ class TestWalkAncestryContentTypeFilter:
         """Filter to config content type."""
         t = make_tract()
         populate_tract(t, 2)
-        t.configure(model="gpt-4")
+        t.config.set(model="gpt-4")
         commit_repo, blob_repo = _get_internals(t)
 
         result = walk_ancestry(
@@ -153,7 +153,7 @@ class TestWalkAncestryContentTypeFilter:
         t = make_tract()
         t.commit(InstructionContent(text="System prompt"))
         t.commit(DialogueContent(role="user", text="Hello"))
-        t.configure(model="gpt-4")
+        t.config.set(model="gpt-4")
         commit_repo, blob_repo = _get_internals(t)
 
         result = walk_ancestry(
@@ -169,7 +169,7 @@ class TestWalkAncestryContentTypeFilter:
         t = make_tract()
         t.commit(InstructionContent(text="System prompt"))
         t.commit(DialogueContent(role="user", text="Hello"))
-        t.configure(model="gpt-4")
+        t.config.set(model="gpt-4")
         commit_repo, blob_repo = _get_internals(t)
 
         result = walk_ancestry(commit_repo, blob_repo, t.head)
@@ -189,12 +189,12 @@ class TestWalkAncestryMergeParents:
         populate_tract(t, 2)
 
         # Create a branch, add commits, then merge
-        t.branch("feature")
-        t.checkout("feature")
+        t.branches.create("feature")
+        t.branches.checkout("feature")
         t.commit(
             DialogueContent(role="user", text="Feature work")
         )
-        t.checkout("main")
+        t.branches.checkout("main")
         t.merge("feature")
 
         commit_repo, blob_repo = _get_internals(t)
@@ -220,8 +220,8 @@ class TestWalkAncestryMergeParents:
             InstructionContent(text="System prompt")
         ).commit_hash
 
-        t.branch("feature")
-        t.checkout("feature")
+        t.branches.create("feature")
+        t.branches.checkout("feature")
         feat_h1 = t.commit(
             DialogueContent(role="user", text="Feature 1")
         ).commit_hash
@@ -229,7 +229,7 @@ class TestWalkAncestryMergeParents:
             DialogueContent(role="user", text="Feature 2")
         ).commit_hash
 
-        t.checkout("main")
+        t.branches.checkout("main")
         main_h2 = t.commit(
             DialogueContent(role="user", text="Main work")
         ).commit_hash
@@ -254,12 +254,12 @@ class TestWalkAncestryMergeParents:
         t = make_tract()
         t.commit(InstructionContent(text="System prompt"))
 
-        t.branch("feature")
-        t.checkout("feature")
+        t.branches.create("feature")
+        t.branches.checkout("feature")
         t.commit(DialogueContent(role="user", text="Feature dialogue"))
-        t.configure(model="gpt-4")
+        t.config.set(model="gpt-4")
 
-        t.checkout("main")
+        t.branches.checkout("main")
         t.commit(DialogueContent(role="user", text="Main dialogue"))
         t.merge("feature")
 

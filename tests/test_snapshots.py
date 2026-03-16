@@ -41,7 +41,7 @@ class TestSnapshotCreate:
         """Snapshot with a label returns a tag containing that label."""
         t = make_tract()
         t.user("hello")
-        tag = t.snapshot("before-compress")
+        tag = t.persistence.snapshot("before-compress")
         assert tag.startswith("snapshot:before-compress:")
         assert len(tag) > len("snapshot:before-compress:")
 
@@ -49,7 +49,7 @@ class TestSnapshotCreate:
         """Snapshot without a label falls back to timestamp-based tag."""
         t = make_tract()
         t.user("hello")
-        tag = t.snapshot()
+        tag = t.persistence.snapshot()
         # Should be "snapshot:<timestamp>:<hash>"
         parts = tag.split(":")
         assert parts[0] == "snapshot"
@@ -60,7 +60,7 @@ class TestSnapshotCreate:
         """Snapshot on a tract with no commits raises TraceError."""
         t = make_tract()
         with pytest.raises(TraceError, match="no commits"):
-            t.snapshot("oops")
+            t.persistence.snapshot("oops")
 
 
 # ---------------------------------------------------------------------------
@@ -74,9 +74,9 @@ class TestListSnapshots:
         """Each snapshot dict has the expected keys."""
         t = make_tract()
         t.user("first")
-        tag = t.snapshot("checkpoint-1")
+        tag = t.persistence.snapshot("checkpoint-1")
 
-        snaps = t.list_snapshots()
+        snaps = t.persistence.list_snapshots()
         assert len(snaps) == 1
         snap = snaps[0]
         assert snap["tag"] == tag
@@ -90,17 +90,17 @@ class TestListSnapshots:
         """Empty list when no snapshots have been created."""
         t = make_tract()
         t.user("hello")
-        assert t.list_snapshots() == []
+        assert t.persistence.list_snapshots() == []
 
     def test_list_multiple_in_order(self):
         """Multiple snapshots are returned newest first."""
         t = make_tract()
         t.user("msg1")
-        t.snapshot("first")
+        t.persistence.snapshot("first")
         t.user("msg2")
-        t.snapshot("second")
+        t.persistence.snapshot("second")
 
-        snaps = t.list_snapshots()
+        snaps = t.persistence.list_snapshots()
         assert len(snaps) == 2
         # Newest first (log returns reverse chronological)
         assert snaps[0]["label"] == "second"
@@ -119,9 +119,9 @@ class TestSnapshotMetadata:
         t = make_tract()
         t.user("hello")
         head_before = t.head
-        t.snapshot("check")
+        t.persistence.snapshot("check")
 
-        snaps = t.list_snapshots()
+        snaps = t.persistence.list_snapshots()
         assert snaps[0]["head"] == head_before
 
     def test_metadata_records_branch(self):
@@ -129,19 +129,19 @@ class TestSnapshotMetadata:
         t = make_tract()
         t.user("hello")
         branch = t.current_branch
-        t.snapshot("check")
+        t.persistence.snapshot("check")
 
-        snaps = t.list_snapshots()
+        snaps = t.persistence.list_snapshots()
         assert snaps[0]["branch"] == branch
 
     def test_custom_metadata_stored(self):
         """Custom metadata passed to snapshot() is stored in the commit."""
         t = make_tract()
         t.user("hello")
-        t.snapshot("check", metadata={"reason": "pre-merge"})
+        t.persistence.snapshot("check", metadata={"reason": "pre-merge"})
 
         # Verify via log that the metadata commit has our custom field
-        for entry in t.log(limit=10):
+        for entry in t.search.log(limit=10):
             meta = entry.metadata or {}
             if meta.get("snapshot"):
                 assert meta.get("reason") == "pre-merge"
@@ -162,7 +162,7 @@ class TestRestoreSnapshotWithBranch:
         t = make_tract()
         t.user("msg1")
         head_at_snap = t.head
-        tag = t.snapshot("safe-point")
+        tag = t.persistence.snapshot("safe-point")
 
         # Add more commits after snapshot
         t.user("msg2")
@@ -170,7 +170,7 @@ class TestRestoreSnapshotWithBranch:
         assert t.head != head_at_snap
 
         # Restore
-        restored = t.restore_snapshot(tag)
+        restored = t.persistence.restore_snapshot(tag)
         assert restored == head_at_snap
         assert t.current_branch == "restore/safe-point"
         assert t.head == head_at_snap
@@ -180,11 +180,11 @@ class TestRestoreSnapshotWithBranch:
         t = make_tract()
         t.user("msg1")
         head_at_snap = t.head
-        t.snapshot("pre-dangerous-operation")
+        t.persistence.snapshot("pre-dangerous-operation")
 
         t.user("msg2")
 
-        restored = t.restore_snapshot("dangerous")
+        restored = t.persistence.restore_snapshot("dangerous")
         assert restored == head_at_snap
 
     def test_restore_by_full_tag(self):
@@ -192,11 +192,11 @@ class TestRestoreSnapshotWithBranch:
         t = make_tract()
         t.user("msg1")
         head_at_snap = t.head
-        tag = t.snapshot("exact")
+        tag = t.persistence.snapshot("exact")
 
         t.user("msg2")
 
-        restored = t.restore_snapshot(tag)
+        restored = t.persistence.restore_snapshot(tag)
         assert restored == head_at_snap
 
 
@@ -212,12 +212,12 @@ class TestRestoreSnapshotWithReset:
         t = make_tract()
         t.user("msg1")
         head_at_snap = t.head
-        t.snapshot("reset-point")
+        t.persistence.snapshot("reset-point")
 
         t.user("msg2")
         t.user("msg3")
 
-        restored = t.restore_snapshot("reset-point", create_branch=False)
+        restored = t.persistence.restore_snapshot("reset-point", create_branch=False)
         assert restored == head_at_snap
         assert t.head == head_at_snap
 
@@ -233,10 +233,10 @@ class TestRestoreSnapshotErrors:
         """ValueError when no matching snapshot is found."""
         t = make_tract()
         t.user("hello")
-        t.snapshot("exists")
+        t.persistence.snapshot("exists")
 
         with pytest.raises(ValueError, match="Snapshot not found"):
-            t.restore_snapshot("nonexistent-label-xyz")
+            t.persistence.restore_snapshot("nonexistent-label-xyz")
 
     def test_unknown_tag_raises(self):
         """ValueError when tag doesn't match any snapshot."""
@@ -244,7 +244,7 @@ class TestRestoreSnapshotErrors:
         t.user("hello")
 
         with pytest.raises(ValueError, match="Snapshot not found"):
-            t.restore_snapshot("snapshot:bogus:0000000")
+            t.persistence.restore_snapshot("snapshot:bogus:0000000")
 
 
 # ---------------------------------------------------------------------------
@@ -262,12 +262,12 @@ class TestSnapshotPersistence:
         t = Tract.open(db_path, tract_id="persist-test")
         t.user("hello")
         head_at_snap = t.head
-        tag = t.snapshot("durable")
+        tag = t.persistence.snapshot("durable")
         t.close()
 
         # Reopen and verify
         t2 = Tract.open(db_path, tract_id="persist-test")
-        snaps = t2.list_snapshots()
+        snaps = t2.persistence.list_snapshots()
         assert len(snaps) == 1
         assert snaps[0]["tag"] == tag
         assert snaps[0]["head"] == head_at_snap
@@ -287,16 +287,16 @@ class TestMultipleSnapshots:
         t = make_tract()
         t.user("msg1")
         head1 = t.head
-        t.snapshot("deploy-v1")
+        t.persistence.snapshot("deploy-v1")
 
         t.user("msg2")
         head2 = t.head
-        t.snapshot("deploy-v2")
+        t.persistence.snapshot("deploy-v2")
 
         t.user("msg3")
 
         # "deploy" matches both; newest (deploy-v2) should be returned first
-        restored = t.restore_snapshot("deploy")
+        restored = t.persistence.restore_snapshot("deploy")
         assert restored == head2
 
     def test_restore_specific_older_snapshot(self):
@@ -304,13 +304,13 @@ class TestMultipleSnapshots:
         t = make_tract()
         t.user("msg1")
         head1 = t.head
-        tag1 = t.snapshot("alpha")
+        tag1 = t.persistence.snapshot("alpha")
 
         t.user("msg2")
-        t.snapshot("beta")
+        t.persistence.snapshot("beta")
 
         t.user("msg3")
 
         # Restore to the older one by exact tag
-        restored = t.restore_snapshot(tag1)
+        restored = t.persistence.restore_snapshot(tag1)
         assert restored == head1
