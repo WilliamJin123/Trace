@@ -177,6 +177,37 @@ class SqliteCommitRepository(CommitRepository):
         ).scalar()
         return int(result)  # type: ignore[arg-type]
 
+    def get_ancestors_with_merges(
+        self, start_hash: str, limit: int | None = None
+    ) -> Sequence[CommitRow]:
+        """Walk ancestry following primary parents AND merge parents via recursive CTE."""
+        from sqlalchemy import text
+
+        limit_clause = f" LIMIT {int(limit)}" if limit is not None else ""
+        sql = (
+            "WITH RECURSIVE ancestors(commit_hash) AS ("
+            "  SELECT :start_hash"
+            "  UNION"
+            "  SELECT c.parent_hash FROM commits c"
+            "    JOIN ancestors a ON c.commit_hash = a.commit_hash"
+            "    WHERE c.parent_hash IS NOT NULL"
+            "  UNION"
+            "  SELECT cp.parent_hash FROM commit_parents cp"
+            "    JOIN ancestors a ON cp.commit_hash = a.commit_hash"
+            ") "
+            "SELECT c.* FROM commits c"
+            "  JOIN ancestors a ON c.commit_hash = a.commit_hash"
+            f"  ORDER BY c.created_at DESC{limit_clause}"
+        )
+        rows = self._session.execute(text(sql), {"start_hash": start_hash}).fetchall()
+        # Map raw rows back to CommitRow ORM objects
+        result = []
+        for raw in rows:
+            obj = self._session.get(CommitRow, raw.commit_hash)
+            if obj is not None:
+                result.append(obj)
+        return result
+
     def get_by_type(self, content_type: str, tract_id: str) -> Sequence[CommitRow]:
         stmt = (
             select(CommitRow)
@@ -1016,6 +1047,19 @@ class SqliteToolSchemaRepository(ToolSchemaRepository):
         )
         return list(self._session.execute(stmt).scalars().all())
 
+    def batch_get_commit_tool_hashes(self, commit_hashes: list[str]) -> dict[str, list[str]]:
+        if not commit_hashes:
+            return {}
+        stmt = (
+            select(CommitToolRow.commit_hash, CommitToolRow.tool_hash)
+            .where(CommitToolRow.commit_hash.in_(commit_hashes))
+            .order_by(CommitToolRow.commit_hash, CommitToolRow.position)
+        )
+        result: dict[str, list[str]] = {}
+        for row in self._session.execute(stmt).all():
+            result.setdefault(row.commit_hash, []).append(row.tool_hash)
+        return result
+
 
 class SqliteTagAnnotationRepository(TagAnnotationRepository):
     """SQLite implementation of mutable tag annotation storage."""
@@ -1109,6 +1153,19 @@ class SqliteTagAnnotationRepository(TagAnnotationRepository):
             )
             return list(self._session.execute(stmt).scalars().all())
 
+    def batch_get_tags(self, target_hashes: list[str]) -> dict[str, list[str]]:
+        if not target_hashes:
+            return {}
+        stmt = (
+            select(TagAnnotationRow.target_hash, TagAnnotationRow.tag)
+            .where(TagAnnotationRow.target_hash.in_(target_hashes))
+            .order_by(TagAnnotationRow.created_at)
+        )
+        result: dict[str, list[str]] = {}
+        for row in self._session.execute(stmt).all():
+            result.setdefault(row.target_hash, []).append(row.tag)
+        return result
+
 
 class SqliteTagRegistryRepository(TagRegistryRepository):
     """SQLite implementation of tag registry storage."""
@@ -1162,6 +1219,20 @@ class SqliteTagRegistryRepository(TagRegistryRepository):
 
     def is_registered(self, tract_id: str, tag_name: str) -> bool:
         return self.get(tract_id, tag_name) is not None
+
+    def batch_is_registered(self, tract_id: str, tag_names: list[str]) -> set[str]:
+        if not tag_names:
+            return set()
+        stmt = (
+            select(TagRegistryRow.tag_name)
+            .where(
+                and_(
+                    TagRegistryRow.tract_id == tract_id,
+                    TagRegistryRow.tag_name.in_(tag_names),
+                )
+            )
+        )
+        return set(self._session.execute(stmt).scalars().all())
 
     def delete(self, tract_id: str, tag_name: str) -> bool:
         row = self.get(tract_id, tag_name)

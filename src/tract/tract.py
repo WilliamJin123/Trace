@@ -1955,13 +1955,14 @@ class Tract:
         if current_head is None:
             return []
 
-        # Walk ancestor chain looking for commits with tools
+        # Walk ancestor chain and batch-fetch tool links
         ancestors = self._commit_repo.get_ancestors(current_head)
+        all_hashes = [r.commit_hash for r in ancestors]
+        tool_map = self._tool_schema_repo.batch_get_commit_tool_hashes(all_hashes)
+
+        # Find the most recent commit with tools
         for commit_row in ancestors:
-            tool_hashes = self._tool_schema_repo.get_commit_tool_hashes(
-                commit_row.commit_hash
-            )
-            if tool_hashes:
+            if commit_row.commit_hash in tool_map:
                 rows = self._tool_schema_repo.get_for_commit(
                     commit_row.commit_hash
                 )
@@ -2597,6 +2598,7 @@ class Tract:
         self,
         name: str | None = None,
         after: str | None = None,
+        limit: int = 500,
     ) -> list[CommitInfo]:
         """Find tool result commits on the current branch.
 
@@ -2608,12 +2610,13 @@ class Tract:
                 matches this value.
             after: If set, only return results that come after this commit
                 hash in history (exclusive). "After" means more recent.
+            limit: Maximum number of commits to scan. Default 500.
 
         Returns:
             List of :class:`CommitInfo` for matching tool result commits,
             in chronological order (oldest first).
         """
-        entries = self.log(limit=10000)
+        entries = self.log(limit=limit)
         entries.reverse()  # oldest-first
 
         results = []
@@ -2637,6 +2640,7 @@ class Tract:
     def find_tool_calls(
         self,
         name: str | None = None,
+        limit: int = 500,
     ) -> list[CommitInfo]:
         """Find assistant commits that requested tool calls.
 
@@ -2647,12 +2651,13 @@ class Tract:
         Args:
             name: If set, only return commits where at least one tool
                 call in ``metadata["tool_calls"]`` has a matching name.
+            limit: Maximum number of commits to scan. Default 500.
 
         Returns:
             List of :class:`CommitInfo` for matching assistant commits,
             in chronological order (oldest first).
         """
-        entries = self.log(limit=10000)
+        entries = self.log(limit=limit)
         entries.reverse()  # oldest-first
 
         results = []
@@ -2672,6 +2677,7 @@ class Tract:
     def find_tool_turns(
         self,
         name: str | None = None,
+        limit: int = 500,
     ) -> list["ToolTurn"]:
         """Find paired tool-call + tool-result commit groups.
 
@@ -2683,6 +2689,7 @@ class Tract:
         Args:
             name: If set, only return turns where at least one tool
                 in the turn matches this name.
+            limit: Maximum number of commits to scan. Default 500.
 
         Returns:
             List of :class:`ToolTurn` in chronological order.
@@ -2690,7 +2697,7 @@ class Tract:
 
         from tract.protocols import ToolTurn
 
-        entries = self.log(limit=10000)
+        entries = self.log(limit=limit)
         entries.reverse()  # oldest-first
 
         # Build index: tool_call_id -> list of result CommitInfos
@@ -4854,22 +4861,32 @@ class Tract:
         if self._tag_registry_repo is None:
             return []
         rows = self._tag_registry_repo.list_all(self._tract_id)
+        tag_names = [r.tag_name for r in rows]
+
+        # Count annotation tags in batch
+        annotation_counts: dict[str, int] = {}
+        if self._tag_annotation_repo is not None:
+            for tn in tag_names:
+                annotation_hashes = self._tag_annotation_repo.get_commits_by_tag(
+                    self._tract_id, tn,
+                )
+                annotation_counts[tn] = len(annotation_hashes)
+
+        # Walk ancestors ONCE, count immutable tags across all registered tags
+        immutable_counts: dict[str, int] = {tn: 0 for tn in tag_names}
+        head = self.head
+        if head is not None:
+            tag_name_set = set(tag_names)
+            ancestors = self._get_merge_aware_ancestors(head, limit=500)
+            for ancestor in ancestors:
+                if ancestor.tags_json:
+                    for t in ancestor.tags_json:
+                        if t in tag_name_set:
+                            immutable_counts[t] = immutable_counts.get(t, 0) + 1
+
         result = []
         for row in rows:
-            # Count usage from both immutable and annotation tags
-            count = 0
-            if self._tag_annotation_repo is not None:
-                annotation_hashes = self._tag_annotation_repo.get_commits_by_tag(
-                    self._tract_id, row.tag_name,
-                )
-                count += len(annotation_hashes)
-            # Count immutable tags from commits (walk recent history)
-            head = self.head
-            if head is not None:
-                ancestors = self._get_merge_aware_ancestors(head, limit=500)
-                for ancestor in ancestors:
-                    if ancestor.tags_json and row.tag_name in ancestor.tags_json:
-                        count += 1
+            count = annotation_counts.get(row.tag_name, 0) + immutable_counts.get(row.tag_name, 0)
             result.append({
                 "name": row.tag_name,
                 "description": row.description,
@@ -4899,48 +4916,36 @@ class Tract:
         if not tags:
             return []
 
-        # Collect candidate commit hashes from both sources.
-        # For "all" match, we first gather candidates with "any" match,
-        # then re-check that ALL tags are present across both sources.
-        candidate_hashes: set[str] = set()
-        collect_match = "any" if match == "all" else match
-
-        # Source 1: Annotation tags
-        if self._tag_annotation_repo is not None:
-            annotation_matches = self._tag_annotation_repo.get_commits_by_tags(
-                self._tract_id, tags, match=collect_match,
-            )
-            candidate_hashes.update(annotation_matches)
-
-        # Source 2: Immutable tags from CommitRow (walk history)
         head = self.head
-        if head is not None:
-            ancestors = self._get_merge_aware_ancestors(head, limit=500)
-            for row in ancestors:
-                if row.tags_json:
-                    commit_tags = set(row.tags_json)
-                    if commit_tags & set(tags):
-                        candidate_hashes.add(row.commit_hash)
+        if head is None:
+            return []
 
-        # For "all" match, re-check: each hash must have ALL tags
-        # when combining immutable + annotation sources
-        if match == "all":
-            final_hashes: set[str] = set()
-            for h in candidate_hashes:
-                all_tags = set(self.get_tags(h))
-                if set(tags) <= all_tags:
-                    final_hashes.add(h)
-            candidate_hashes = final_hashes
+        # Walk ancestors ONCE and reuse
+        ancestors = self._get_merge_aware_ancestors(head, limit=500)
 
-        # Convert to CommitInfo, in reverse chronological order
+        # Batch-fetch annotation tags for all ancestors
+        annotation_map: dict[str, list[str]] = {}
+        if self._tag_annotation_repo is not None:
+            all_hashes = [r.commit_hash for r in ancestors]
+            annotation_map = self._tag_annotation_repo.batch_get_tags(all_hashes)
+
+        tag_set = set(tags)
         results: list[CommitInfo] = []
-        if head is not None:
-            ancestors = self._get_merge_aware_ancestors(head, limit=500)
-            for row in ancestors:
-                if row.commit_hash in candidate_hashes:
+        for row in ancestors:
+            # Combine immutable + mutable tags
+            commit_tags = set(row.tags_json) if row.tags_json else set()
+            commit_tags.update(annotation_map.get(row.commit_hash, []))
+
+            if match == "any":
+                if commit_tags & tag_set:
                     results.append(self._commit_engine._row_to_info(row))
-                    if len(results) >= limit:
-                        break
+            else:  # "all"
+                if tag_set <= commit_tags:
+                    results.append(self._commit_engine._row_to_info(row))
+
+            if len(results) >= limit:
+                break
+
         return results
 
     def _seed_base_tags(self) -> None:
@@ -4977,10 +4982,8 @@ class Tract:
         """
         if not self._strict_tags or self._tag_registry_repo is None:
             return
-        unregistered = [
-            tag for tag in tags
-            if not self._tag_registry_repo.is_registered(self._tract_id, tag)
-        ]
+        registered = self._tag_registry_repo.batch_is_registered(self._tract_id, tags)
+        unregistered = [tag for tag in tags if tag not in registered]
         if unregistered:
             raise TagNotRegisteredError(unregistered)
 
@@ -5100,13 +5103,8 @@ class Tract:
         Returns commits in reverse chronological order (newest first).
         Falls back to get_ancestors() when no parent_repo is available.
 
-        Performance: when *limit* is provided and no *op_filter*, BFS stops
-        after visiting ``limit * 3`` nodes (heuristic overshoot to ensure
-        correct chronological ordering after sort+truncate).  This avoids
-        materialising the entire DAG for common bounded queries.
+        Uses a single recursive CTE query instead of per-commit BFS.
         """
-        from collections import deque
-
         if self._parent_repo is None:
             return list(
                 self._commit_repo.get_ancestors(
@@ -5114,47 +5112,17 @@ class Tract:
                 )
             )
 
-        # Early-exit cap: when limit is set and there is no op_filter that
-        # could discard most rows, we stop BFS after collecting enough nodes
-        # to guarantee the top-limit results by created_at.  The 3x
-        # multiplier accounts for BFS visiting nodes in graph order (not
-        # chronological order).
-        visit_cap = (limit * 3) if (limit is not None and op_filter is None) else None
+        # Fetch a larger window when op_filter will discard rows
+        fetch_limit = None if op_filter is not None else limit
+        all_rows = list(
+            self._commit_repo.get_ancestors_with_merges(start_hash, limit=fetch_limit)
+        )
 
-        # BFS collecting reachable commits
-        visited: set[str] = set()
-        queue: deque[str] = deque([start_hash])
-        all_rows = []
-
-        while queue:
-            if visit_cap is not None and len(all_rows) >= visit_cap:
-                break
-            current = queue.popleft()
-            if current in visited:
-                continue
-            visited.add(current)
-            row = self._commit_repo.get(current)
-            if row is None:
-                continue
-            all_rows.append(row)
-            # Follow primary parent
-            if row.parent_hash:
-                queue.append(row.parent_hash)
-            # Follow merge parents
-            for extra in self._parent_repo.get_parents(current):
-                if extra not in visited:
-                    queue.append(extra)
-
-        # Sort newest-first by created_at
-        all_rows.sort(key=lambda r: r.created_at, reverse=True)
-
-        # Apply op_filter
+        # Apply op_filter in Python (content_type filtering etc.)
         if op_filter is not None:
             all_rows = [r for r in all_rows if r.operation == op_filter]
-
-        # Apply limit
-        if limit is not None:
-            all_rows = all_rows[:limit]
+            if limit is not None:
+                all_rows = all_rows[:limit]
 
         return all_rows
 
@@ -5199,14 +5167,19 @@ class Tract:
         ancestors = self._get_merge_aware_ancestors(
             current_head, limit=500, op_filter=op_filter,
         )
-        results: list[CommitInfo] = []
         tag_set = set(tags)
+
+        # Batch-fetch annotation tags for all ancestor commits
+        annotation_map: dict[str, list[str]] = {}
+        if self._tag_annotation_repo is not None:
+            all_hashes = [r.commit_hash for r in ancestors]
+            annotation_map = self._tag_annotation_repo.batch_get_tags(all_hashes)
+
+        results: list[CommitInfo] = []
         for row in ancestors:
             # Combine immutable + mutable tags
             commit_tags = set(row.tags_json) if row.tags_json else set()
-            if self._tag_annotation_repo is not None:
-                annotation_tags = self._tag_annotation_repo.get_tags(row.commit_hash)
-                commit_tags.update(annotation_tags)
+            commit_tags.update(annotation_map.get(row.commit_hash, []))
 
             if tag_match == "any":
                 if commit_tags & tag_set:
@@ -5272,6 +5245,12 @@ class Tract:
         scan_limit = max(limit * 10, 500)
         ancestors = self._get_merge_aware_ancestors(start_hash, limit=scan_limit)
 
+        # Batch-fetch annotation tags if tag filter is active
+        annotation_map: dict[str, list[str]] = {}
+        if tag is not None and self._tag_annotation_repo is not None:
+            all_hashes = [r.commit_hash for r in ancestors]
+            annotation_map = self._tag_annotation_repo.batch_get_tags(all_hashes)
+
         results: list[CommitInfo] = []
         for row in ancestors:
             # --- content_type filter ---
@@ -5289,10 +5268,7 @@ class Tract:
             # --- tag filter (immutable + mutable) ---
             if tag is not None:
                 commit_tags: set[str] = set(row.tags_json) if row.tags_json else set()
-                if self._tag_annotation_repo is not None:
-                    commit_tags.update(
-                        self._tag_annotation_repo.get_tags(row.commit_hash)
-                    )
+                commit_tags.update(annotation_map.get(row.commit_hash, []))
                 if tag not in commit_tags:
                     continue
 

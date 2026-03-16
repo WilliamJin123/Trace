@@ -151,6 +151,25 @@ class CommitRepository(ABC):
         ...
 
     @abstractmethod
+    def get_ancestors_with_merges(
+        self, start_hash: str, limit: int | None = None
+    ) -> Sequence[CommitRow]:
+        """Walk ancestry following both primary parents and merge parents.
+
+        Uses a recursive CTE that follows commits.parent_hash AND
+        commit_parents.parent_hash, returning all reachable ancestors
+        ordered by created_at DESC (newest first).
+
+        Args:
+            start_hash: Starting commit hash.
+            limit: Maximum number of rows to return.
+
+        Returns:
+            Ancestor CommitRows in reverse chronological order.
+        """
+        ...
+
+    @abstractmethod
     def update_metadata(self, commit_hash: str, metadata: dict) -> None:
         """Update the metadata_json field on an existing commit.
 
@@ -554,6 +573,15 @@ class ToolSchemaRepository(ABC):
         """Get content hashes of tools linked to a commit, ordered by position."""
         ...
 
+    @abstractmethod
+    def batch_get_commit_tool_hashes(self, commit_hashes: list[str]) -> dict[str, list[str]]:
+        """Get tool content hashes for a batch of commits in a single query.
+
+        Returns a dict mapping commit_hash to list of tool content hashes.
+        Commits with no tools are omitted from the result.
+        """
+        ...
+
 
 class TagAnnotationRepository(ABC):
     """Abstract interface for mutable tag annotation storage.
@@ -605,6 +633,15 @@ class TagAnnotationRepository(ABC):
         """
         ...
 
+    @abstractmethod
+    def batch_get_tags(self, target_hashes: list[str]) -> dict[str, list[str]]:
+        """Get all annotation tags for a batch of commits in a single query.
+
+        Returns a dict mapping target_hash to list of tag names.
+        Commits with no tags are omitted from the result.
+        """
+        ...
+
 
 class TagRegistryRepository(ABC):
     """Abstract interface for tag registry storage.
@@ -637,6 +674,14 @@ class TagRegistryRepository(ABC):
     @abstractmethod
     def is_registered(self, tract_id: str, tag_name: str) -> bool:
         """Check if a tag name is registered."""
+        ...
+
+    @abstractmethod
+    def batch_is_registered(self, tract_id: str, tag_names: list[str]) -> set[str]:
+        """Check multiple tag names for registration in a single query.
+
+        Returns the set of tag names that ARE registered.
+        """
         ...
 
     @abstractmethod
