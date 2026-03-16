@@ -33,6 +33,8 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from tract._helpers import strip_fences as _strip_fences
+
 if TYPE_CHECKING:
     from tract.tract import Tract
 
@@ -532,13 +534,7 @@ class SemanticRouter:
 
         Falls back to fuzzy matching if the response cannot be parsed.
         """
-        cleaned = text.strip()
-        if cleaned.startswith("```"):
-            first_newline = cleaned.index("\n") if "\n" in cleaned else len(cleaned)
-            cleaned = cleaned[first_newline + 1:]
-            if cleaned.endswith("```"):
-                cleaned = cleaned[:-3]
-            cleaned = cleaned.strip()
+        cleaned = _strip_fences(text)
 
         try:
             data = json.loads(cleaned)
@@ -761,13 +757,7 @@ class AutoConfig:
         self, text: str, tract: Tract
     ) -> list[ConfigSuggestion]:
         """Parse LLM response into ConfigSuggestion list."""
-        cleaned = text.strip()
-        if cleaned.startswith("```"):
-            first_newline = cleaned.index("\n") if "\n" in cleaned else len(cleaned)
-            cleaned = cleaned[first_newline + 1:]
-            if cleaned.endswith("```"):
-                cleaned = cleaned[:-3]
-            cleaned = cleaned.strip()
+        cleaned = _strip_fences(text)
 
         try:
             data = json.loads(cleaned)

@@ -28,11 +28,14 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable
 
-from tract.llm.protocols import acall_llm
+from tract._helpers import async_safe_llm_call as _async_safe_llm_call
+from tract._helpers import safe_llm_call as _safe_llm_call
+from tract._helpers import strip_fences as _strip_fences
 
 if TYPE_CHECKING:
     from tract.middleware import MiddlewareContext
@@ -183,88 +186,6 @@ Respond with JSON:
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
-
-def _strip_fences(text: str) -> str:
-    """Strip markdown code fences if present."""
-    cleaned = text.strip()
-    if cleaned.startswith("```"):
-        first_newline = cleaned.index("\n") if "\n" in cleaned else len(cleaned)
-        cleaned = cleaned[first_newline + 1:]
-        if cleaned.endswith("```"):
-            cleaned = cleaned[:-3]
-        cleaned = cleaned.strip()
-    return cleaned
-
-
-def _safe_llm_call(
-    client: Any,
-    messages: list[dict[str, str]],
-    llm_kwargs: dict[str, Any],
-) -> tuple[str, int] | None:
-    """Make an LLM call, return (raw_text, tokens_used) or None on failure."""
-    tokens_used = 0
-    try:
-        response = client.chat(messages, **llm_kwargs)
-    except Exception:
-        logger.warning(
-            "Autonomous LLM call failed; using fail-open default.",
-            exc_info=True,
-        )
-        return None
-
-    try:
-        raw_text = client.extract_content(response)
-    except Exception:
-        logger.warning(
-            "Failed to extract LLM response; using fail-open default.",
-            exc_info=True,
-        )
-        return None
-
-    try:
-        usage = client.extract_usage(response) if hasattr(client, "extract_usage") else None
-        if usage and isinstance(usage, dict):
-            tokens_used = int(usage.get("total_tokens", 0))
-    except Exception:
-        pass
-
-    return raw_text, tokens_used
-
-
-async def _async_safe_llm_call(
-    client: Any,
-    messages: list[dict[str, str]],
-    llm_kwargs: dict[str, Any],
-) -> tuple[str, int] | None:
-    """Async version of _safe_llm_call."""
-    tokens_used = 0
-    try:
-        response = await acall_llm(client, messages, **llm_kwargs)
-    except Exception:
-        logger.warning(
-            "Autonomous async LLM call failed; using fail-open default.",
-            exc_info=True,
-        )
-        return None
-
-    try:
-        raw_text = client.extract_content(response)
-    except Exception:
-        logger.warning(
-            "Failed to extract async LLM response; using fail-open default.",
-            exc_info=True,
-        )
-        return None
-
-    try:
-        usage = client.extract_usage(response) if hasattr(client, "extract_usage") else None
-        if usage and isinstance(usage, dict):
-            tokens_used = int(usage.get("total_tokens", 0))
-    except Exception:
-        pass
-
-    return raw_text, tokens_used
-
 
 def _resolve_client(tract: Tract, operation: str = "autonomous") -> Any | None:
     """Resolve the LLM client, trying autonomous > intelligence > chat.
@@ -543,7 +464,6 @@ def _build_rebase_manifest(tract: Tract) -> str:
     ]
     for b in branches:
         marker = " *" if b.is_current else ""
-        commit_count = len(tract.log(limit=100))  # approximate
         lines.append(f"  {b.name}{marker} -> {b.commit_hash[:8] if b.commit_hash else '(empty)'}")
 
     # Recent commits on current branch
@@ -1112,7 +1032,6 @@ class MiddlewareManager:
             # Simple keyword-based heuristics
             if "more than" in condition and "commit" in condition:
                 # Extract number
-                import re
                 numbers = re.findall(r"\d+", condition)
                 if numbers:
                     threshold = int(numbers[0])

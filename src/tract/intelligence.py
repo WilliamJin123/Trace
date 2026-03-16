@@ -26,7 +26,9 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from tract.llm.protocols import acall_llm
+from tract._helpers import async_safe_llm_call as _async_safe_llm_call
+from tract._helpers import safe_llm_call as _safe_llm_call
+from tract._helpers import strip_fences as _strip_fences
 
 if TYPE_CHECKING:
     from tract.tract import Tract
@@ -185,18 +187,6 @@ def _build_intelligence_manifest(
 # Response parsing helpers
 # ---------------------------------------------------------------------------
 
-def _strip_fences(text: str) -> str:
-    """Strip markdown code fences if present."""
-    cleaned = text.strip()
-    if cleaned.startswith("```"):
-        first_newline = cleaned.index("\n") if "\n" in cleaned else len(cleaned)
-        cleaned = cleaned[first_newline + 1:]
-        if cleaned.endswith("```"):
-            cleaned = cleaned[:-3]
-        cleaned = cleaned.strip()
-    return cleaned
-
-
 def _parse_cherry_pick_response(
     text: str, commit_entries: list[dict[str, Any]]
 ) -> tuple[str, list[str]]:
@@ -279,80 +269,6 @@ def _parse_dedup_response(
         pass
 
     return f"Could not parse dedup response. Raw: {text[:200]}", []
-
-
-# ---------------------------------------------------------------------------
-# LLM call helper (fail-open)
-# ---------------------------------------------------------------------------
-
-def _safe_llm_call(
-    client: Any,
-    messages: list[dict[str, str]],
-    llm_kwargs: dict[str, Any],
-) -> tuple[str, int] | None:
-    """Make an LLM call, return (raw_text, tokens_used) or None on failure."""
-    tokens_used = 0
-    try:
-        response = client.chat(messages, **llm_kwargs)
-    except Exception:
-        logger.warning(
-            "Intelligence LLM call failed; using fail-open default.",
-            exc_info=True,
-        )
-        return None
-
-    try:
-        raw_text = client.extract_content(response)
-    except Exception:
-        logger.warning(
-            "Failed to extract LLM response; using fail-open default.",
-            exc_info=True,
-        )
-        return None
-
-    try:
-        usage = client.extract_usage(response) if hasattr(client, "extract_usage") else None
-        if usage and isinstance(usage, dict):
-            tokens_used = int(usage.get("total_tokens", 0))
-    except Exception:
-        pass
-
-    return raw_text, tokens_used
-
-
-async def _async_safe_llm_call(
-    client: Any,
-    messages: list[dict[str, str]],
-    llm_kwargs: dict[str, Any],
-) -> tuple[str, int] | None:
-    """Async version of _safe_llm_call."""
-    tokens_used = 0
-    try:
-        response = await acall_llm(client, messages, **llm_kwargs)
-    except Exception:
-        logger.warning(
-            "Intelligence async LLM call failed; using fail-open default.",
-            exc_info=True,
-        )
-        return None
-
-    try:
-        raw_text = client.extract_content(response)
-    except Exception:
-        logger.warning(
-            "Failed to extract LLM response; using fail-open default.",
-            exc_info=True,
-        )
-        return None
-
-    try:
-        usage = client.extract_usage(response) if hasattr(client, "extract_usage") else None
-        if usage and isinstance(usage, dict):
-            tokens_used = int(usage.get("total_tokens", 0))
-    except Exception:
-        pass
-
-    return raw_text, tokens_used
 
 
 # ---------------------------------------------------------------------------

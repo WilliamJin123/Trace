@@ -26,6 +26,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable
 
+from tract._helpers import strip_fences as _strip_fences
 from tract.exceptions import BlockedError
 
 if TYPE_CHECKING:
@@ -368,14 +369,7 @@ class SemanticGate:
         keywords in the raw text.
         """
         # Strip markdown code fences if present
-        cleaned = text.strip()
-        if cleaned.startswith("```"):
-            # Remove opening fence (```json or ```)
-            first_newline = cleaned.index("\n") if "\n" in cleaned else len(cleaned)
-            cleaned = cleaned[first_newline + 1:]
-            if cleaned.endswith("```"):
-                cleaned = cleaned[:-3]
-            cleaned = cleaned.strip()
+        cleaned = _strip_fences(text)
 
         # Attempt JSON parse
         try:

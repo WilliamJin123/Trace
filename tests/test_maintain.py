@@ -127,7 +127,7 @@ class TestMaintainResult:
             actions_failed=0,
             tokens_used=10,
             reasoning="ok",
-            errors=[],
+            errors=(),
         )
         with pytest.raises(AttributeError):
             r.actions_executed = 5  # type: ignore[misc]
@@ -140,7 +140,7 @@ class TestMaintainResult:
             actions_failed=1,
             tokens_used=99,
             reasoning="did stuff",
-            errors=["boom"],
+            errors=("boom",),
         )
         assert r.maintainer_name == "x"
         assert r.actions_requested == 3
@@ -148,7 +148,7 @@ class TestMaintainResult:
         assert r.actions_failed == 1
         assert r.tokens_used == 99
         assert r.reasoning == "did stuff"
-        assert r.errors == ["boom"]
+        assert r.errors == ("boom",)
 
 
 # ---------------------------------------------------------------------------
@@ -1596,7 +1596,7 @@ class TestMaintainResultPeekFields:
             actions_failed=0,
             tokens_used=0,
             reasoning="ok",
-            errors=[],
+            errors=(),
         )
         assert r.peeks_requested == 0
         assert r.peeks_performed == 0
@@ -1610,7 +1610,7 @@ class TestMaintainResultPeekFields:
             actions_failed=0,
             tokens_used=200,
             reasoning="peeked",
-            errors=[],
+            errors=(),
             peeks_requested=5,
             peeks_performed=3,
         )

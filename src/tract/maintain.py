@@ -35,6 +35,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, ClassVar
 
+from tract._helpers import strip_fences
 from tract.exceptions import BlockedError
 from tract.gate import build_manifest as _build_manifest
 
@@ -112,7 +113,7 @@ class MaintainResult:
     actions_failed: int
     tokens_used: int
     reasoning: str
-    errors: list[str]  # descriptions of failed actions
+    errors: tuple[str, ...] = ()  # descriptions of failed actions
     peeks_requested: int = 0
     peeks_performed: int = 0
 
@@ -256,7 +257,7 @@ class SemanticMaintainer:
                     actions_failed=0,
                     tokens_used=0,
                     reasoning="Condition callback raised; skipping.",
-                    errors=[],
+                    errors=(),
                 )
                 return
             if not should_run:
@@ -267,7 +268,7 @@ class SemanticMaintainer:
                     actions_failed=0,
                     tokens_used=0,
                     reasoning="Condition returned False; maintainer skipped.",
-                    errors=[],
+                    errors=(),
                 )
                 return
 
@@ -281,7 +282,7 @@ class SemanticMaintainer:
                 actions_requested=0, actions_executed=0, actions_failed=0,
                 tokens_used=0,
                 reasoning="No LLM client configured; cannot run maintainer.",
-                errors=[],
+                errors=(),
             )
             raise RuntimeError(
                 f"SemanticMaintainer '{self.name}' requires an LLM client but none "
@@ -364,7 +365,7 @@ class SemanticMaintainer:
             actions_failed=failed,
             tokens_used=tokens_used,
             reasoning=reasoning,
-            errors=errors,
+            errors=tuple(errors),
             peeks_requested=peeks_requested,
             peeks_performed=peeks_performed,
         )
@@ -479,7 +480,7 @@ class SemanticMaintainer:
                 maintainer_name=self.name,
                 actions_requested=0, actions_executed=0, actions_failed=0,
                 tokens_used=0, reasoning="LLM call failed; fail-open default.",
-                errors=[],
+                errors=(),
             )
             return None
 
@@ -495,7 +496,7 @@ class SemanticMaintainer:
                 actions_requested=0, actions_executed=0, actions_failed=0,
                 tokens_used=0,
                 reasoning="Failed to extract LLM response; fail-open default.",
-                errors=[],
+                errors=(),
             )
             return None
 
@@ -607,17 +608,9 @@ class SemanticMaintainer:
     # ------------------------------------------------------------------
     # Response parsing
     # ------------------------------------------------------------------
-    @staticmethod
-    def _strip_fences(text: str) -> str:
-        """Strip markdown code fences if present."""
-        cleaned = text.strip()
-        if cleaned.startswith("```"):
-            first_newline = cleaned.index("\n") if "\n" in cleaned else len(cleaned)
-            cleaned = cleaned[first_newline + 1:]
-            if cleaned.endswith("```"):
-                cleaned = cleaned[:-3]
-            cleaned = cleaned.strip()
-        return cleaned
+    # Delegate to the shared helper; kept as a static method for
+    # backward compatibility (tests call SemanticMaintainer._strip_fences).
+    _strip_fences = staticmethod(strip_fences)
 
     @staticmethod
     def _parse_response(text: str) -> tuple[str, list[dict[str, Any]]]:
