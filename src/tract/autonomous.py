@@ -28,7 +28,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from tract._helpers import async_safe_llm_call as _async_safe_llm_call
 from tract._helpers import resolve_llm_client as _resolve_llm_client
@@ -195,8 +195,90 @@ def _build_llm_kwargs(
 
 
 # ---------------------------------------------------------------------------
-# auto_split
+# auto_split: prepare / finalize / sync / async
 # ---------------------------------------------------------------------------
+
+class _AutoSplitCtx(NamedTuple):
+    client: Any
+    messages: list[dict[str, str]]
+    llm_kwargs: dict[str, Any]
+    commit_hash: str
+    tract: Any  # needed by _execute_split
+
+
+def _auto_split_prepare(
+    tract: Tract,
+    commit_hash: str,
+    *,
+    model: str | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+) -> tuple[_AutoSplitCtx | None, AutoSplitResult | None]:
+    """Shared pre-LLM logic for auto_split."""
+    fail_open = AutoSplitResult(
+        original_hash=commit_hash,
+        new_hashes=(commit_hash,),
+        split_count=1,
+        tokens_used=0,
+        reasoning="No split performed (fail-open).",
+    )
+
+    client = _resolve_client(tract)
+    if client is None:
+        return None, AutoSplitResult(
+            original_hash=commit_hash,
+            new_hashes=(commit_hash,),
+            split_count=1,
+            tokens_used=0,
+            reasoning="No LLM client configured; no split performed (fail-open).",
+        )
+
+    try:
+        content = tract.get_content(commit_hash)
+        if content is None:
+            return None, fail_open
+        content_str = json.dumps(content, default=str) if isinstance(content, dict) else str(content)
+    except Exception:
+        logger.warning("Failed to get content for commit %s; no split.", commit_hash[:12], exc_info=True)
+        return None, fail_open
+
+    messages = [
+        {"role": "system", "content": _SPLIT_SYSTEM_PROMPT},
+        {"role": "user", "content": f"=== COMMIT CONTENT ===\n{content_str}"},
+    ]
+
+    llm_kwargs = _build_llm_kwargs(model, temperature, max_tokens)
+
+    return _AutoSplitCtx(client, messages, llm_kwargs, commit_hash, tract), None
+
+
+def _auto_split_finalize(
+    ctx: _AutoSplitCtx,
+    result: tuple[str, int] | None,
+) -> AutoSplitResult:
+    """Shared post-LLM logic for auto_split."""
+    if result is None:
+        return AutoSplitResult(
+            original_hash=ctx.commit_hash,
+            new_hashes=(ctx.commit_hash,),
+            split_count=1,
+            tokens_used=0,
+            reasoning="No split performed (fail-open).",
+        )
+
+    raw_text, tokens_used = result
+    pieces = _parse_split_response(raw_text)
+    if not pieces:
+        return AutoSplitResult(
+            original_hash=ctx.commit_hash,
+            new_hashes=(ctx.commit_hash,),
+            split_count=1,
+            tokens_used=tokens_used,
+            reasoning="LLM returned no split pieces; keeping original.",
+        )
+
+    return _execute_split(ctx.tract, ctx.commit_hash, pieces, tokens_used)
+
 
 def auto_split(
     tract: Tract,
@@ -223,64 +305,15 @@ def auto_split(
     Returns:
         :class:`AutoSplitResult` with the new commit hashes.
     """
-    # Fail-open default
-    fail_open = AutoSplitResult(
-        original_hash=commit_hash,
-        new_hashes=(commit_hash,),
-        split_count=1,
-        tokens_used=0,
-        reasoning="No split performed (fail-open).",
+    ctx, early = _auto_split_prepare(
+        tract, commit_hash, model=model,
+        temperature=temperature, max_tokens=max_tokens,
     )
-
-    # Resolve client
-    client = _resolve_client(tract)
-    if client is None:
-        return AutoSplitResult(
-            original_hash=commit_hash,
-            new_hashes=(commit_hash,),
-            split_count=1,
-            tokens_used=0,
-            reasoning="No LLM client configured; no split performed (fail-open).",
-        )
-
-    # Get the commit content
-    try:
-        content = tract.get_content(commit_hash)
-        if content is None:
-            return fail_open
-        content_str = json.dumps(content, default=str) if isinstance(content, dict) else str(content)
-    except Exception:
-        logger.warning("Failed to get content for commit %s; no split.", commit_hash[:12], exc_info=True)
-        return fail_open
-
-    # Build LLM messages
-    messages = [
-        {"role": "system", "content": _SPLIT_SYSTEM_PROMPT},
-        {"role": "user", "content": f"=== COMMIT CONTENT ===\n{content_str}"},
-    ]
-
-    llm_kwargs = _build_llm_kwargs(model, temperature, max_tokens)
-
-    # LLM call
-    result = _safe_llm_call(client, messages, llm_kwargs)
-    if result is None:
-        return fail_open
-
-    raw_text, tokens_used = result
-
-    # Parse response
-    pieces = _parse_split_response(raw_text)
-    if not pieces:
-        return AutoSplitResult(
-            original_hash=commit_hash,
-            new_hashes=(commit_hash,),
-            split_count=1,
-            tokens_used=tokens_used,
-            reasoning="LLM returned no split pieces; keeping original.",
-        )
-
-    # Create new commits and skip original
-    return _execute_split(tract, commit_hash, pieces, tokens_used)
+    if early is not None:
+        return early
+    assert ctx is not None
+    result = _safe_llm_call(ctx.client, ctx.messages, ctx.llm_kwargs)
+    return _auto_split_finalize(ctx, result)
 
 
 async def aauto_split(
@@ -292,55 +325,15 @@ async def aauto_split(
     max_tokens: int | None = None,
 ) -> AutoSplitResult:
     """Async version of :func:`auto_split`."""
-    fail_open = AutoSplitResult(
-        original_hash=commit_hash,
-        new_hashes=(commit_hash,),
-        split_count=1,
-        tokens_used=0,
-        reasoning="No split performed (fail-open).",
+    ctx, early = _auto_split_prepare(
+        tract, commit_hash, model=model,
+        temperature=temperature, max_tokens=max_tokens,
     )
-
-    client = _resolve_client(tract)
-    if client is None:
-        return AutoSplitResult(
-            original_hash=commit_hash,
-            new_hashes=(commit_hash,),
-            split_count=1,
-            tokens_used=0,
-            reasoning="No LLM client configured; no split performed (fail-open).",
-        )
-
-    try:
-        content = tract.get_content(commit_hash)
-        if content is None:
-            return fail_open
-        content_str = json.dumps(content, default=str) if isinstance(content, dict) else str(content)
-    except Exception:
-        return fail_open
-
-    messages = [
-        {"role": "system", "content": _SPLIT_SYSTEM_PROMPT},
-        {"role": "user", "content": f"=== COMMIT CONTENT ===\n{content_str}"},
-    ]
-
-    llm_kwargs = _build_llm_kwargs(model, temperature, max_tokens)
-
-    result = await _async_safe_llm_call(client, messages, llm_kwargs)
-    if result is None:
-        return fail_open
-
-    raw_text, tokens_used = result
-    pieces = _parse_split_response(raw_text)
-    if not pieces:
-        return AutoSplitResult(
-            original_hash=commit_hash,
-            new_hashes=(commit_hash,),
-            split_count=1,
-            tokens_used=tokens_used,
-            reasoning="LLM returned no split pieces; keeping original.",
-        )
-
-    return _execute_split(tract, commit_hash, pieces, tokens_used)
+    if early is not None:
+        return early
+    assert ctx is not None
+    result = await _async_safe_llm_call(ctx.client, ctx.messages, ctx.llm_kwargs)
+    return _auto_split_finalize(ctx, result)
 
 
 def _parse_split_response(text: str) -> list[dict[str, str]]:
@@ -422,7 +415,7 @@ def _execute_split(
 
 
 # ---------------------------------------------------------------------------
-# auto_rebase
+# auto_rebase: prepare / finalize / sync / async
 # ---------------------------------------------------------------------------
 
 def _build_rebase_manifest(tract: Tract) -> str:
@@ -453,6 +446,93 @@ def _build_rebase_manifest(tract: Tract) -> str:
     return "\n".join(lines)
 
 
+class _AutoRebaseCtx(NamedTuple):
+    client: Any
+    messages: list[dict[str, str]]
+    llm_kwargs: dict[str, Any]
+    tract: Any  # needed for rebase execution
+
+
+def _auto_rebase_prepare(
+    tract: Tract,
+    *,
+    model: str | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+) -> tuple[_AutoRebaseCtx | None, AutoRebaseResult | None]:
+    """Shared pre-LLM logic for auto_rebase."""
+    client = _resolve_client(tract)
+    if client is None:
+        return None, AutoRebaseResult(
+            rebased=False,
+            reason="No LLM client configured; no rebase performed (fail-open).",
+            target_branch=None,
+            tokens_used=0,
+        )
+
+    manifest = _build_rebase_manifest(tract)
+    messages = [
+        {"role": "system", "content": _REBASE_SYSTEM_PROMPT},
+        {"role": "user", "content": manifest},
+    ]
+    llm_kwargs = _build_llm_kwargs(model, temperature, max_tokens)
+
+    return _AutoRebaseCtx(client, messages, llm_kwargs, tract), None
+
+
+def _auto_rebase_finalize(
+    ctx: _AutoRebaseCtx,
+    result: tuple[str, int] | None,
+) -> AutoRebaseResult:
+    """Shared post-LLM logic for auto_rebase."""
+    if result is None:
+        return AutoRebaseResult(
+            rebased=False,
+            reason="No rebase performed (fail-open).",
+            target_branch=None,
+            tokens_used=0,
+        )
+
+    raw_text, tokens_used = result
+    decision = _parse_rebase_response(raw_text)
+    if decision is None:
+        return AutoRebaseResult(
+            rebased=False,
+            reason="Could not parse LLM response; no rebase performed.",
+            target_branch=None,
+            tokens_used=tokens_used,
+        )
+
+    should_rebase, target_branch, reasoning = decision
+
+    if not should_rebase or not target_branch:
+        return AutoRebaseResult(
+            rebased=False,
+            reason=reasoning,
+            target_branch=None,
+            tokens_used=tokens_used,
+        )
+
+    try:
+        ctx.tract.rebase(target_branch)
+        return AutoRebaseResult(
+            rebased=True,
+            reason=reasoning,
+            target_branch=target_branch,
+            tokens_used=tokens_used,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Auto-rebase onto '%s' failed: %s", target_branch, exc, exc_info=True,
+        )
+        return AutoRebaseResult(
+            rebased=False,
+            reason=f"Rebase failed: {exc}",
+            target_branch=target_branch,
+            tokens_used=tokens_used,
+        )
+
+
 def auto_rebase(
     tract: Tract,
     *,
@@ -476,77 +556,14 @@ def auto_rebase(
     Returns:
         :class:`AutoRebaseResult`.
     """
-    fail_open = AutoRebaseResult(
-        rebased=False,
-        reason="No rebase performed (fail-open).",
-        target_branch=None,
-        tokens_used=0,
+    ctx, early = _auto_rebase_prepare(
+        tract, model=model, temperature=temperature, max_tokens=max_tokens,
     )
-
-    client = _resolve_client(tract)
-    if client is None:
-        return AutoRebaseResult(
-            rebased=False,
-            reason="No LLM client configured; no rebase performed (fail-open).",
-            target_branch=None,
-            tokens_used=0,
-        )
-
-    # Build manifest
-    manifest = _build_rebase_manifest(tract)
-
-    messages = [
-        {"role": "system", "content": _REBASE_SYSTEM_PROMPT},
-        {"role": "user", "content": manifest},
-    ]
-
-    llm_kwargs = _build_llm_kwargs(model, temperature, max_tokens)
-
-    result = _safe_llm_call(client, messages, llm_kwargs)
-    if result is None:
-        return fail_open
-
-    raw_text, tokens_used = result
-
-    # Parse response
-    decision = _parse_rebase_response(raw_text)
-    if decision is None:
-        return AutoRebaseResult(
-            rebased=False,
-            reason="Could not parse LLM response; no rebase performed.",
-            target_branch=None,
-            tokens_used=tokens_used,
-        )
-
-    should_rebase, target_branch, reasoning = decision
-
-    if not should_rebase or not target_branch:
-        return AutoRebaseResult(
-            rebased=False,
-            reason=reasoning,
-            target_branch=None,
-            tokens_used=tokens_used,
-        )
-
-    # Execute rebase
-    try:
-        tract.rebase(target_branch)
-        return AutoRebaseResult(
-            rebased=True,
-            reason=reasoning,
-            target_branch=target_branch,
-            tokens_used=tokens_used,
-        )
-    except Exception as exc:
-        logger.warning(
-            "Auto-rebase onto '%s' failed: %s", target_branch, exc, exc_info=True,
-        )
-        return AutoRebaseResult(
-            rebased=False,
-            reason=f"Rebase failed: {exc}",
-            target_branch=target_branch,
-            tokens_used=tokens_used,
-        )
+    if early is not None:
+        return early
+    assert ctx is not None
+    result = _safe_llm_call(ctx.client, ctx.messages, ctx.llm_kwargs)
+    return _auto_rebase_finalize(ctx, result)
 
 
 async def aauto_rebase(
@@ -557,69 +574,14 @@ async def aauto_rebase(
     max_tokens: int | None = None,
 ) -> AutoRebaseResult:
     """Async version of :func:`auto_rebase`."""
-    fail_open = AutoRebaseResult(
-        rebased=False,
-        reason="No rebase performed (fail-open).",
-        target_branch=None,
-        tokens_used=0,
+    ctx, early = _auto_rebase_prepare(
+        tract, model=model, temperature=temperature, max_tokens=max_tokens,
     )
-
-    client = _resolve_client(tract)
-    if client is None:
-        return AutoRebaseResult(
-            rebased=False,
-            reason="No LLM client configured; no rebase performed (fail-open).",
-            target_branch=None,
-            tokens_used=0,
-        )
-
-    manifest = _build_rebase_manifest(tract)
-
-    messages = [
-        {"role": "system", "content": _REBASE_SYSTEM_PROMPT},
-        {"role": "user", "content": manifest},
-    ]
-
-    llm_kwargs = _build_llm_kwargs(model, temperature, max_tokens)
-
-    result = await _async_safe_llm_call(client, messages, llm_kwargs)
-    if result is None:
-        return fail_open
-
-    raw_text, tokens_used = result
-    decision = _parse_rebase_response(raw_text)
-    if decision is None:
-        return AutoRebaseResult(
-            rebased=False,
-            reason="Could not parse LLM response; no rebase performed.",
-            target_branch=None,
-            tokens_used=tokens_used,
-        )
-
-    should_rebase, target_branch, reasoning = decision
-    if not should_rebase or not target_branch:
-        return AutoRebaseResult(
-            rebased=False,
-            reason=reasoning,
-            target_branch=None,
-            tokens_used=tokens_used,
-        )
-
-    try:
-        tract.rebase(target_branch)
-        return AutoRebaseResult(
-            rebased=True,
-            reason=reasoning,
-            target_branch=target_branch,
-            tokens_used=tokens_used,
-        )
-    except Exception as exc:
-        return AutoRebaseResult(
-            rebased=False,
-            reason=f"Rebase failed: {exc}",
-            target_branch=target_branch,
-            tokens_used=tokens_used,
-        )
+    if early is not None:
+        return early
+    assert ctx is not None
+    result = await _async_safe_llm_call(ctx.client, ctx.messages, ctx.llm_kwargs)
+    return _auto_rebase_finalize(ctx, result)
 
 
 def _parse_rebase_response(text: str) -> tuple[bool, str | None, str] | None:
@@ -640,7 +602,7 @@ def _parse_rebase_response(text: str) -> tuple[bool, str | None, str] | None:
 
 
 # ---------------------------------------------------------------------------
-# auto_branch
+# auto_branch: prepare / finalize / sync / async
 # ---------------------------------------------------------------------------
 
 def _build_branch_manifest(tract: Tract, context: str = "") -> str:
@@ -687,6 +649,94 @@ def _build_branch_manifest(tract: Tract, context: str = "") -> str:
     return "\n".join(lines)
 
 
+class _AutoBranchCtx(NamedTuple):
+    client: Any
+    messages: list[dict[str, str]]
+    llm_kwargs: dict[str, Any]
+    tract: Any  # needed for branch creation
+
+
+def _auto_branch_prepare(
+    tract: Tract,
+    *,
+    context: str = "",
+    model: str | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+) -> tuple[_AutoBranchCtx | None, AutoBranchResult | None]:
+    """Shared pre-LLM logic for auto_branch."""
+    client = _resolve_client(tract)
+    if client is None:
+        return None, AutoBranchResult(
+            branched=False,
+            branch_name=None,
+            reason="No LLM client configured; no branch created (fail-open).",
+            tokens_used=0,
+        )
+
+    manifest = _build_branch_manifest(tract, context)
+    messages = [
+        {"role": "system", "content": _BRANCH_SYSTEM_PROMPT},
+        {"role": "user", "content": manifest},
+    ]
+    llm_kwargs = _build_llm_kwargs(model, temperature, max_tokens)
+
+    return _AutoBranchCtx(client, messages, llm_kwargs, tract), None
+
+
+def _auto_branch_finalize(
+    ctx: _AutoBranchCtx,
+    result: tuple[str, int] | None,
+) -> AutoBranchResult:
+    """Shared post-LLM logic for auto_branch."""
+    if result is None:
+        return AutoBranchResult(
+            branched=False,
+            branch_name=None,
+            reason="No branch created (fail-open).",
+            tokens_used=0,
+        )
+
+    raw_text, tokens_used = result
+    decision = _parse_branch_response(raw_text)
+    if decision is None:
+        return AutoBranchResult(
+            branched=False,
+            branch_name=None,
+            reason="Could not parse LLM response; no branch created.",
+            tokens_used=tokens_used,
+        )
+
+    should_branch, branch_name, reasoning = decision
+
+    if not should_branch or not branch_name:
+        return AutoBranchResult(
+            branched=False,
+            branch_name=None,
+            reason=reasoning,
+            tokens_used=tokens_used,
+        )
+
+    try:
+        ctx.tract.branch(branch_name)
+        return AutoBranchResult(
+            branched=True,
+            branch_name=branch_name,
+            reason=reasoning,
+            tokens_used=tokens_used,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Auto-branch '%s' failed: %s", branch_name, exc, exc_info=True,
+        )
+        return AutoBranchResult(
+            branched=False,
+            branch_name=branch_name,
+            reason=f"Branch creation failed: {exc}",
+            tokens_used=tokens_used,
+        )
+
+
 def auto_branch(
     tract: Tract,
     *,
@@ -712,74 +762,15 @@ def auto_branch(
     Returns:
         :class:`AutoBranchResult`.
     """
-    fail_open = AutoBranchResult(
-        branched=False,
-        branch_name=None,
-        reason="No branch created (fail-open).",
-        tokens_used=0,
+    ctx, early = _auto_branch_prepare(
+        tract, context=context, model=model,
+        temperature=temperature, max_tokens=max_tokens,
     )
-
-    client = _resolve_client(tract)
-    if client is None:
-        return AutoBranchResult(
-            branched=False,
-            branch_name=None,
-            reason="No LLM client configured; no branch created (fail-open).",
-            tokens_used=0,
-        )
-
-    manifest = _build_branch_manifest(tract, context)
-
-    messages = [
-        {"role": "system", "content": _BRANCH_SYSTEM_PROMPT},
-        {"role": "user", "content": manifest},
-    ]
-
-    llm_kwargs = _build_llm_kwargs(model, temperature, max_tokens)
-
-    result = _safe_llm_call(client, messages, llm_kwargs)
-    if result is None:
-        return fail_open
-
-    raw_text, tokens_used = result
-    decision = _parse_branch_response(raw_text)
-    if decision is None:
-        return AutoBranchResult(
-            branched=False,
-            branch_name=None,
-            reason="Could not parse LLM response; no branch created.",
-            tokens_used=tokens_used,
-        )
-
-    should_branch, branch_name, reasoning = decision
-
-    if not should_branch or not branch_name:
-        return AutoBranchResult(
-            branched=False,
-            branch_name=None,
-            reason=reasoning,
-            tokens_used=tokens_used,
-        )
-
-    # Create and switch to branch
-    try:
-        tract.branch(branch_name)
-        return AutoBranchResult(
-            branched=True,
-            branch_name=branch_name,
-            reason=reasoning,
-            tokens_used=tokens_used,
-        )
-    except Exception as exc:
-        logger.warning(
-            "Auto-branch '%s' failed: %s", branch_name, exc, exc_info=True,
-        )
-        return AutoBranchResult(
-            branched=False,
-            branch_name=branch_name,
-            reason=f"Branch creation failed: {exc}",
-            tokens_used=tokens_used,
-        )
+    if early is not None:
+        return early
+    assert ctx is not None
+    result = _safe_llm_call(ctx.client, ctx.messages, ctx.llm_kwargs)
+    return _auto_branch_finalize(ctx, result)
 
 
 async def aauto_branch(
@@ -791,69 +782,15 @@ async def aauto_branch(
     max_tokens: int | None = None,
 ) -> AutoBranchResult:
     """Async version of :func:`auto_branch`."""
-    fail_open = AutoBranchResult(
-        branched=False,
-        branch_name=None,
-        reason="No branch created (fail-open).",
-        tokens_used=0,
+    ctx, early = _auto_branch_prepare(
+        tract, context=context, model=model,
+        temperature=temperature, max_tokens=max_tokens,
     )
-
-    client = _resolve_client(tract)
-    if client is None:
-        return AutoBranchResult(
-            branched=False,
-            branch_name=None,
-            reason="No LLM client configured; no branch created (fail-open).",
-            tokens_used=0,
-        )
-
-    manifest = _build_branch_manifest(tract, context)
-
-    messages = [
-        {"role": "system", "content": _BRANCH_SYSTEM_PROMPT},
-        {"role": "user", "content": manifest},
-    ]
-
-    llm_kwargs = _build_llm_kwargs(model, temperature, max_tokens)
-
-    result = await _async_safe_llm_call(client, messages, llm_kwargs)
-    if result is None:
-        return fail_open
-
-    raw_text, tokens_used = result
-    decision = _parse_branch_response(raw_text)
-    if decision is None:
-        return AutoBranchResult(
-            branched=False,
-            branch_name=None,
-            reason="Could not parse LLM response; no branch created.",
-            tokens_used=tokens_used,
-        )
-
-    should_branch, branch_name, reasoning = decision
-    if not should_branch or not branch_name:
-        return AutoBranchResult(
-            branched=False,
-            branch_name=None,
-            reason=reasoning,
-            tokens_used=tokens_used,
-        )
-
-    try:
-        tract.branch(branch_name)
-        return AutoBranchResult(
-            branched=True,
-            branch_name=branch_name,
-            reason=reasoning,
-            tokens_used=tokens_used,
-        )
-    except Exception as exc:
-        return AutoBranchResult(
-            branched=False,
-            branch_name=branch_name,
-            reason=f"Branch creation failed: {exc}",
-            tokens_used=tokens_used,
-        )
+    if early is not None:
+        return early
+    assert ctx is not None
+    result = await _async_safe_llm_call(ctx.client, ctx.messages, ctx.llm_kwargs)
+    return _auto_branch_finalize(ctx, result)
 
 
 def _parse_branch_response(text: str) -> tuple[bool, str | None, str] | None:

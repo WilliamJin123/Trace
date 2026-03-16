@@ -30,7 +30,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from tract._helpers import strip_fences as _strip_fences
 
@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Route — immutable routing result
+# Route -- immutable routing result
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Route:
@@ -63,12 +63,12 @@ class Route:
 
     target: str
     route_type: str  # "branch", "stage", "workflow"
-    confidence: float  # 0.0–1.0
+    confidence: float  # 0.0-1.0
     reasoning: str
 
 
 # ---------------------------------------------------------------------------
-# RoutingResult — outcome of a route() call
+# RoutingResult -- outcome of a route() call
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class RoutingResult:
@@ -78,7 +78,7 @@ class RoutingResult:
         route: The selected Route.
         applied: Whether the route was applied (branch switched, stage applied, etc.).
         tokens_used: Tokens consumed by the LLM call (0 for fuzzy/exact).
-        method: How the route was resolved — ``"semantic"``, ``"fuzzy"``, or ``"exact"``.
+        method: How the route was resolved -- ``"semantic"``, ``"fuzzy"``, or ``"exact"``.
     """
 
     route: Route
@@ -102,7 +102,7 @@ class _RouteEntry:
 
 
 # ---------------------------------------------------------------------------
-# RoutingTable — fuzzy matching registry
+# RoutingTable -- fuzzy matching registry
 # ---------------------------------------------------------------------------
 class RoutingTable:
     """Registry of routes with fuzzy matching support.
@@ -180,15 +180,15 @@ class RoutingTable:
     def match(self, query: str) -> list[Route]:
         """Fuzzy-match a query against registered routes.
 
-        Scoring (each component contributes 0.0–1.0, then averaged):
+        Scoring (each component contributes 0.0-1.0, then averaged):
 
-        1. **Regex pattern** — if a route has a ``pattern`` and the query
+        1. **Regex pattern** -- if a route has a ``pattern`` and the query
            matches, that route gets a 1.0 pattern score.
-        2. **Keyword similarity** — best ``SequenceMatcher.ratio()`` between
+        2. **Keyword similarity** -- best ``SequenceMatcher.ratio()`` between
            any query word and any route keyword.
-        3. **Description similarity** — ``SequenceMatcher.ratio()`` between
+        3. **Description similarity** -- ``SequenceMatcher.ratio()`` between
            the full query and the route description.
-        4. **Substring boost** — if any keyword appears as a substring in
+        4. **Substring boost** -- if any keyword appears as a substring in
            the query (case-insensitive), adds 0.3 to the score (capped at 1.0).
 
         Returns:
@@ -271,7 +271,7 @@ class RoutingTable:
 
 
 # ---------------------------------------------------------------------------
-# SemanticRouter — LLM-powered routing
+# SemanticRouter -- LLM-powered routing
 # ---------------------------------------------------------------------------
 
 _ROUTER_SYSTEM_PROMPT = """\
@@ -284,6 +284,13 @@ Respond with JSON:
 
 Pick the single best matching route. If nothing matches well, set confidence below 0.3.
 Only use route names from the provided list."""
+
+
+class _RouteCtx(NamedTuple):
+    client: Any
+    messages: list[dict[str, str]]
+    llm_kwargs: dict[str, Any]
+    query: str
 
 
 @dataclass
@@ -317,6 +324,67 @@ class SemanticRouter:
     last_result: RoutingResult | None = field(default=None, init=False, repr=False)
 
     # ------------------------------------------------------------------
+    # Prepare / finalize (shared logic)
+    # ------------------------------------------------------------------
+    def _route_prepare(
+        self, query: str, tract: Tract
+    ) -> tuple[_RouteCtx | None, RoutingResult | None]:
+        """Shared pre-LLM logic for route/aroute."""
+        try:
+            client = tract._resolve_llm_client("route")
+        except RuntimeError:
+            logger.debug(
+                "Router '%s': no LLM client configured; using fuzzy fallback.",
+                self.name,
+            )
+            return None, self._fuzzy_fallback(query)
+
+        messages = self._build_messages(query)
+        llm_kwargs: dict[str, Any] = {"temperature": self.temperature}
+        if self.model is not None:
+            llm_kwargs["model"] = self.model
+        if self.max_tokens is not None:
+            llm_kwargs["max_tokens"] = self.max_tokens
+
+        return _RouteCtx(client, messages, llm_kwargs, query), None
+
+    def _route_finalize(
+        self, ctx: _RouteCtx, response: Any
+    ) -> RoutingResult:
+        """Shared post-LLM logic for route/aroute.
+
+        ``response`` is the raw LLM response object.
+        Returns RoutingResult. Falls back to fuzzy on extraction failure.
+        """
+        try:
+            raw_text = ctx.client.extract_content(response)
+        except Exception:
+            logger.warning(
+                "Router '%s' failed to extract LLM response; using fuzzy fallback.",
+                self.name,
+                exc_info=True,
+            )
+            return self._fuzzy_fallback(ctx.query)
+
+        tokens_used = 0
+        try:
+            usage = ctx.client.extract_usage(response) if hasattr(ctx.client, "extract_usage") else None
+            if usage and isinstance(usage, dict):
+                tokens_used = int(usage.get("total_tokens", 0))
+        except Exception:
+            pass
+
+        route = self._parse_response(raw_text, ctx.query)
+        result = RoutingResult(
+            route=route,
+            applied=False,
+            tokens_used=tokens_used,
+            method="semantic",
+        )
+        self.last_result = result
+        return result
+
+    # ------------------------------------------------------------------
     # Sync route
     # ------------------------------------------------------------------
     def route(self, query: str, tract: Tract) -> RoutingResult:
@@ -329,26 +397,13 @@ class SemanticRouter:
         Returns:
             A :class:`RoutingResult` with the best route and metadata.
         """
-        # Try semantic routing first
-        try:
-            client = tract._resolve_llm_client("route")
-        except RuntimeError:
-            logger.debug(
-                "Router '%s': no LLM client configured; using fuzzy fallback.",
-                self.name,
-            )
-            return self._fuzzy_fallback(query)
+        ctx, early = self._route_prepare(query, tract)
+        if early is not None:
+            return early
+        assert ctx is not None
 
-        messages = self._build_messages(query)
-        llm_kwargs: dict[str, Any] = {"temperature": self.temperature}
-        if self.model is not None:
-            llm_kwargs["model"] = self.model
-        if self.max_tokens is not None:
-            llm_kwargs["max_tokens"] = self.max_tokens
-
-        tokens_used = 0
         try:
-            response = client.chat(messages, **llm_kwargs)
+            response = ctx.client.chat(ctx.messages, **ctx.llm_kwargs)
         except Exception:
             logger.warning(
                 "Router '%s' LLM call failed; using fuzzy fallback (fail-open).",
@@ -357,34 +412,7 @@ class SemanticRouter:
             )
             return self._fuzzy_fallback(query)
 
-        try:
-            raw_text = client.extract_content(response)
-        except Exception:
-            logger.warning(
-                "Router '%s' failed to extract LLM response; using fuzzy fallback.",
-                self.name,
-                exc_info=True,
-            )
-            return self._fuzzy_fallback(query)
-
-        # Track token usage
-        try:
-            usage = client.extract_usage(response) if hasattr(client, "extract_usage") else None
-            if usage and isinstance(usage, dict):
-                tokens_used = int(usage.get("total_tokens", 0))
-        except Exception:
-            pass
-
-        # Parse response
-        route = self._parse_response(raw_text, query)
-        result = RoutingResult(
-            route=route,
-            applied=False,
-            tokens_used=tokens_used,
-            method="semantic",
-        )
-        self.last_result = result
-        return result
+        return self._route_finalize(ctx, response)
 
     # ------------------------------------------------------------------
     # Async route
@@ -397,25 +425,13 @@ class SemanticRouter:
         """
         from tract.llm.protocols import acall_llm
 
-        try:
-            client = tract._resolve_llm_client("route")
-        except RuntimeError:
-            logger.debug(
-                "Router '%s': no LLM client configured; using fuzzy fallback.",
-                self.name,
-            )
-            return self._fuzzy_fallback(query)
+        ctx, early = self._route_prepare(query, tract)
+        if early is not None:
+            return early
+        assert ctx is not None
 
-        messages = self._build_messages(query)
-        llm_kwargs: dict[str, Any] = {"temperature": self.temperature}
-        if self.model is not None:
-            llm_kwargs["model"] = self.model
-        if self.max_tokens is not None:
-            llm_kwargs["max_tokens"] = self.max_tokens
-
-        tokens_used = 0
         try:
-            response = await acall_llm(client, messages, **llm_kwargs)
+            response = await acall_llm(ctx.client, ctx.messages, **ctx.llm_kwargs)
         except Exception:
             logger.warning(
                 "Router '%s' async LLM call failed; using fuzzy fallback.",
@@ -424,32 +440,7 @@ class SemanticRouter:
             )
             return self._fuzzy_fallback(query)
 
-        try:
-            raw_text = client.extract_content(response)
-        except Exception:
-            logger.warning(
-                "Router '%s' failed to extract async LLM response; using fuzzy fallback.",
-                self.name,
-                exc_info=True,
-            )
-            return self._fuzzy_fallback(query)
-
-        try:
-            usage = client.extract_usage(response) if hasattr(client, "extract_usage") else None
-            if usage and isinstance(usage, dict):
-                tokens_used = int(usage.get("total_tokens", 0))
-        except Exception:
-            pass
-
-        route = self._parse_response(raw_text, query)
-        result = RoutingResult(
-            route=route,
-            applied=False,
-            tokens_used=tokens_used,
-            method="semantic",
-        )
-        self.last_result = result
-        return result
+        return self._route_finalize(ctx, response)
 
     # ------------------------------------------------------------------
     # Fuzzy fallback
