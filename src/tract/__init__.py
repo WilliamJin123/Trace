@@ -92,6 +92,9 @@ from tract.gate import SemanticGate, GateResult
 # Semantic maintainers
 from tract.maintain import SemanticMaintainer, MaintainResult
 
+# Routing
+from tract.routing import Route, RoutingTable, SemanticRouter, RoutingResult, AutoConfig, ConfigSuggestion
+
 # Directive templates
 from tract.templates import DirectiveTemplate, list_templates, get_template, register_template
 
@@ -258,6 +261,13 @@ __all__ = [
     "MaintainResult",
     "MiddlewareContext",
     "MiddlewareEvent",
+    # Routing
+    "Route",
+    "RoutingTable",
+    "SemanticRouter",
+    "RoutingResult",
+    "AutoConfig",
+    "ConfigSuggestion",
     # Directive templates
     "DirectiveTemplate",
     "list_templates",

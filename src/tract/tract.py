@@ -42,6 +42,7 @@ from tract.protocols import ChatResponse, CompiledContext, ContextCompiler, Toke
 from tract.storage.engine import create_session_factory, create_trace_engine, init_db
 from tract.storage.sqlite import (
     SqliteAnnotationRepository,
+    SqliteBehavioralSpecRepository,
     SqliteBlobRepository,
     SqliteCommitParentRepository,
     SqliteCommitRepository,
@@ -390,6 +391,7 @@ class Tract:
         # Persistence state
         self._db_path: str = ":memory:"
         self._persistence_repo: SqlitePersistenceRepository | None = None
+        self._behavioral_spec_repo: SqliteBehavioralSpecRepository | None = None
         self._quarantined: list[str] = []
 
         # Workflow profile state
@@ -406,6 +408,9 @@ class Tract:
 
         # Prompt file directory (auto-discovered or explicit)
         self._prompt_dir: str | Path | None = None
+
+        # Routing table (lazy init via _ensure_routing_table)
+        self._routing_table: object | None = None  # RoutingTable when initialized
 
     def _check_open(self) -> None:
         """Raise :class:`ClosedError` if closed, or :class:`ThreadSafetyError` if wrong thread."""
@@ -649,6 +654,8 @@ class Tract:
         # Persistence repository + file-based state
         persistence_repo = SqlitePersistenceRepository(session)
         tract._persistence_repo = persistence_repo
+        behavioral_spec_repo = SqliteBehavioralSpecRepository(session)
+        tract._behavioral_spec_repo = behavioral_spec_repo
         tract._db_path = path
         tract._load_persisted_state()
 
@@ -1298,6 +1305,264 @@ class Tract:
     def list_maintainers(self) -> list[str]:
         """Return names of all registered semantic maintainers."""
         return list(self._maintainers.keys())
+
+    # ------------------------------------------------------------------
+    # Routing
+    # ------------------------------------------------------------------
+
+    def add_route(
+        self,
+        name: str,
+        description: str,
+        route_type: str,
+        *,
+        keywords: list[str] | None = None,
+        pattern: str | None = None,
+    ) -> None:
+        """Register a route in the default routing table.
+
+        Args:
+            name: Unique route identifier.
+            description: Human-readable description (used for fuzzy matching).
+            route_type: ``"branch"``, ``"stage"``, or ``"workflow"``.
+            keywords: Optional keywords that improve matching accuracy.
+            pattern: Optional regex pattern for exact matching.
+
+        Raises:
+            ValueError: If *name* is already registered or *route_type* is invalid.
+
+        Example::
+
+            t.add_route("research", "Deep research branch", "branch",
+                         keywords=["investigate", "research", "explore"])
+        """
+        self._check_open()
+        self._ensure_routing_table()
+        self._routing_table.add_route(  # type: ignore[union-attr]
+            name, description, route_type, keywords=keywords, pattern=pattern
+        )
+
+    def remove_route(self, name: str) -> None:
+        """Remove a route from the default routing table.
+
+        Args:
+            name: The route name to remove.
+
+        Raises:
+            ValueError: If no route with this name exists or no routing table.
+        """
+        self._check_open()
+        if self._routing_table is None:
+            raise ValueError(f"Route '{name}' not found.")
+        self._routing_table.remove_route(name)
+
+    def route(
+        self,
+        query: str,
+        *,
+        router: object | None = None,
+        apply: bool = False,
+    ) -> object:
+        """Route a query to the best matching branch, stage, or workflow.
+
+        Uses a :class:`~tract.routing.SemanticRouter` for LLM-powered
+        routing, falling back to fuzzy matching from the default routing
+        table.
+
+        Args:
+            query: The user query or intent string.
+            router: An optional :class:`~tract.routing.SemanticRouter`.
+                If ``None``, uses the default routing table with fuzzy matching only.
+            apply: If ``True``, automatically apply the route (switch branch,
+                apply stage, etc.).
+
+        Returns:
+            A :class:`~tract.routing.RoutingResult`.
+
+        Example::
+
+            result = t.route("time to start implementing")
+            print(result.route.target, result.route.confidence)
+        """
+        self._check_open()
+        from tract.routing import RoutingResult, SemanticRouter
+
+        if router is not None and isinstance(router, SemanticRouter):
+            result = router.route(query, self)
+        else:
+            self._ensure_routing_table()
+            matches = self._routing_table.match(query)  # type: ignore[union-attr]
+            if matches:
+                best = matches[0]
+            else:
+                from tract.routing import Route
+                best = Route(
+                    target="",
+                    route_type="branch",
+                    confidence=0.0,
+                    reasoning="No matching routes found.",
+                )
+            result = RoutingResult(
+                route=best,
+                applied=False,
+                tokens_used=0,
+                method="fuzzy",
+            )
+
+        if apply and result.route.target and result.route.confidence > 0:
+            applied = self._apply_route(result.route)
+            result = RoutingResult(
+                route=result.route,
+                applied=applied,
+                tokens_used=result.tokens_used,
+                method=result.method,
+            )
+
+        return result
+
+    async def aroute(
+        self,
+        query: str,
+        *,
+        router: object | None = None,
+        apply: bool = False,
+    ) -> object:
+        """Async version of :meth:`route`.
+
+        Uses ``aroute()`` on the SemanticRouter if provided.
+        """
+        self._check_open()
+        from tract.routing import RoutingResult, SemanticRouter
+
+        if router is not None and isinstance(router, SemanticRouter):
+            result = await router.aroute(query, self)
+        else:
+            self._ensure_routing_table()
+            matches = self._routing_table.match(query)  # type: ignore[union-attr]
+            if matches:
+                best = matches[0]
+            else:
+                from tract.routing import Route
+                best = Route(
+                    target="",
+                    route_type="branch",
+                    confidence=0.0,
+                    reasoning="No matching routes found.",
+                )
+            result = RoutingResult(
+                route=best,
+                applied=False,
+                tokens_used=0,
+                method="fuzzy",
+            )
+
+        if apply and result.route.target and result.route.confidence > 0:
+            applied = self._apply_route(result.route)
+            result = RoutingResult(
+                route=result.route,
+                applied=applied,
+                tokens_used=result.tokens_used,
+                method=result.method,
+            )
+
+        return result
+
+    def auto_configure(
+        self,
+        objective: str,
+        config_keys: list[str] | None = None,
+    ) -> list:
+        """Run LLM-driven configuration optimization.
+
+        Analyzes the current context and suggests config adjustments
+        aligned with the stated objective.
+
+        Args:
+            objective: Natural-language description of the optimization goal.
+            config_keys: Config keys the LLM may evaluate. If ``None``,
+                defaults to common config keys.
+
+        Returns:
+            List of :class:`~tract.routing.ConfigSuggestion` objects.
+
+        Example::
+
+            suggestions = t.auto_configure(
+                "Optimize for fast, focused code generation",
+                config_keys=["temperature", "compile_strategy"],
+            )
+            for s in suggestions:
+                print(f"{s.key}: {s.current_value} -> {s.suggested_value}")
+        """
+        self._check_open()
+        from tract.routing import AutoConfig
+
+        if config_keys is None:
+            config_keys = ["temperature", "compile_strategy", "stage"]
+
+        ac = AutoConfig(
+            name="auto_configure",
+            objective=objective,
+            config_keys=config_keys,
+        )
+        return ac.evaluate(self)
+
+    async def aauto_configure(
+        self,
+        objective: str,
+        config_keys: list[str] | None = None,
+    ) -> list:
+        """Async version of :meth:`auto_configure`."""
+        self._check_open()
+        from tract.routing import AutoConfig
+
+        if config_keys is None:
+            config_keys = ["temperature", "compile_strategy", "stage"]
+
+        ac = AutoConfig(
+            name="aauto_configure",
+            objective=objective,
+            config_keys=config_keys,
+        )
+        return await ac.aevaluate(self)
+
+    def _ensure_routing_table(self) -> None:
+        """Lazily initialize the default routing table."""
+        if self._routing_table is None:
+            from tract.routing import RoutingTable
+            self._routing_table = RoutingTable()
+
+    def _apply_route(self, route: object) -> bool:
+        """Apply a route (switch branch, apply stage, etc.).
+
+        Returns True if successfully applied, False otherwise.
+        """
+        from tract.routing import Route
+        if not isinstance(route, Route):
+            return False
+        try:
+            if route.route_type == "branch":
+                existing = {b.name for b in self.list_branches()}
+                if route.target in existing:
+                    self.checkout(route.target)
+                else:
+                    self.branch(route.target)
+                    self.checkout(route.target)
+                return True
+            elif route.route_type == "stage":
+                self.apply_stage(route.target)
+                return True
+            elif route.route_type == "workflow":
+                self.load_profile(route.target)
+                return True
+        except Exception:
+            logger.warning(
+                "Failed to apply route '%s' (%s): %s",
+                route.target,
+                route.route_type,
+                exc_info=True,
+            )
+        return False
 
     def _run_middleware(self, event: str, **kwargs: Any) -> None:
         """Run middleware handlers for an event.
@@ -7822,7 +8087,7 @@ class Tract:
         return target
 
     def _load_persisted_state(self) -> None:
-        """Load persisted configs from DB.
+        """Load persisted configs and behavioral specs from DB.
 
         Called during Tract.open() after all repos are initialized.
         """
@@ -7844,6 +8109,186 @@ class Tract:
                     exc_info=True,
                 )
                 self._quarantined.append(f"config:{config_row.config_key}")
+
+        # Load behavioral specs from DB (profiles and templates)
+        spec_repo = self._behavioral_spec_repo
+        if spec_repo is None:
+            return
+
+        for row in spec_repo.list_specs(self._tract_id):
+            try:
+                data = json.loads(row.spec_json)
+            except Exception:
+                logger.warning(
+                    "Failed to parse behavioral spec '%s/%s': skipping.",
+                    row.spec_type,
+                    row.spec_name,
+                    exc_info=True,
+                )
+                self._quarantined.append(f"spec:{row.spec_type}:{row.spec_name}")
+                continue
+
+            try:
+                if row.spec_type == "profile":
+                    from tract.profiles import WorkflowProfile
+                    profile = WorkflowProfile.from_spec(data)
+                    self._profile_registry[profile.name] = profile
+                elif row.spec_type == "template":
+                    from tract.templates import DirectiveTemplate
+                    template = DirectiveTemplate.from_spec(data)
+                    self._template_registry[template.name] = template
+                # gate and maintainer specs are loaded but NOT auto-wired
+                # (callables cannot be restored; users must re-register)
+            except Exception:
+                logger.warning(
+                    "Failed to restore behavioral spec '%s/%s': skipping.",
+                    row.spec_type,
+                    row.spec_name,
+                    exc_info=True,
+                )
+                self._quarantined.append(f"spec:{row.spec_type}:{row.spec_name}")
+
+    # ------------------------------------------------------------------
+    # Behavioral spec persistence (gates, maintainers, profiles, templates)
+    # ------------------------------------------------------------------
+
+    def persist_behavioral_spec(
+        self,
+        spec_type: str,
+        spec_name: str,
+        spec_data: dict,
+    ) -> None:
+        """Save a behavioral spec to the database.
+
+        Args:
+            spec_type: One of ``"gate"``, ``"maintainer"``, ``"middleware"``,
+                ``"profile"``, ``"template"``.
+            spec_name: Unique name within the spec type.
+            spec_data: JSON-serializable dict with the spec configuration.
+
+        Raises:
+            ValueError: If spec_type is invalid.
+            RuntimeError: If no behavioral spec repository is available.
+        """
+        valid_types = {"gate", "maintainer", "middleware", "profile", "template"}
+        if spec_type not in valid_types:
+            raise ValueError(
+                f"Invalid spec_type '{spec_type}'. "
+                f"Valid types: {sorted(valid_types)}"
+            )
+        repo = self._behavioral_spec_repo
+        if repo is None:
+            return  # in-memory or no persistence
+
+        from tract.storage.schema import BehavioralSpecRow
+
+        now = datetime.now(timezone.utc)
+        row = BehavioralSpecRow(
+            tract_id=self._tract_id,
+            spec_type=spec_type,
+            spec_name=spec_name,
+            spec_json=json.dumps(spec_data, default=str),
+            created_at=now,
+            updated_at=now,
+        )
+        repo.save(row)
+        self._commit_session()
+
+    def load_behavioral_specs(
+        self,
+        *,
+        spec_type: str | None = None,
+    ) -> list[dict]:
+        """Load persisted behavioral specs from the database.
+
+        Args:
+            spec_type: Optional filter by type (``"gate"``, ``"maintainer"``,
+                ``"profile"``, ``"template"``).
+
+        Returns:
+            List of dicts with keys: spec_type, spec_name, spec_data, created_at, updated_at.
+        """
+        repo = self._behavioral_spec_repo
+        if repo is None:
+            return []
+
+        rows = repo.list_specs(self._tract_id, spec_type=spec_type)
+        result = []
+        for row in rows:
+            try:
+                data = json.loads(row.spec_json)
+            except Exception:
+                data = {}
+            result.append({
+                "spec_type": row.spec_type,
+                "spec_name": row.spec_name,
+                "spec_data": data,
+                "created_at": row.created_at,
+                "updated_at": row.updated_at,
+            })
+        return result
+
+    def list_behavioral_specs(
+        self,
+        *,
+        spec_type: str | None = None,
+    ) -> list[dict]:
+        """List persisted behavioral specs (summary view).
+
+        Args:
+            spec_type: Optional filter by type.
+
+        Returns:
+            List of dicts with keys: spec_type, spec_name, created_at, updated_at.
+        """
+        repo = self._behavioral_spec_repo
+        if repo is None:
+            return []
+
+        rows = repo.list_specs(self._tract_id, spec_type=spec_type)
+        return [
+            {
+                "spec_type": row.spec_type,
+                "spec_name": row.spec_name,
+                "created_at": row.created_at,
+                "updated_at": row.updated_at,
+            }
+            for row in rows
+        ]
+
+    def remove_behavioral_spec(self, spec_type: str, spec_name: str) -> bool:
+        """Remove a persisted behavioral spec.
+
+        Args:
+            spec_type: Spec type (``"gate"``, ``"maintainer"``, etc.).
+            spec_name: Spec name.
+
+        Returns:
+            True if deleted, False if not found.
+        """
+        repo = self._behavioral_spec_repo
+        if repo is None:
+            return False
+        deleted = repo.delete(self._tract_id, spec_type, spec_name)
+        if deleted:
+            self._commit_session()
+        return deleted
+
+    def _auto_persist_gate_spec(self, name: str, gate: object) -> None:
+        """Auto-persist a gate spec when ``t.gate()`` is called."""
+        try:
+            spec_data = gate.to_spec()  # type: ignore[union-attr]
+            self.persist_behavioral_spec("gate", name, spec_data)
+        except Exception:
+            logger.debug("Failed to auto-persist gate spec '%s'", name, exc_info=True)
+
+    def _auto_persist_maintainer_spec(self, name: str, maintainer: object) -> None:
+        """Auto-persist a maintainer spec when ``t.maintain()`` is called."""
+        try:
+            spec_data = maintainer.to_spec()  # type: ignore[union-attr]
+            self.persist_behavioral_spec("maintainer", name, spec_data)
+        except Exception:
+            logger.debug("Failed to auto-persist maintainer spec '%s'", name, exc_info=True)
 
     def save_workflow(
         self,
