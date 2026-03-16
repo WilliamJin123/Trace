@@ -1801,7 +1801,6 @@ class Tract:
                     self.checkout(route.target)
                 else:
                     self.branch(route.target)
-                    self.checkout(route.target)
                 return True
             elif route.route_type == "stage":
                 self.apply_stage(route.target)
@@ -8656,7 +8655,7 @@ class Tract:
     # State snapshot / restore (in-memory behavioral state)
     # ------------------------------------------------------------------
 
-    def snapshot_state(self) -> dict[str, Any]:
+    def snapshot_behavioral_state(self) -> dict[str, Any]:
         """Capture full behavioral state as a serializable dict.
 
         Snapshots the in-memory behavioral state that is NOT automatically
@@ -8664,7 +8663,7 @@ class Tract:
         configs, registry contents, config values).
 
         The returned dict can be serialized to JSON and later restored
-        with :meth:`restore_state`.
+        with :meth:`restore_behavioral_state`.
 
         Returns:
             Dict with keys: ``middleware``, ``gates``, ``maintainers``,
@@ -8747,7 +8746,7 @@ class Tract:
             "operation_configs": op_config_snapshot,
         }
 
-    def restore_state(
+    def restore_behavioral_state(
         self,
         snapshot: dict[str, Any],
         *,
@@ -8765,7 +8764,7 @@ class Tract:
         - **Middleware**: NOT restored (callables cannot be serialized)
 
         Args:
-            snapshot: Dict previously returned by :meth:`snapshot_state`.
+            snapshot: Dict previously returned by :meth:`snapshot_behavioral_state`.
             llm_client: Optional LLM client for re-wiring gates/maintainers.
                 When ``None``, gate/maintainer specs are returned in the
                 ``skipped`` list for manual re-registration.
@@ -8835,7 +8834,7 @@ class Tract:
             "errors": errors,
         }
 
-    def save_state(self, path: str | None = None) -> str:
+    def save_behavioral_state(self, path: str | None = None) -> str:
         """Snapshot behavioral state and save to a JSON file.
 
         Args:
@@ -8860,7 +8859,7 @@ class Tract:
             # Derive from DB path: /path/to/tract.db -> /path/to/tract.db.state.json
             path = self._db_path + ".state.json"
 
-        snapshot = self.snapshot_state()
+        snapshot = self.snapshot_behavioral_state()
         state_json = json.dumps(snapshot, indent=2, default=str)
 
         # Ensure parent directory exists
@@ -8873,7 +8872,7 @@ class Tract:
 
         return path
 
-    def load_state(
+    def load_behavioral_state(
         self,
         path: str | None = None,
         *,
@@ -8887,7 +8886,7 @@ class Tract:
             llm_client: Optional LLM client for re-wiring gates/maintainers.
 
         Returns:
-            Report dict from :meth:`restore_state`.
+            Report dict from :meth:`restore_behavioral_state`.
 
         Raises:
             ValueError: If database is ``:memory:`` and no path provided.
@@ -8906,7 +8905,7 @@ class Tract:
         with open(path, "r", encoding="utf-8") as f:
             snapshot = json.load(f)
 
-        return self.restore_state(snapshot, llm_client=llm_client)
+        return self.restore_behavioral_state(snapshot, llm_client=llm_client)
 
     # ------------------------------------------------------------------
     # Adapter support

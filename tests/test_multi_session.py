@@ -33,16 +33,16 @@ def _make_tract(**kwargs: Any) -> Tract:
 
 
 # ===========================================================================
-# snapshot_state tests
+# snapshot_behavioral_state tests
 # ===========================================================================
 
 
 class TestSnapshotState:
-    """Tests for Tract.snapshot_state()."""
+    """Tests for Tract.snapshot_behavioral_state()."""
 
     def test_snapshot_captures_empty_state(self) -> None:
         with _make_tract() as t:
-            snap = t.snapshot_state()
+            snap = t.snapshot_behavioral_state()
             assert "middleware" in snap
             assert "gates" in snap
             assert "maintainers" in snap
@@ -53,7 +53,7 @@ class TestSnapshotState:
 
     def test_snapshot_captures_profiles(self) -> None:
         with _make_tract() as t:
-            snap = t.snapshot_state()
+            snap = t.snapshot_behavioral_state()
             # Should have default built-in profiles
             profile_names = [p["name"] for p in snap["profiles"]]
             assert "coding" in profile_names
@@ -61,7 +61,7 @@ class TestSnapshotState:
 
     def test_snapshot_captures_templates(self) -> None:
         with _make_tract() as t:
-            snap = t.snapshot_state()
+            snap = t.snapshot_behavioral_state()
             template_names = [tp["name"] for tp in snap["templates"]]
             assert "review_protocol" in template_names
 
@@ -73,7 +73,7 @@ class TestSnapshotState:
                 config={"temperature": 0.5},
             )
             t._profile_registry["test_custom"] = custom
-            snap = t.snapshot_state()
+            snap = t.snapshot_behavioral_state()
             profile_names = [p["name"] for p in snap["profiles"]]
             assert "test_custom" in profile_names
 
@@ -86,7 +86,7 @@ class TestSnapshotState:
                 parameters={"name": "Name to greet"},
             )
             t._template_registry["test_tmpl"] = custom
-            snap = t.snapshot_state()
+            snap = t.snapshot_behavioral_state()
             template_names = [tp["name"] for tp in snap["templates"]]
             assert "test_tmpl" in template_names
 
@@ -94,14 +94,14 @@ class TestSnapshotState:
         with _make_tract() as t:
             t.commit(InstructionContent(text="init"))
             t.configure(temperature=0.7, compile_strategy="adaptive")
-            snap = t.snapshot_state()
+            snap = t.snapshot_behavioral_state()
             assert snap["config"].get("temperature") == 0.7
             assert snap["config"].get("compile_strategy") == "adaptive"
 
     def test_snapshot_captures_middleware(self) -> None:
         with _make_tract() as t:
             handler_id = t.use("pre_commit", lambda ctx: None)
-            snap = t.snapshot_state()
+            snap = t.snapshot_behavioral_state()
             assert len(snap["middleware"]) == 1
             mw = snap["middleware"][0]
             assert mw["handler_id"] == handler_id
@@ -111,7 +111,7 @@ class TestSnapshotState:
         with _make_tract() as t:
             t.commit(InstructionContent(text="init"))
             t.configure(temperature=0.5)
-            snap = t.snapshot_state()
+            snap = t.snapshot_behavioral_state()
             # Should not raise
             json_str = json.dumps(snap, default=str)
             assert isinstance(json_str, str)
@@ -120,12 +120,12 @@ class TestSnapshotState:
 
 
 # ===========================================================================
-# restore_state tests
+# restore_behavioral_state tests
 # ===========================================================================
 
 
 class TestRestoreState:
-    """Tests for Tract.restore_state()."""
+    """Tests for Tract.restore_behavioral_state()."""
 
     def test_restore_profiles(self) -> None:
         with _make_tract() as t:
@@ -135,7 +135,7 @@ class TestRestoreState:
                 config={"temperature": 0.9},
             )
             snap = {"profiles": [custom.to_spec()]}
-            report = t.restore_state(snap)
+            report = t.restore_behavioral_state(snap)
             assert "profile:restored_profile" in report["restored"]
             assert "restored_profile" in t._profile_registry
 
@@ -148,7 +148,7 @@ class TestRestoreState:
                 parameters={"thing": "What to do"},
             )
             snap = {"templates": [custom.to_spec()]}
-            report = t.restore_state(snap)
+            report = t.restore_behavioral_state(snap)
             assert "template:restored_tmpl" in report["restored"]
             assert "restored_tmpl" in t._template_registry
 
@@ -156,7 +156,7 @@ class TestRestoreState:
         with _make_tract() as t:
             t.commit(InstructionContent(text="init"))
             snap = {"config": {"temperature": 0.42}}
-            report = t.restore_state(snap)
+            report = t.restore_behavioral_state(snap)
             assert any("config:" in r for r in report["restored"])
             assert t.get_all_configs().get("temperature") == 0.42
 
@@ -167,7 +167,7 @@ class TestRestoreState:
                     {"name": "test-gate", "check": "Has 3 findings", "event": "pre_transition"}
                 ]
             }
-            report = t.restore_state(snap)
+            report = t.restore_behavioral_state(snap)
             assert any("gate:test-gate" in s for s in report["skipped"])
 
     def test_restore_skips_maintainers(self) -> None:
@@ -177,7 +177,7 @@ class TestRestoreState:
                     {"name": "test-maint", "instructions": "Cleanup", "event": "post_commit"}
                 ]
             }
-            report = t.restore_state(snap)
+            report = t.restore_behavioral_state(snap)
             assert any("maintainer:test-maint" in s for s in report["skipped"])
 
     def test_restore_skips_middleware(self) -> None:
@@ -187,19 +187,19 @@ class TestRestoreState:
                     {"handler_id": "abc123", "event": "pre_commit", "handler_type": "function"}
                 ]
             }
-            report = t.restore_state(snap)
+            report = t.restore_behavioral_state(snap)
             assert any("middleware:" in s for s in report["skipped"])
 
     def test_restore_reports_errors(self) -> None:
         with _make_tract() as t:
             # Profile with missing required 'name' key
             snap = {"profiles": [{"description": "broken"}]}
-            report = t.restore_state(snap)
+            report = t.restore_behavioral_state(snap)
             assert len(report["errors"]) > 0
 
     def test_restore_report_structure(self) -> None:
         with _make_tract() as t:
-            report = t.restore_state({})
+            report = t.restore_behavioral_state({})
             assert "restored" in report
             assert "skipped" in report
             assert "errors" in report
@@ -209,12 +209,12 @@ class TestRestoreState:
 
 
 # ===========================================================================
-# save_state / load_state file round-trip tests
+# save_behavioral_state / load_behavioral_state file round-trip tests
 # ===========================================================================
 
 
 class TestSaveLoadState:
-    """Tests for Tract.save_state() and Tract.load_state() file I/O."""
+    """Tests for Tract.save_behavioral_state() and Tract.load_behavioral_state() file I/O."""
 
     def test_save_load_roundtrip(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -228,45 +228,45 @@ class TestSaveLoadState:
                     description="Round-trip test",
                 )
                 t._profile_registry["roundtrip_profile"] = custom
-                saved_path = t.save_state(path=state_path)
+                saved_path = t.save_behavioral_state(path=state_path)
                 assert saved_path == state_path
                 assert os.path.isfile(state_path)
 
             # Load into a new tract
             with _make_tract() as t2:
                 t2.commit(InstructionContent(text="init"))
-                report = t2.load_state(path=state_path)
+                report = t2.load_behavioral_state(path=state_path)
                 assert any("profile:roundtrip_profile" in r for r in report["restored"])
                 assert any("config:" in r for r in report["restored"])
                 assert "roundtrip_profile" in t2._profile_registry
 
-    def test_save_state_memory_db_requires_path(self) -> None:
+    def test_save_behavioral_state_memory_db_requires_path(self) -> None:
         with _make_tract() as t:
             with pytest.raises(ValueError, match="memory"):
-                t.save_state()
+                t.save_behavioral_state()
 
-    def test_load_state_memory_db_requires_path(self) -> None:
+    def test_load_behavioral_state_memory_db_requires_path(self) -> None:
         with _make_tract() as t:
             with pytest.raises(ValueError, match="memory"):
-                t.load_state()
+                t.load_behavioral_state()
 
-    def test_load_state_file_not_found(self) -> None:
+    def test_load_behavioral_state_file_not_found(self) -> None:
         with _make_tract() as t:
             with pytest.raises(FileNotFoundError):
-                t.load_state(path="/nonexistent/path/state.json")
+                t.load_behavioral_state(path="/nonexistent/path/state.json")
 
-    def test_save_state_creates_parent_dirs(self) -> None:
+    def test_save_behavioral_state_creates_parent_dirs(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             nested_path = os.path.join(tmpdir, "sub", "dir", "state.json")
             with _make_tract() as t:
-                t.save_state(path=nested_path)
+                t.save_behavioral_state(path=nested_path)
                 assert os.path.isfile(nested_path)
 
     def test_saved_file_is_valid_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             state_path = os.path.join(tmpdir, "state.json")
             with _make_tract() as t:
-                t.save_state(path=state_path)
+                t.save_behavioral_state(path=state_path)
             with open(state_path, "r") as f:
                 data = json.load(f)
             assert "profiles" in data
@@ -278,7 +278,7 @@ class TestSaveLoadState:
             db_path = os.path.join(tmpdir, "test.db")
             with Tract.open(db_path) as t:
                 t.commit(InstructionContent(text="init"))
-                saved = t.save_state()
+                saved = t.save_behavioral_state()
                 assert saved == db_path + ".state.json"
                 assert os.path.isfile(saved)
 
