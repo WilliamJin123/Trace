@@ -92,6 +92,9 @@ from tract.gate import SemanticGate, GateResult
 # Semantic maintainers
 from tract.maintain import SemanticMaintainer, MaintainResult
 
+# Context intelligence
+from tract.intelligence import CherryPickResult, DedupResult
+
 # Routing
 from tract.routing import Route, RoutingTable, SemanticRouter, RoutingResult, AutoConfig, ConfigSuggestion
 
@@ -261,6 +264,9 @@ __all__ = [
     "MaintainResult",
     "MiddlewareContext",
     "MiddlewareEvent",
+    # Context intelligence
+    "CherryPickResult",
+    "DedupResult",
     # Routing
     "Route",
     "RoutingTable",

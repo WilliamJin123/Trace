@@ -347,6 +347,7 @@ class Tract:
         self._compile_record_repo = compile_record_repo
         self._tool_schema_repo = tool_schema_repo
         self._spawn_repo: SqliteSpawnPointerRepository | None = None
+        self._session_owner: object | None = None  # Session back-reference (set by Session)
         self._tag_annotation_repo: SqliteTagAnnotationRepository | None = None
         self._tag_registry_repo: SqliteTagRegistryRepository | None = None
         self._strict_tags: bool = True
@@ -1544,6 +1545,109 @@ class Tract:
         )
         return await ac.aevaluate(self)
 
+    # ------------------------------------------------------------------
+    # Context intelligence (cherry-pick & deduplication)
+    # ------------------------------------------------------------------
+
+    def cherry_pick(
+        self,
+        query: str,
+        *,
+        limit: int = 10,
+        **llm_kwargs: Any,
+    ) -> Any:
+        """Select the most relevant commits for a task/query using LLM judgment.
+
+        Builds a manifest of recent commits (with content previews) and asks
+        the LLM to select the most relevant ones for the given query.
+
+        Fail-open: on LLM error, returns all candidate commits (no filtering).
+
+        Args:
+            query: Natural-language task or query description.
+            limit: Maximum number of commits to select (default 10).
+            **llm_kwargs: Passed to the LLM client (``model``, ``temperature``,
+                ``max_tokens``).
+
+        Returns:
+            :class:`~tract.intelligence.CherryPickResult` with selected
+            commit hashes and reasoning.
+
+        Example::
+
+            result = t.cherry_pick("Implement the auth module", limit=5)
+            for h in result.selected_hashes:
+                print(t.get_content(h))
+        """
+        self._check_open()
+        from tract.intelligence import cherry_pick as _cherry_pick
+
+        return _cherry_pick(self, query, limit=limit, **llm_kwargs)
+
+    async def acherry_pick(
+        self,
+        query: str,
+        *,
+        limit: int = 10,
+        **llm_kwargs: Any,
+    ) -> Any:
+        """Async version of :meth:`cherry_pick`."""
+        self._check_open()
+        from tract.intelligence import acherry_pick as _acherry_pick
+
+        return await _acherry_pick(self, query, limit=limit, **llm_kwargs)
+
+    def deduplicate(
+        self,
+        *,
+        threshold: float = 0.8,
+        auto_skip: bool = False,
+        **llm_kwargs: Any,
+    ) -> Any:
+        """Detect and optionally handle duplicate/overlapping commits using LLM judgment.
+
+        Builds a manifest of recent commits with content previews and asks
+        the LLM to identify groups of duplicate or highly overlapping content.
+
+        If ``auto_skip=True``, annotates all but the newest commit in each
+        duplicate group as SKIP.
+
+        Fail-open: on LLM error, returns empty groups (no action taken).
+
+        Args:
+            threshold: Similarity threshold hint (0.0-1.0). Higher = stricter.
+            auto_skip: If True, automatically mark older duplicates as SKIP.
+            **llm_kwargs: Passed to the LLM client (``model``, ``temperature``,
+                ``max_tokens``).
+
+        Returns:
+            :class:`~tract.intelligence.DedupResult` with duplicate groups
+            and actions taken.
+
+        Example::
+
+            result = t.deduplicate(auto_skip=True)
+            print(f"Found {len(result.duplicate_groups)} duplicate groups")
+            print(f"Skipped {result.actions_taken} duplicate commits")
+        """
+        self._check_open()
+        from tract.intelligence import deduplicate as _deduplicate
+
+        return _deduplicate(self, threshold=threshold, auto_skip=auto_skip, **llm_kwargs)
+
+    async def adeduplicate(
+        self,
+        *,
+        threshold: float = 0.8,
+        auto_skip: bool = False,
+        **llm_kwargs: Any,
+    ) -> Any:
+        """Async version of :meth:`deduplicate`."""
+        self._check_open()
+        from tract.intelligence import adeduplicate as _adeduplicate
+
+        return await _adeduplicate(self, threshold=threshold, auto_skip=auto_skip, **llm_kwargs)
+
     def _ensure_routing_table(self) -> None:
         """Lazily initialize the default routing table."""
         if self._routing_table is None:
@@ -1690,6 +1794,99 @@ class Tract:
         rows = self._spawn_repo.get_children(self._tract_id)
         from tract.operations.spawn import _row_to_spawn_info
         return [_row_to_spawn_info(row) for row in rows]
+
+    # ------------------------------------------------------------------
+    # Subagent communication
+    # ------------------------------------------------------------------
+
+    def peek_child(self, child_tract_id: str, *, limit: int = 20) -> list[CommitInfo]:
+        """Peek at a child tract's recent commit history.
+
+        Delegates to :meth:`Session.peek_child` if this tract participates
+        in a session. Otherwise raises :class:`SessionError`.
+
+        Args:
+            child_tract_id: The child tract identifier.
+            limit: Maximum number of commits to return. Default 20.
+
+        Returns:
+            List of :class:`CommitInfo` in reverse chronological order
+            (newest first).
+
+        Raises:
+            SessionError: If child_tract_id is not a known child of this
+                tract or if no Session context is available.
+        """
+        self._check_open()
+        from tract.exceptions import SessionError
+
+        if self._session_owner is None:
+            raise SessionError(
+                "peek_child() requires a Session context. "
+                "Use session.peek_child(child_tract_id) instead."
+            )
+
+        return self._session_owner.peek_child(child_tract_id, limit=limit)
+
+    def send_to_child(self, child_tract_id: str, content: str, **kwargs) -> str:
+        """Send a message to a child tract.
+
+        Delegates to :meth:`Session.send_message`.  Requires a Session context.
+
+        Args:
+            child_tract_id: The child tract identifier.
+            content: Message text to send.
+            **kwargs: Additional keyword arguments passed through to
+                :meth:`Session.send_message` (e.g. ``tags``).
+
+        Returns:
+            Commit hash of the message commit in the child tract.
+
+        Raises:
+            SessionError: If not called within a Session context.
+        """
+        self._check_open()
+        from tract.exceptions import SessionError
+
+        if self._session_owner is None:
+            raise SessionError(
+                "send_to_child() requires a Session context. "
+                "Use session.send_message(from_id, to_id, content) instead."
+            )
+
+        return self._session_owner.send_message(
+            self._tract_id, child_tract_id, content, **kwargs
+        )
+
+    def get_agent_messages(
+        self,
+        *,
+        from_tract_id: str | None = None,
+        limit: int = 50,
+    ) -> list[CommitInfo]:
+        """Get agent messages received by this tract.
+
+        Finds commits tagged with ``"agent_message"`` in this tract's history.
+        Optionally filters by the sending tract.
+
+        Args:
+            from_tract_id: If set, only return messages from this sender.
+            limit: Maximum number of messages to return. Default 50.
+
+        Returns:
+            List of :class:`CommitInfo` for matching agent messages,
+            newest first.
+        """
+        self._check_open()
+        # Use find() to locate agent_message commits
+        results = self.find(tag="agent_message", limit=limit)
+        if from_tract_id is not None:
+            results = [
+                c for c in results
+                if c.metadata
+                and c.metadata.get("from_tract_id") == from_tract_id
+            ]
+        return results
 
     # ------------------------------------------------------------------
     # Tool tracking

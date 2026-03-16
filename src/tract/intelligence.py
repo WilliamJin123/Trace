@@ -1,0 +1,805 @@
+"""LLM-driven context intelligence: cherry-picking and deduplication.
+
+Provides pure functions (not classes) for intelligent commit selection
+and duplicate detection. Both follow the same patterns as SemanticGate
+and SemanticMaintainer: manifest-based, fail-open on LLM errors.
+
+* **cherry_pick** -- LLM selects the most relevant commits for a task/query.
+* **deduplicate** -- LLM identifies groups of duplicate/overlapping commits.
+
+Example::
+
+    from tract.intelligence import cherry_pick, deduplicate
+
+    result = cherry_pick(t, "Implement the auth module", limit=5)
+    for h in result.selected_hashes:
+        print(t.get_content(h))
+
+    dedup = deduplicate(t, auto_skip=True)
+    print(f"Found {len(dedup.duplicate_groups)} duplicate groups")
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
+
+from tract.llm.protocols import acall_llm
+
+if TYPE_CHECKING:
+    from tract.tract import Tract
+
+__all__: list[str] = [
+    "CherryPickResult",
+    "DedupResult",
+    "cherry_pick",
+    "acherry_pick",
+    "deduplicate",
+    "adeduplicate",
+]
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Result dataclasses
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class CherryPickResult:
+    """Result of an LLM-driven cherry-pick selection."""
+
+    selected_hashes: tuple[str, ...]
+    total_candidates: int
+    tokens_used: int
+    reasoning: str
+
+
+@dataclass(frozen=True)
+class DedupResult:
+    """Result of an LLM-driven deduplication analysis."""
+
+    duplicate_groups: tuple[tuple[str, ...], ...]  # groups of duplicate commit hashes
+    actions_taken: int  # number of SKIP annotations applied
+    tokens_used: int
+    reasoning: str
+
+
+# ---------------------------------------------------------------------------
+# System prompts
+# ---------------------------------------------------------------------------
+
+_CHERRY_PICK_SYSTEM_PROMPT = """\
+You are a context relevance evaluator. Your job is to select the most relevant commits for a given task or query.
+
+You will receive a manifest of commits (with content previews) and a task/query description.
+
+Respond with JSON:
+{
+  "reasoning": "Brief explanation of why you selected these commits",
+  "selected": ["<hash1>", "<hash2>", ...]
+}
+
+Select up to the specified limit. Only include commits that are clearly relevant to the task.
+If no commits are relevant, return an empty selected list with an explanation.
+Use the short hash prefixes shown in the manifest."""
+
+_DEDUP_SYSTEM_PROMPT = """\
+You are a content deduplication analyzer. Your job is to identify groups of commits that contain duplicate or highly overlapping content.
+
+You will receive a manifest of commits with content previews.
+
+Respond with JSON:
+{
+  "reasoning": "Brief explanation of what duplicates you found",
+  "groups": [
+    ["<hash1>", "<hash2>"],
+    ["<hash3>", "<hash4>", "<hash5>"]
+  ]
+}
+
+Each group should contain commits whose content is substantially the same or heavily overlapping.
+A commit should appear in at most one group.
+If no duplicates are found, return an empty groups list.
+Use the short hash prefixes shown in the manifest."""
+
+
+# ---------------------------------------------------------------------------
+# Manifest builder (with content previews)
+# ---------------------------------------------------------------------------
+
+def _build_intelligence_manifest(
+    tract: Tract,
+    *,
+    include_content_preview: bool = True,
+    preview_length: int = 300,
+    max_log_entries: int = 50,
+) -> tuple[str, list[dict[str, Any]]]:
+    """Build a text manifest with optional content previews for intelligence tasks.
+
+    Unlike the gate/maintain manifest, this includes content previews
+    to give the LLM enough signal for relevance/dedup decisions.
+
+    Returns:
+        Tuple of (manifest_text, commit_entries) where commit_entries is
+        a list of dicts with commit metadata for result resolution.
+    """
+    entries = tract.log(limit=max_log_entries)
+    if not entries:
+        return "=== CONTEXT MANIFEST ===\n(no commits)", []
+
+    branch = tract.current_branch or "(detached)"
+    head = tract.head
+    head_short = head[:8] if head else "(empty)"
+
+    lines: list[str] = [
+        "=== CONTEXT MANIFEST ===",
+        f"Branch: {branch} | HEAD: {head_short} | Commits shown: {len(entries)}",
+        "",
+        "COMMITS (newest first):",
+    ]
+
+    commit_entries: list[dict[str, Any]] = []
+
+    for entry in entries:
+        h = entry.commit_hash[:8]
+        ctype = entry.content_type
+        tokens = entry.token_count
+        tags_str = ",".join(entry.tags) if entry.tags else ""
+        priority = entry.effective_priority or "NORMAL"
+        msg = entry.message if entry.message else "(no message)"
+        if len(msg) > 60:
+            msg = msg[:57] + "..."
+
+        lines.append(
+            f"  [{h}] {ctype:<12} | {tokens:>5} tok | "
+            f"tags:[{tags_str}] | {priority:<9} | \"{msg}\""
+        )
+
+        if include_content_preview:
+            try:
+                content = tract.get_content(entry.commit_hash)
+                if content is not None:
+                    preview = str(content)[:preview_length]
+                    if len(str(content)) > preview_length:
+                        preview += "..."
+                    lines.append(f"    Preview: {preview}")
+            except Exception:
+                lines.append("    Preview: (could not retrieve)")
+
+        commit_entries.append({
+            "hash": entry.commit_hash,
+            "short_hash": h,
+            "content_type": ctype,
+            "token_count": tokens,
+            "tags": list(entry.tags) if entry.tags else [],
+            "priority": priority,
+        })
+
+    return "\n".join(lines), commit_entries
+
+
+# ---------------------------------------------------------------------------
+# Response parsing helpers
+# ---------------------------------------------------------------------------
+
+def _strip_fences(text: str) -> str:
+    """Strip markdown code fences if present."""
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        first_newline = cleaned.index("\n") if "\n" in cleaned else len(cleaned)
+        cleaned = cleaned[first_newline + 1:]
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3]
+        cleaned = cleaned.strip()
+    return cleaned
+
+
+def _parse_cherry_pick_response(
+    text: str, commit_entries: list[dict[str, Any]]
+) -> tuple[str, list[str]]:
+    """Parse an LLM cherry-pick response into (reasoning, selected_full_hashes).
+
+    Resolves short hash prefixes to full hashes from the commit entries.
+    """
+    cleaned = _strip_fences(text)
+
+    # Build a lookup from short hash prefix to full hash
+    prefix_to_full: dict[str, str] = {}
+    for entry in commit_entries:
+        prefix_to_full[entry["short_hash"]] = entry["hash"]
+        # Also map full hash to itself
+        prefix_to_full[entry["hash"]] = entry["hash"]
+
+    try:
+        data = json.loads(cleaned)
+        if isinstance(data, dict):
+            reasoning = str(data.get("reasoning") or "").strip() or "(no reasoning given)"
+            selected = data.get("selected", [])
+            if not isinstance(selected, list):
+                selected = []
+            # Resolve hashes
+            resolved: list[str] = []
+            for h in selected:
+                h_str = str(h).strip()
+                # Try exact match first, then prefix match
+                if h_str in prefix_to_full:
+                    resolved.append(prefix_to_full[h_str])
+                else:
+                    # Try matching as a prefix
+                    for entry in commit_entries:
+                        if entry["hash"].startswith(h_str) or entry["short_hash"].startswith(h_str):
+                            resolved.append(entry["hash"])
+                            break
+            return reasoning, resolved
+    except (json.JSONDecodeError, TypeError, ValueError):
+        pass
+
+    return f"Could not parse cherry-pick response. Raw: {text[:200]}", []
+
+
+def _parse_dedup_response(
+    text: str, commit_entries: list[dict[str, Any]]
+) -> tuple[str, list[list[str]]]:
+    """Parse an LLM dedup response into (reasoning, groups_of_full_hashes)."""
+    cleaned = _strip_fences(text)
+
+    prefix_to_full: dict[str, str] = {}
+    for entry in commit_entries:
+        prefix_to_full[entry["short_hash"]] = entry["hash"]
+        prefix_to_full[entry["hash"]] = entry["hash"]
+
+    try:
+        data = json.loads(cleaned)
+        if isinstance(data, dict):
+            reasoning = str(data.get("reasoning") or "").strip() or "(no reasoning given)"
+            groups = data.get("groups", [])
+            if not isinstance(groups, list):
+                groups = []
+            resolved_groups: list[list[str]] = []
+            for group in groups:
+                if not isinstance(group, list):
+                    continue
+                resolved_group: list[str] = []
+                for h in group:
+                    h_str = str(h).strip()
+                    if h_str in prefix_to_full:
+                        resolved_group.append(prefix_to_full[h_str])
+                    else:
+                        for entry in commit_entries:
+                            if entry["hash"].startswith(h_str) or entry["short_hash"].startswith(h_str):
+                                resolved_group.append(entry["hash"])
+                                break
+                if len(resolved_group) >= 2:
+                    resolved_groups.append(resolved_group)
+            return reasoning, resolved_groups
+    except (json.JSONDecodeError, TypeError, ValueError):
+        pass
+
+    return f"Could not parse dedup response. Raw: {text[:200]}", []
+
+
+# ---------------------------------------------------------------------------
+# LLM call helper (fail-open)
+# ---------------------------------------------------------------------------
+
+def _safe_llm_call(
+    client: Any,
+    messages: list[dict[str, str]],
+    llm_kwargs: dict[str, Any],
+) -> tuple[str, int] | None:
+    """Make an LLM call, return (raw_text, tokens_used) or None on failure."""
+    tokens_used = 0
+    try:
+        response = client.chat(messages, **llm_kwargs)
+    except Exception:
+        logger.warning(
+            "Intelligence LLM call failed; using fail-open default.",
+            exc_info=True,
+        )
+        return None
+
+    try:
+        raw_text = client.extract_content(response)
+    except Exception:
+        logger.warning(
+            "Failed to extract LLM response; using fail-open default.",
+            exc_info=True,
+        )
+        return None
+
+    try:
+        usage = client.extract_usage(response) if hasattr(client, "extract_usage") else None
+        if usage and isinstance(usage, dict):
+            tokens_used = int(usage.get("total_tokens", 0))
+    except Exception:
+        pass
+
+    return raw_text, tokens_used
+
+
+async def _async_safe_llm_call(
+    client: Any,
+    messages: list[dict[str, str]],
+    llm_kwargs: dict[str, Any],
+) -> tuple[str, int] | None:
+    """Async version of _safe_llm_call."""
+    tokens_used = 0
+    try:
+        response = await acall_llm(client, messages, **llm_kwargs)
+    except Exception:
+        logger.warning(
+            "Intelligence async LLM call failed; using fail-open default.",
+            exc_info=True,
+        )
+        return None
+
+    try:
+        raw_text = client.extract_content(response)
+    except Exception:
+        logger.warning(
+            "Failed to extract LLM response; using fail-open default.",
+            exc_info=True,
+        )
+        return None
+
+    try:
+        usage = client.extract_usage(response) if hasattr(client, "extract_usage") else None
+        if usage and isinstance(usage, dict):
+            tokens_used = int(usage.get("total_tokens", 0))
+    except Exception:
+        pass
+
+    return raw_text, tokens_used
+
+
+# ---------------------------------------------------------------------------
+# cherry_pick (sync + async)
+# ---------------------------------------------------------------------------
+
+def cherry_pick(
+    tract: Tract,
+    query: str,
+    *,
+    limit: int = 10,
+    model: str | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+) -> CherryPickResult:
+    """Select the most relevant commits for a task/query using LLM judgment.
+
+    Builds a manifest of recent commits (with content previews) and asks
+    the LLM to select the ``limit`` most relevant ones for the given query.
+
+    Fail-open: on LLM error, returns all candidate commits (no filtering).
+
+    Args:
+        tract: The Tract instance to analyze.
+        query: Natural-language task or query description.
+        limit: Maximum number of commits to select.
+        model: Model override for the LLM call.
+        temperature: Temperature override.
+        max_tokens: Max tokens override.
+
+    Returns:
+        :class:`CherryPickResult` with selected commit hashes.
+    """
+    # Resolve LLM client
+    try:
+        client = tract._resolve_llm_client("intelligence")
+    except RuntimeError:
+        try:
+            client = tract._resolve_llm_client("chat")
+        except RuntimeError:
+            # No client at all -- fail-open with all commits
+            entries = tract.log(limit=50)
+            all_hashes = tuple(e.commit_hash for e in entries)
+            return CherryPickResult(
+                selected_hashes=all_hashes,
+                total_candidates=len(all_hashes),
+                tokens_used=0,
+                reasoning="No LLM client configured; returning all commits (fail-open).",
+            )
+
+    # Build manifest
+    manifest, commit_entries = _build_intelligence_manifest(
+        tract, include_content_preview=True, preview_length=200,
+    )
+
+    if not commit_entries:
+        return CherryPickResult(
+            selected_hashes=(),
+            total_candidates=0,
+            tokens_used=0,
+            reasoning="No commits to evaluate.",
+        )
+
+    # Build messages
+    user_content = (
+        f"=== TASK/QUERY ===\n"
+        f"{query}\n"
+        f"\n"
+        f"=== SELECTION LIMIT ===\n"
+        f"Select up to {limit} most relevant commits.\n"
+        f"\n"
+        f"{manifest}"
+    )
+    messages = [
+        {"role": "system", "content": _CHERRY_PICK_SYSTEM_PROMPT},
+        {"role": "user", "content": user_content},
+    ]
+
+    # LLM call
+    llm_kwargs: dict[str, Any] = {}
+    if model is not None:
+        llm_kwargs["model"] = model
+    if temperature is not None:
+        llm_kwargs["temperature"] = temperature
+    else:
+        llm_kwargs["temperature"] = 0.1
+    if max_tokens is not None:
+        llm_kwargs["max_tokens"] = max_tokens
+
+    result = _safe_llm_call(client, messages, llm_kwargs)
+    if result is None:
+        # Fail-open: return all commits
+        all_hashes = tuple(e["hash"] for e in commit_entries)
+        return CherryPickResult(
+            selected_hashes=all_hashes,
+            total_candidates=len(commit_entries),
+            tokens_used=0,
+            reasoning="LLM call failed; returning all commits (fail-open).",
+        )
+
+    raw_text, tokens_used = result
+    reasoning, selected_hashes = _parse_cherry_pick_response(raw_text, commit_entries)
+
+    # Cap at limit
+    selected_hashes = selected_hashes[:limit]
+
+    return CherryPickResult(
+        selected_hashes=tuple(selected_hashes),
+        total_candidates=len(commit_entries),
+        tokens_used=tokens_used,
+        reasoning=reasoning,
+    )
+
+
+async def acherry_pick(
+    tract: Tract,
+    query: str,
+    *,
+    limit: int = 10,
+    model: str | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+) -> CherryPickResult:
+    """Async version of :func:`cherry_pick`."""
+    # Resolve LLM client
+    try:
+        client = tract._resolve_llm_client("intelligence")
+    except RuntimeError:
+        try:
+            client = tract._resolve_llm_client("chat")
+        except RuntimeError:
+            entries = tract.log(limit=50)
+            all_hashes = tuple(e.commit_hash for e in entries)
+            return CherryPickResult(
+                selected_hashes=all_hashes,
+                total_candidates=len(all_hashes),
+                tokens_used=0,
+                reasoning="No LLM client configured; returning all commits (fail-open).",
+            )
+
+    manifest, commit_entries = _build_intelligence_manifest(
+        tract, include_content_preview=True, preview_length=200,
+    )
+
+    if not commit_entries:
+        return CherryPickResult(
+            selected_hashes=(),
+            total_candidates=0,
+            tokens_used=0,
+            reasoning="No commits to evaluate.",
+        )
+
+    user_content = (
+        f"=== TASK/QUERY ===\n"
+        f"{query}\n"
+        f"\n"
+        f"=== SELECTION LIMIT ===\n"
+        f"Select up to {limit} most relevant commits.\n"
+        f"\n"
+        f"{manifest}"
+    )
+    messages = [
+        {"role": "system", "content": _CHERRY_PICK_SYSTEM_PROMPT},
+        {"role": "user", "content": user_content},
+    ]
+
+    llm_kwargs: dict[str, Any] = {}
+    if model is not None:
+        llm_kwargs["model"] = model
+    if temperature is not None:
+        llm_kwargs["temperature"] = temperature
+    else:
+        llm_kwargs["temperature"] = 0.1
+    if max_tokens is not None:
+        llm_kwargs["max_tokens"] = max_tokens
+
+    result = await _async_safe_llm_call(client, messages, llm_kwargs)
+    if result is None:
+        all_hashes = tuple(e["hash"] for e in commit_entries)
+        return CherryPickResult(
+            selected_hashes=all_hashes,
+            total_candidates=len(commit_entries),
+            tokens_used=0,
+            reasoning="LLM call failed; returning all commits (fail-open).",
+        )
+
+    raw_text, tokens_used = result
+    reasoning, selected_hashes = _parse_cherry_pick_response(raw_text, commit_entries)
+    selected_hashes = selected_hashes[:limit]
+
+    return CherryPickResult(
+        selected_hashes=tuple(selected_hashes),
+        total_candidates=len(commit_entries),
+        tokens_used=tokens_used,
+        reasoning=reasoning,
+    )
+
+
+# ---------------------------------------------------------------------------
+# deduplicate (sync + async)
+# ---------------------------------------------------------------------------
+
+def deduplicate(
+    tract: Tract,
+    *,
+    threshold: float = 0.8,
+    auto_skip: bool = False,
+    model: str | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+) -> DedupResult:
+    """Detect and optionally handle duplicate/overlapping commits using LLM judgment.
+
+    Two-pass approach:
+    1. Build manifest with content previews (300 chars).
+    2. Ask LLM to identify groups of duplicate/overlapping commits.
+
+    If ``auto_skip=True``, annotates all but the newest commit in each
+    duplicate group as SKIP.
+
+    Fail-open: on LLM error, returns empty groups (no action taken).
+
+    Args:
+        tract: The Tract instance to analyze.
+        threshold: Similarity threshold hint for the LLM (0.0 to 1.0).
+            Higher values mean stricter duplicate detection.
+        auto_skip: If True, automatically mark older duplicates as SKIP.
+        model: Model override for the LLM call.
+        temperature: Temperature override.
+        max_tokens: Max tokens override.
+
+    Returns:
+        :class:`DedupResult` with duplicate groups and actions taken.
+    """
+    # Resolve LLM client
+    try:
+        client = tract._resolve_llm_client("intelligence")
+    except RuntimeError:
+        try:
+            client = tract._resolve_llm_client("chat")
+        except RuntimeError:
+            return DedupResult(
+                duplicate_groups=(),
+                actions_taken=0,
+                tokens_used=0,
+                reasoning="No LLM client configured; no deduplication performed (fail-open).",
+            )
+
+    # Build manifest with longer previews for dedup
+    manifest, commit_entries = _build_intelligence_manifest(
+        tract, include_content_preview=True, preview_length=300,
+    )
+
+    if not commit_entries:
+        return DedupResult(
+            duplicate_groups=(),
+            actions_taken=0,
+            tokens_used=0,
+            reasoning="No commits to analyze.",
+        )
+
+    # Build messages
+    threshold_desc = (
+        "very strict (only near-identical content)" if threshold >= 0.9
+        else "strict (highly similar content)" if threshold >= 0.7
+        else "moderate (substantially overlapping content)" if threshold >= 0.5
+        else "loose (any meaningful overlap)"
+    )
+    user_content = (
+        f"=== DEDUPLICATION PARAMETERS ===\n"
+        f"Similarity threshold: {threshold} ({threshold_desc})\n"
+        f"\n"
+        f"{manifest}"
+    )
+    messages = [
+        {"role": "system", "content": _DEDUP_SYSTEM_PROMPT},
+        {"role": "user", "content": user_content},
+    ]
+
+    # LLM call
+    llm_kwargs: dict[str, Any] = {}
+    if model is not None:
+        llm_kwargs["model"] = model
+    if temperature is not None:
+        llm_kwargs["temperature"] = temperature
+    else:
+        llm_kwargs["temperature"] = 0.1
+    if max_tokens is not None:
+        llm_kwargs["max_tokens"] = max_tokens
+
+    result = _safe_llm_call(client, messages, llm_kwargs)
+    if result is None:
+        return DedupResult(
+            duplicate_groups=(),
+            actions_taken=0,
+            tokens_used=0,
+            reasoning="LLM call failed; no deduplication performed (fail-open).",
+        )
+
+    raw_text, tokens_used = result
+    reasoning, groups = _parse_dedup_response(raw_text, commit_entries)
+
+    # Apply SKIP annotations if auto_skip is enabled
+    actions_taken = 0
+    if auto_skip and groups:
+        actions_taken = _apply_skip_annotations(tract, groups, commit_entries)
+
+    return DedupResult(
+        duplicate_groups=tuple(tuple(g) for g in groups),
+        actions_taken=actions_taken,
+        tokens_used=tokens_used,
+        reasoning=reasoning,
+    )
+
+
+async def adeduplicate(
+    tract: Tract,
+    *,
+    threshold: float = 0.8,
+    auto_skip: bool = False,
+    model: str | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+) -> DedupResult:
+    """Async version of :func:`deduplicate`."""
+    # Resolve LLM client
+    try:
+        client = tract._resolve_llm_client("intelligence")
+    except RuntimeError:
+        try:
+            client = tract._resolve_llm_client("chat")
+        except RuntimeError:
+            return DedupResult(
+                duplicate_groups=(),
+                actions_taken=0,
+                tokens_used=0,
+                reasoning="No LLM client configured; no deduplication performed (fail-open).",
+            )
+
+    manifest, commit_entries = _build_intelligence_manifest(
+        tract, include_content_preview=True, preview_length=300,
+    )
+
+    if not commit_entries:
+        return DedupResult(
+            duplicate_groups=(),
+            actions_taken=0,
+            tokens_used=0,
+            reasoning="No commits to analyze.",
+        )
+
+    threshold_desc = (
+        "very strict (only near-identical content)" if threshold >= 0.9
+        else "strict (highly similar content)" if threshold >= 0.7
+        else "moderate (substantially overlapping content)" if threshold >= 0.5
+        else "loose (any meaningful overlap)"
+    )
+    user_content = (
+        f"=== DEDUPLICATION PARAMETERS ===\n"
+        f"Similarity threshold: {threshold} ({threshold_desc})\n"
+        f"\n"
+        f"{manifest}"
+    )
+    messages = [
+        {"role": "system", "content": _DEDUP_SYSTEM_PROMPT},
+        {"role": "user", "content": user_content},
+    ]
+
+    llm_kwargs: dict[str, Any] = {}
+    if model is not None:
+        llm_kwargs["model"] = model
+    if temperature is not None:
+        llm_kwargs["temperature"] = temperature
+    else:
+        llm_kwargs["temperature"] = 0.1
+    if max_tokens is not None:
+        llm_kwargs["max_tokens"] = max_tokens
+
+    result = await _async_safe_llm_call(client, messages, llm_kwargs)
+    if result is None:
+        return DedupResult(
+            duplicate_groups=(),
+            actions_taken=0,
+            tokens_used=0,
+            reasoning="LLM call failed; no deduplication performed (fail-open).",
+        )
+
+    raw_text, tokens_used = result
+    reasoning, groups = _parse_dedup_response(raw_text, commit_entries)
+
+    actions_taken = 0
+    if auto_skip and groups:
+        actions_taken = _apply_skip_annotations(tract, groups, commit_entries)
+
+    return DedupResult(
+        duplicate_groups=tuple(tuple(g) for g in groups),
+        actions_taken=actions_taken,
+        tokens_used=tokens_used,
+        reasoning=reasoning,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Auto-skip helper
+# ---------------------------------------------------------------------------
+
+def _apply_skip_annotations(
+    tract: Tract,
+    groups: list[list[str]],
+    commit_entries: list[dict[str, Any]],
+) -> int:
+    """Annotate older duplicates in each group as SKIP.
+
+    Within each group, the newest commit (first in commit_entries order,
+    which is newest-first) is kept; all others get SKIP.
+
+    Returns the number of SKIP annotations applied.
+    """
+    from tract.models.annotations import Priority
+
+    # Build ordering: commit_entries is newest-first, so lower index = newer
+    hash_order: dict[str, int] = {}
+    for idx, entry in enumerate(commit_entries):
+        hash_order[entry["hash"]] = idx
+
+    actions = 0
+    for group in groups:
+        if len(group) < 2:
+            continue
+        # Sort by order: lower index = newer
+        sorted_group = sorted(
+            group,
+            key=lambda h: hash_order.get(h, 999999),
+        )
+        # Keep the newest (first), skip the rest
+        for h in sorted_group[1:]:
+            try:
+                tract.annotate(
+                    h,
+                    Priority.SKIP,
+                    reason="Duplicate content detected by deduplicate()",
+                )
+                actions += 1
+            except Exception:
+                logger.warning(
+                    "Failed to annotate commit %s as SKIP during dedup.",
+                    h[:8],
+                    exc_info=True,
+                )
+    return actions
