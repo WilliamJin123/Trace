@@ -219,11 +219,15 @@ def callable_to_tool(
         # Resolve type: prefer get_type_hints, fall back to signature annotation
         annotation = resolved_hints.get(param_name, param.annotation)
         if annotation is inspect.Parameter.empty:
-            schema_type = "string"  # default to string
+            schema_result: str | dict[str, Any] = "string"
         else:
-            schema_type = _type_to_schema(annotation)
+            schema_result = _type_to_schema(annotation)
 
-        prop: dict[str, Any] = {"type": schema_type}
+        # _type_to_schema returns either a type string or a full schema dict
+        if isinstance(schema_result, dict):
+            prop: dict[str, Any] = dict(schema_result)
+        else:
+            prop = {"type": schema_result}
 
         # Add description from docstring if available
         if param_name in param_descriptions:
@@ -262,13 +266,21 @@ def _get_type_hints(fn: Any) -> dict[str, Any]:
         return {}
 
 
-def _type_to_schema(annotation: Any) -> str:
-    """Map a Python type annotation to a JSON Schema type string.
+def _type_to_schema(annotation: Any) -> str | dict[str, Any]:
+    """Map a Python type annotation to a JSON Schema type or schema dict.
 
-    Handles both real types (``int``) and stringified annotations (``'int'``)
-    from ``from __future__ import annotations``.
+    Handles:
+    - Primitive types: ``str``, ``int``, ``float``, ``bool``, ``dict``, ``list``
+    - Generic lists: ``list[str]`` → ``{"type": "array", "items": {"type": "string"}}``
+    - Optional: ``Optional[str]``, ``str | None`` → ``"string"`` (nullable not
+      added since most LLM APIs ignore it)
+    - Literal: ``Literal["a", "b"]`` → ``{"type": "string", "enum": ["a", "b"]}``
+    - Pydantic BaseModel subclasses → full JSON schema via ``model_json_schema()``
+    - Stringified annotations from ``from __future__ import annotations``
     """
-    # Direct type match
+    import typing
+
+    # Direct type match (primitives)
     result = _TYPE_SCHEMA_MAP.get(annotation)
     if result is not None:
         return result
@@ -276,6 +288,48 @@ def _type_to_schema(annotation: Any) -> str:
     # String annotation (from __future__ import annotations)
     if isinstance(annotation, str):
         return _STR_ANNOTATION_MAP.get(annotation, "string")
+
+    # Get the origin type for generic annotations (list[str] -> list, etc.)
+    origin = typing.get_origin(annotation)
+    args = typing.get_args(annotation)
+
+    # Handle Literal["a", "b"] -> {"type": "string", "enum": ["a", "b"]}
+    if origin is typing.Literal:
+        # Infer type from the first value
+        if args and isinstance(args[0], int):
+            return {"type": "integer", "enum": list(args)}
+        return {"type": "string", "enum": list(args)}
+
+    # Handle Optional[T] / Union[T, None] / T | None
+    if origin is typing.Union:
+        non_none = [a for a in args if a is not type(None)]
+        if non_none:
+            return _type_to_schema(non_none[0])
+        return "string"
+
+    # Handle list[T] -> {"type": "array", "items": {...}}
+    if origin is list:
+        if args:
+            items_schema = _type_to_schema(args[0])
+            if isinstance(items_schema, dict):
+                return {"type": "array", "items": items_schema}
+            return {"type": "array", "items": {"type": items_schema}}
+        return "array"
+
+    # Handle dict[K, V] -> {"type": "object"}
+    if origin is dict:
+        return "object"
+
+    # Handle Pydantic BaseModel subclasses
+    try:
+        from pydantic import BaseModel
+        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+            schema = annotation.model_json_schema()
+            # Strip the $defs key for cleaner inline schemas
+            schema.pop("$defs", None)
+            return schema
+    except (ImportError, TypeError):
+        pass
 
     return "string"
 

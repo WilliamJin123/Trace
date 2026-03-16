@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
+from typing import Literal, Optional
+
 import pytest
+from pydantic import BaseModel
 
 from tract import Tract
 from tract.toolkit.callables import callable_to_tool, _parse_param_docs
 from tract.toolkit.models import ToolDefinition
+
+
+class SearchParams(BaseModel):
+    """Test model for Pydantic integration."""
+    query: str
+    limit: int = 10
 
 
 # ---------------------------------------------------------------------------
@@ -99,6 +108,93 @@ class TestCallableToTool:
         assert props["b"]["type"] == "boolean"
         assert props["d"]["type"] == "object"
         assert props["l"]["type"] == "array"
+
+    def test_list_of_str(self):
+        def search(tags: list[str]) -> str:
+            """Search by tags."""
+            return ""
+
+        td = callable_to_tool(search)
+        prop = td.parameters["properties"]["tags"]
+        assert prop["type"] == "array"
+        assert prop["items"] == {"type": "string"}
+
+    def test_list_of_int(self):
+        def pick(ids: list[int]) -> str:
+            """Pick by IDs."""
+            return ""
+
+        td = callable_to_tool(pick)
+        prop = td.parameters["properties"]["ids"]
+        assert prop["type"] == "array"
+        assert prop["items"] == {"type": "integer"}
+
+    def test_bare_list_no_items(self):
+        def process(data: list) -> str:
+            """Process data."""
+            return ""
+
+        td = callable_to_tool(process)
+        assert td.parameters["properties"]["data"]["type"] == "array"
+        assert "items" not in td.parameters["properties"]["data"]
+
+    def test_optional_str(self):
+        def greet(name: str, title: Optional[str] = None) -> str:
+            """Greet someone."""
+            return ""
+
+        td = callable_to_tool(greet)
+        # Optional[str] should resolve to string (the inner type)
+        assert td.parameters["properties"]["title"]["type"] == "string"
+
+    def test_union_none(self):
+        def fetch(url: str, timeout: int | None = None) -> str:
+            """Fetch URL."""
+            return ""
+
+        td = callable_to_tool(fetch)
+        assert td.parameters["properties"]["timeout"]["type"] == "integer"
+
+    def test_literal_strings(self):
+        def sort(order: Literal["asc", "desc"] = "asc") -> str:
+            """Sort items."""
+            return ""
+
+        td = callable_to_tool(sort)
+        prop = td.parameters["properties"]["order"]
+        assert prop["type"] == "string"
+        assert prop["enum"] == ["asc", "desc"]
+
+    def test_literal_ints(self):
+        def pick(priority: Literal[1, 2, 3]) -> str:
+            """Pick priority."""
+            return ""
+
+        td = callable_to_tool(pick)
+        prop = td.parameters["properties"]["priority"]
+        assert prop["type"] == "integer"
+        assert prop["enum"] == [1, 2, 3]
+
+    def test_pydantic_model(self):
+        def search(params: SearchParams) -> str:
+            """Search with structured params."""
+            return ""
+
+        td = callable_to_tool(search)
+        prop = td.parameters["properties"]["params"]
+        # Should be a full schema dict with properties
+        assert prop["type"] == "object"
+        assert "query" in prop["properties"]
+        assert prop["properties"]["query"]["type"] == "string"
+        assert prop["properties"]["limit"]["type"] == "integer"
+
+    def test_dict_with_types(self):
+        def process(data: dict[str, int]) -> str:
+            """Process data."""
+            return ""
+
+        td = callable_to_tool(process)
+        assert td.parameters["properties"]["data"]["type"] == "object"
 
     def test_handler_is_callable(self):
         def adder(a: int, b: int) -> str:
