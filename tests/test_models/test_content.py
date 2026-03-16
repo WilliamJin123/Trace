@@ -287,8 +287,8 @@ class TestBuiltinTypeHints:
     def test_instruction_is_system_role(self):
         assert BUILTIN_TYPE_HINTS["instruction"].default_role == "system"
 
-    def test_tool_io_compresses_aggressively(self):
-        assert BUILTIN_TYPE_HINTS["tool_io"].compression_priority < 50
+    def test_tool_io_default_role(self):
+        assert BUILTIN_TYPE_HINTS["tool_io"].default_role == "tool"
 
     def test_builtin_content_types_set(self):
         assert BUILTIN_CONTENT_TYPES == {

@@ -66,7 +66,7 @@ class TestOperationClients:
         assert oc.chat is None
         assert oc.merge is None
         assert oc.compress is None
-        assert oc.orchestrate is None
+        assert oc.message is None
 
     def test_set_fields(self):
         client = MockLLMClient()

@@ -208,7 +208,6 @@ class OperationConfigs:
     chat: LLMConfig | None = None
     merge: LLMConfig | None = None
     compress: LLMConfig | None = None
-    orchestrate: LLMConfig | None = None
     message: LLMConfig | None = None
 
 
@@ -232,7 +231,6 @@ class OperationClients:
     chat: LLMClient | None = None
     merge: LLMClient | None = None
     compress: LLMClient | None = None
-    orchestrate: LLMClient | None = None
     message: LLMClient | None = None
 
 
@@ -249,13 +247,11 @@ class OperationPrompts:
         from tract import OperationPrompts
         t.configure_prompts(OperationPrompts(
             compress="You are a concise summarizer.",
-            orchestrate="You are a context management agent.",
         ))
     """
 
     compress: str | None = None
     merge: str | None = None
-    orchestrate: str | None = None
     message: str | None = None
     commit_message: str | None = None
 

@@ -2,7 +2,7 @@
 
 Covers LLMConfig dataclass, configure_operations(), _resolve_llm_config(),
 Tract.open() with operation_configs, and integration with chat/generate, merge,
-compress, and orchestrate operations.
+compress, and message operations.
 """
 
 from __future__ import annotations
@@ -319,7 +319,7 @@ class TestOpenWithOperationConfigs:
         assert t.operation_configs.chat is None
         assert t.operation_configs.merge is None
         assert t.operation_configs.compress is None
-        assert t.operation_configs.orchestrate is None
+        assert t.operation_configs.message is None
         t.close()
 
 
@@ -792,7 +792,7 @@ class TestOperationConfigsDataclass:
         assert oc.chat is None
         assert oc.merge is None
         assert oc.compress is None
-        assert oc.orchestrate is None
+        assert oc.message is None
 
     def test_create_with_values(self):
         """Fields can be set at construction."""
@@ -803,7 +803,7 @@ class TestOperationConfigsDataclass:
         assert oc.chat.model == "chat-model"
         assert oc.compress.model == "compress-model"
         assert oc.merge is None
-        assert oc.orchestrate is None
+        assert oc.message is None
 
     def test_frozen(self):
         """Attempting to modify raises FrozenInstanceError."""

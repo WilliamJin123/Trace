@@ -478,7 +478,7 @@ class TestSessionModels:
         hints = BUILTIN_TYPE_HINTS["session"]
         assert hints.default_priority == "pinned"
         assert hints.default_role == "system"
-        assert hints.compression_priority == 95
+        assert hints.compilable is True
 
     def test_session_in_builtin_content_types(self):
         """'session' is in BUILTIN_CONTENT_TYPES."""

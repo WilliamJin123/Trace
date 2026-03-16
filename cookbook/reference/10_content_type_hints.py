@@ -1,22 +1,18 @@
-"""Content Type Hints -- how content types guide compilation and compression
+"""Content Type Hints -- how content types guide compilation
 
 Every content type in tract has a ContentTypeHints dataclass that controls
-its default behavior in the compiler and compressor.  These hints determine:
+its default behavior in the compiler.  These hints determine:
   - default_priority: what Priority annotation a commit gets if none is set
   - default_role: what LLM role the content compiles to (system/user/assistant/tool)
-  - compression_priority: 0=compress first, 100=protect from compression
   - compilable: whether the content appears in compiled output at all
-  - aggregation_rule: how multiple messages of this type are combined
-  - format_roles: additional role constraints for formatting
 
-Understanding hints is essential for controlling what your LLM sees and
-how aggressively the compressor treats different content types.
+Understanding hints is essential for controlling what your LLM sees.
 
 Patterns shown:
   1. Built-in Type Behaviors      -- all 10 types and their default hints
   2. Non-Compilable Types         -- config and metadata are excluded from compile
-  3. Compression Priority          -- which types the compressor targets first
-  4. Reasoning is Auto-Skipped     -- reasoning defaults to SKIP priority
+  3. Default Roles                -- which LLM role each content type maps to
+  4. Reasoning is Auto-Skipped    -- reasoning defaults to SKIP priority
   5. Custom Content Type with Hints -- register a custom type, observe default hints
 
 Demonstrates: BUILTIN_TYPE_HINTS, ContentTypeHints, t.commit(), t.compile(),
@@ -48,8 +44,8 @@ def main() -> None:
     # =================================================================
     #
     # Tract ships with 10 content types, each with a ContentTypeHints
-    # dataclass that controls compiler and compressor behavior.  This
-    # pattern prints every type's hints so you can see the full map.
+    # dataclass that controls compiler behavior.  This pattern prints
+    # every type's hints so you can see the full map.
 
     print("=" * 60)
     print("1. Built-in Type Behaviors")
@@ -57,14 +53,13 @@ def main() -> None:
     print()
 
     # Header
-    print(f"  {'Type':<14} {'Priority':<10} {'Role':<12} {'Compress':<10} {'Compilable'}")
-    print(f"  {'----':<14} {'--------':<10} {'----':<12} {'--------':<10} {'----------'}")
+    print(f"  {'Type':<14} {'Priority':<10} {'Role':<12} {'Compilable'}")
+    print(f"  {'----':<14} {'--------':<10} {'----':<12} {'----------'}")
 
     for name, hints in BUILTIN_TYPE_HINTS.items():
         print(
             f"  {name:<14} {hints.default_priority:<10} "
-            f"{hints.default_role:<12} {hints.compression_priority:<10} "
-            f"{hints.compilable}"
+            f"{hints.default_role:<12} {hints.compilable}"
         )
 
     # Verify the dict has all 10 built-in types
@@ -81,11 +76,8 @@ def main() -> None:
     sample = BUILTIN_TYPE_HINTS["dialogue"]
     assert hasattr(sample, "default_priority")
     assert hasattr(sample, "default_role")
-    assert hasattr(sample, "compression_priority")
     assert hasattr(sample, "compilable")
-    assert hasattr(sample, "aggregation_rule")
-    print("  ContentTypeHints fields verified: default_priority, default_role,")
-    print("    compression_priority, compilable, aggregation_rule, format_roles")
+    print("  ContentTypeHints fields verified: default_priority, default_role, compilable")
 
     print("\n  Built-in type behaviors: PASSED")
 
@@ -148,61 +140,47 @@ def main() -> None:
     print("\n  Non-compilable types: PASSED")
 
     # =================================================================
-    # 3. Compression Priority
+    # 3. Default Roles
     # =================================================================
     #
-    # compression_priority controls which content types the compressor
-    # targets first.  Lower values = compressed first, higher values =
-    # protected longer.  This ranking lets you preserve instructions
-    # while aggressively summarizing tool output.
+    # Each content type maps to an LLM role via default_role. This
+    # determines how the compiler formats the message for LLM APIs.
 
     print()
     print("=" * 60)
-    print("3. Compression Priority")
+    print("3. Default Roles")
     print("=" * 60)
     print()
 
-    # Sort types by compression priority (lowest = compressed first)
-    sorted_types = sorted(
-        BUILTIN_TYPE_HINTS.items(),
-        key=lambda item: item[1].compression_priority,
-    )
-
-    print("  Compression order (first compressed -> last compressed):")
+    print("  Role assignments:")
     print()
-    print(f"  {'Type':<14} {'Priority':<10} {'Meaning'}")
-    print(f"  {'----':<14} {'--------':<10} {'-------'}")
+    print(f"  {'Type':<14} {'Role':<12} {'Meaning'}")
+    print(f"  {'----':<14} {'----':<12} {'-------'}")
 
     descriptions = {
-        "tool_io": "Tool calls/results -- compress aggressively",
-        "reasoning": "Chain-of-thought -- often ephemeral",
-        "dialogue": "User/assistant turns -- moderate protection",
-        "freeform": "Unstructured content -- moderate protection",
-        "artifact": "Code, documents -- somewhat protected",
-        "output": "Final results -- more protected",
-        "config": "Configuration -- high protection (not compiled)",
-        "instruction": "System prompts -- strongly protected",
-        "session": "Session boundaries -- strongly protected",
-        "metadata": "Metadata -- default protection (not compiled)",
+        "tool_io": "Tool calls/results -- tool role for API compatibility",
+        "reasoning": "Chain-of-thought -- assistant (but auto-skipped)",
+        "dialogue": "User/assistant turns -- user role (overridden per commit)",
+        "freeform": "Unstructured content -- assistant role",
+        "artifact": "Code, documents -- assistant role",
+        "output": "Final results -- assistant role",
+        "config": "Configuration -- system role (not compiled)",
+        "instruction": "System prompts -- system role",
+        "session": "Session boundaries -- system role",
+        "metadata": "Metadata -- assistant role (not compiled)",
     }
 
-    for name, hints in sorted_types:
+    for name, hints in BUILTIN_TYPE_HINTS.items():
         desc = descriptions.get(name, "")
-        print(f"  {name:<14} {hints.compression_priority:<10} {desc}")
+        print(f"  {name:<14} {hints.default_role:<12} {desc}")
 
-    # Verify key ordering invariants
-    tool_io_p = BUILTIN_TYPE_HINTS["tool_io"].compression_priority
-    instruction_p = BUILTIN_TYPE_HINTS["instruction"].compression_priority
-    session_p = BUILTIN_TYPE_HINTS["session"].compression_priority
-    dialogue_p = BUILTIN_TYPE_HINTS["dialogue"].compression_priority
+    # Verify key role assignments
+    assert BUILTIN_TYPE_HINTS["instruction"].default_role == "system"
+    assert BUILTIN_TYPE_HINTS["tool_io"].default_role == "tool"
+    assert BUILTIN_TYPE_HINTS["dialogue"].default_role == "user"
+    print(f"\n  Verified: instruction=system, tool_io=tool, dialogue=user")
 
-    assert tool_io_p < dialogue_p, "tool_io should compress before dialogue"
-    assert dialogue_p < instruction_p, "dialogue should compress before instruction"
-    assert instruction_p <= session_p, "instructions and sessions are highly protected"
-    print(f"\n  Verified: tool_io({tool_io_p}) < dialogue({dialogue_p}) "
-          f"< instruction({instruction_p}) <= session({session_p})")
-
-    print("\n  Compression priority: PASSED")
+    print("\n  Default roles: PASSED")
 
     # =================================================================
     # 4. Reasoning is Auto-Skipped
@@ -274,8 +252,8 @@ def main() -> None:
     #
     # When you register a custom content type, it gets default
     # ContentTypeHints (all defaults: normal priority, assistant role,
-    # compression_priority=50, compilable=True).  This means custom
-    # types behave like standard compilable content out of the box.
+    # compilable=True).  This means custom types behave like standard
+    # compilable content out of the box.
 
     print()
     print("=" * 60)
@@ -312,7 +290,6 @@ def main() -> None:
         print(f"  Default hints applied:")
         print(f"    default_priority:      {default_hints.default_priority}")
         print(f"    default_role:          {default_hints.default_role}")
-        print(f"    compression_priority:  {default_hints.compression_priority}")
         print(f"    compilable:            {default_hints.compilable}")
 
         # Custom type IS compilable (default) -- it appears in compile output
@@ -336,20 +313,16 @@ def main() -> None:
     print("  ContentTypeHints fields:")
     print("    default_priority      -- Priority annotation if none set")
     print("    default_role          -- LLM role (system/user/assistant/tool)")
-    print("    compression_priority  -- 0=compress first, 100=protect")
     print("    compilable            -- whether to include in compile() output")
-    print("    aggregation_rule      -- how to combine multiples (concatenate)")
-    print("    format_roles          -- additional formatting constraints")
-    print("    summary_instruction   -- guidance for LLM compression")
     print()
     print("  Key behaviors:")
-    print("    instruction  -- pinned priority, system role, highly protected")
-    print("    dialogue     -- normal priority, moderate compression protection")
-    print("    tool_io      -- compressed first (priority=30)")
+    print("    instruction  -- pinned priority, system role")
+    print("    dialogue     -- normal priority, user role")
+    print("    tool_io      -- normal priority, tool role")
     print("    reasoning    -- auto-skipped from compilation")
     print("    config       -- not compiled (stored in DAG only)")
     print("    metadata     -- not compiled (stored in DAG only)")
-    print("    custom types -- get all defaults (normal, compilable, priority=50)")
+    print("    custom types -- get all defaults (normal, assistant, compilable)")
     print()
     print("Done.")
 

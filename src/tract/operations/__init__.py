@@ -27,5 +27,6 @@ def row_to_info(row: CommitRow) -> CommitInfo:
         token_count=row.token_count,
         metadata=row.metadata_json,
         generation_config=row.generation_config_json,
+        tags=list(row.tags_json) if row.tags_json else [],
         created_at=row.created_at,
     )

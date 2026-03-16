@@ -305,10 +305,6 @@ class ContentTypeHints:
 
     default_priority: str = "normal"  # Priority enum value name
     default_role: str = "assistant"
-    compression_priority: int = 50  # 0=compress first, 100=protect
-    aggregation_rule: str = "concatenate"
-    format_roles: frozenset[str] = frozenset()
-    summary_instruction: str = ""
     compilable: bool = True
 
 
@@ -316,52 +312,41 @@ BUILTIN_TYPE_HINTS: dict[str, ContentTypeHints] = {
     "instruction": ContentTypeHints(
         default_priority="pinned",
         default_role="system",
-        compression_priority=90,
     ),
     "dialogue": ContentTypeHints(
         default_priority="normal",
         default_role="user",
-        compression_priority=50,
     ),
     "tool_io": ContentTypeHints(
         default_priority="normal",
         default_role="tool",
-        compression_priority=30,
     ),
     "reasoning": ContentTypeHints(
         default_priority="skip",
         default_role="assistant",
-        compression_priority=40,
     ),
     "artifact": ContentTypeHints(
         default_priority="normal",
         default_role="assistant",
-        compression_priority=60,
     ),
     "output": ContentTypeHints(
         default_priority="normal",
         default_role="assistant",
-        compression_priority=70,
     ),
     "freeform": ContentTypeHints(
         default_priority="normal",
         default_role="assistant",
-        compression_priority=50,
     ),
     "session": ContentTypeHints(
         default_priority="pinned",
         default_role="system",
-        compression_priority=95,  # Protect session boundaries from compression
     ),
     "config": ContentTypeHints(
         default_priority="normal",
         default_role="system",
-        compression_priority=85,
         compilable=False,
     ),
     "metadata": ContentTypeHints(
-        format_roles=frozenset({"system"}),
-        summary_instruction="Preserve metadata kind and key data points.",
         compilable=False,
     ),
 }

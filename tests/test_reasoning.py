@@ -154,7 +154,7 @@ class TestReasoningDefaults:
         hints = BUILTIN_TYPE_HINTS["reasoning"]
         assert hints.default_priority == "skip"
         assert hints.default_role == "assistant"
-        assert hints.compression_priority == 40
+        assert hints.default_role == "assistant"
 
     def test_default_type_priorities_reasoning_skip(self):
         assert DEFAULT_TYPE_PRIORITIES["reasoning"] == Priority.SKIP
