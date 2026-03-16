@@ -1392,6 +1392,41 @@ class Tract:
             raise ValueError(f"Route '{name}' not found.")
         self._routing_table.remove_route(name)
 
+    def _route_fallback(self, query: str) -> RoutingResult:
+        """Fuzzy-only routing when no SemanticRouter is provided."""
+        from tract.routing import Route, RoutingResult
+
+        self._ensure_routing_table()
+        matches = self._routing_table.match(query)  # type: ignore[union-attr]
+        if matches:
+            best = matches[0]
+        else:
+            best = Route(
+                target="",
+                route_type="branch",
+                confidence=0.0,
+                reasoning="No matching routes found.",
+            )
+        return RoutingResult(
+            route=best,
+            applied=False,
+            tokens_used=0,
+            method="fuzzy",
+        )
+
+    def _route_apply(self, result: RoutingResult, apply: bool) -> RoutingResult:
+        """Optionally apply a routing result."""
+        if apply and result.route.target and result.route.confidence > 0:
+            from tract.routing import RoutingResult
+            applied = self._apply_route(result.route)
+            return RoutingResult(
+                route=result.route,
+                applied=applied,
+                tokens_used=result.tokens_used,
+                method=result.method,
+            )
+        return result
+
     def route(
         self,
         query: str,
@@ -1421,40 +1456,14 @@ class Tract:
             print(result.route.target, result.route.confidence)
         """
         self._check_open()
-        from tract.routing import RoutingResult, SemanticRouter
+        from tract.routing import SemanticRouter
 
         if router is not None and isinstance(router, SemanticRouter):
             result = router.route(query, self)
         else:
-            self._ensure_routing_table()
-            matches = self._routing_table.match(query)  # type: ignore[union-attr]
-            if matches:
-                best = matches[0]
-            else:
-                from tract.routing import Route
-                best = Route(
-                    target="",
-                    route_type="branch",
-                    confidence=0.0,
-                    reasoning="No matching routes found.",
-                )
-            result = RoutingResult(
-                route=best,
-                applied=False,
-                tokens_used=0,
-                method="fuzzy",
-            )
+            result = self._route_fallback(query)
 
-        if apply and result.route.target and result.route.confidence > 0:
-            applied = self._apply_route(result.route)
-            result = RoutingResult(
-                route=result.route,
-                applied=applied,
-                tokens_used=result.tokens_used,
-                method=result.method,
-            )
-
-        return result
+        return self._route_apply(result, apply)
 
     async def aroute(
         self,
@@ -1468,40 +1477,14 @@ class Tract:
         Uses ``aroute()`` on the SemanticRouter if provided.
         """
         self._check_open()
-        from tract.routing import RoutingResult, SemanticRouter
+        from tract.routing import SemanticRouter
 
         if router is not None and isinstance(router, SemanticRouter):
             result = await router.aroute(query, self)
         else:
-            self._ensure_routing_table()
-            matches = self._routing_table.match(query)  # type: ignore[union-attr]
-            if matches:
-                best = matches[0]
-            else:
-                from tract.routing import Route
-                best = Route(
-                    target="",
-                    route_type="branch",
-                    confidence=0.0,
-                    reasoning="No matching routes found.",
-                )
-            result = RoutingResult(
-                route=best,
-                applied=False,
-                tokens_used=0,
-                method="fuzzy",
-            )
+            result = self._route_fallback(query)
 
-        if apply and result.route.target and result.route.confidence > 0:
-            applied = self._apply_route(result.route)
-            result = RoutingResult(
-                route=result.route,
-                applied=applied,
-                tokens_used=result.tokens_used,
-                method=result.method,
-            )
-
-        return result
+        return self._route_apply(result, apply)
 
     # ------------------------------------------------------------------
     # Context intelligence (cherry-pick & deduplication)
@@ -2962,6 +2945,70 @@ class Tract:
         # Default: OpenAI format
         return response.get("usage")
 
+    def _generate_pre(self) -> None:
+        """Shared guards for generate/agenerate."""
+        self._check_open()
+        if not self._has_llm_client("chat"):
+            from tract.llm.errors import LLMConfigError
+            raise LLMConfigError(
+                "No LLM client configured. Pass api_key= or llm_client= "
+                "to Tract.open(), or call configure_llm(client)."
+            )
+        if self._in_batch:
+            raise TraceError("chat()/generate() cannot be used inside batch()")
+
+    def _generate_validate_loop(
+        self,
+        response: ChatResponse,
+        validator: Callable,
+        attempt: int,
+        intermediate_hashes: list[str],
+        hide_retries: bool,
+        max_retries: int,
+        retry_prompt: str | None,
+    ) -> tuple[ChatResponse | None, str | None]:
+        """Process one validation attempt. Returns (final_response, diagnosis).
+
+        If final_response is not None, the loop should return it.
+        If None, diagnosis is returned for steering.
+        """
+        import dataclasses as _dc
+
+        ok, diagnosis = validator(response.text)
+        if ok:
+            if hide_retries and intermediate_hashes:
+                for h in intermediate_hashes:
+                    self.annotate(h, Priority.SKIP,
+                                  reason="retry: hidden intermediate")
+
+            if attempt > 0 and response.commit_info:
+                retry_meta = {"retry_attempts": attempt}
+                existing = response.commit_info.metadata or {}
+                merged = {**existing, **retry_meta}
+                self._commit_repo.update_metadata(
+                    response.commit_info.commit_hash, merged
+                )
+                self._commit_session()
+                updated_info = response.commit_info.model_copy(
+                    update={"metadata": merged}
+                )
+                response = _dc.replace(response, commit_info=updated_info)
+
+            return response, None
+
+        failed_hash = self.head
+        if failed_hash:
+            intermediate_hashes.append(failed_hash)
+
+        if attempt < max_retries:
+            steering = retry_prompt or "Your previous response did not pass validation. Please try again."
+            if diagnosis:
+                steering = f"{steering}\n\nDiagnosis: {diagnosis}"
+            steering_info = self.user(steering)
+            intermediate_hashes.append(steering_info.commit_hash)
+
+        return None, diagnosis
+
     def generate(
         self,
         *,
@@ -3025,17 +3072,7 @@ class Tract:
             TraceError: If called inside batch().
             RetryExhaustedError: If all retry attempts fail validation.
         """
-        self._check_open()
-        if not self._has_llm_client("chat"):
-            from tract.llm.errors import LLMConfigError
-
-            raise LLMConfigError(
-                "No LLM client configured. Pass api_key= or llm_client= "
-                "to Tract.open(), or call configure_llm(client)."
-            )
-
-        if self._in_batch:
-            raise TraceError("chat()/generate() cannot be used inside batch()")
+        self._generate_pre()
 
         if validator is None:
             return self._generate_once(
@@ -3044,9 +3081,6 @@ class Tract:
                 message=message, metadata=metadata,
                 reasoning=reasoning, retry=retry, **kwargs,
             )
-
-        # Validation retry loop
-        import dataclasses as _dc
 
         intermediate_hashes: list[str] = []
         last_diagnosis: str | None = None
@@ -3059,51 +3093,138 @@ class Tract:
                 reasoning=reasoning, retry=retry, **kwargs,
             )
 
-            ok, diagnosis = validator(response.text)
-            if ok:
-                # SKIP-annotate intermediate commits if hiding retries
-                if hide_retries and intermediate_hashes:
-                    for h in intermediate_hashes:
-                        self.annotate(h, Priority.SKIP,
-                                      reason="retry: hidden intermediate")
-
-                # Attach retry metadata to the final commit
-                if attempt > 0 and response.commit_info:
-                    retry_meta = {"retry_attempts": attempt}
-                    existing = response.commit_info.metadata or {}
-                    merged = {**existing, **retry_meta}
-                    self._commit_repo.update_metadata(
-                        response.commit_info.commit_hash, merged
-                    )
-                    self._commit_session()
-                    updated_info = response.commit_info.model_copy(
-                        update={"metadata": merged}
-                    )
-                    response = _dc.replace(response, commit_info=updated_info)
-
-                return response
-
+            final, diagnosis = self._generate_validate_loop(
+                response, validator, attempt, intermediate_hashes,
+                hide_retries, max_retries, retry_prompt,
+            )
+            if final is not None:
+                return final
             last_diagnosis = diagnosis
 
-            # Record failed response hash for deferred SKIP
-            failed_hash = self.head
-            if failed_hash:
-                intermediate_hashes.append(failed_hash)
-
-            # Steer with diagnosis if not last attempt
-            if attempt < max_retries:
-                steering = retry_prompt or "Your previous response did not pass validation. Please try again."
-                if diagnosis:
-                    steering = f"{steering}\n\nDiagnosis: {diagnosis}"
-                steering_info = self.user(steering)
-                intermediate_hashes.append(steering_info.commit_hash)
-
-        # All retries exhausted
         from tract.exceptions import RetryExhaustedError
         raise RetryExhaustedError(
             attempts=max_retries + 1,
             last_diagnosis=last_diagnosis or "validation failed",
             last_result=response.text,
+        )
+
+    def _generate_once_pre(
+        self,
+        *,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        llm_config: LLMConfig | None = None,
+        **kwargs: Any,
+    ) -> tuple[Any, list[dict], dict]:
+        """Pre-LLM logic for _generate_once: compile, resolve, middleware.
+
+        Returns (chat_client, messages, llm_kwargs).
+        """
+        compiled = self.compile()
+        messages = compiled.to_dicts()
+
+        if self._compile_record_repo is not None:
+            self._save_compile_record(
+                self.head or "",
+                compiled.token_count,
+                compiled.commit_count,
+                compiled.token_source,
+                compiled.commit_hashes,
+            )
+
+        chat_client = self._resolve_llm_client("chat")
+        llm_kwargs = self._resolve_llm_config(
+            "chat", model=model, temperature=temperature,
+            max_tokens=max_tokens, llm_config=llm_config, **kwargs,
+        )
+        if compiled.tools:
+            llm_kwargs["tools"] = compiled.tools
+
+        self._run_middleware(
+            "pre_generate",
+            pending={"messages": messages, "config": llm_kwargs},
+        )
+
+        return chat_client, messages, llm_kwargs
+
+    def _generate_once_post(
+        self,
+        response: Any,
+        chat_client: Any,
+        llm_kwargs: dict,
+        *,
+        message: str | None = None,
+        metadata: dict | None = None,
+        reasoning: bool = True,
+    ) -> ChatResponse:
+        """Post-LLM logic for _generate_once: extract, commit, usage."""
+        from tract.protocols import ChatResponse, ToolCall as _ToolCall
+
+        text = self._extract_content(response, client=chat_client)
+        usage_dict = self._extract_usage(response, client=chat_client)
+
+        self._run_middleware(
+            "post_generate",
+            pending={
+                "response": text or "",
+                "tokens_used": (
+                    usage_dict.get("total_tokens", 0) if usage_dict else 0
+                ),
+            },
+        )
+
+        reasoning_text: str | None = None
+        reasoning_format: str = "parsed"
+        if hasattr(chat_client, "extract_reasoning"):
+            reasoning_result = chat_client.extract_reasoning(response)
+            if reasoning_result is not None:
+                reasoning_text, reasoning_format = reasoning_result
+                if reasoning_format == "think_tags":
+                    import re as _re
+                    text = _re.sub(r"<think>.*?</think>", "", text, flags=_re.DOTALL).strip()
+
+        raw_tool_calls = None
+        try:
+            raw_tool_calls = response["choices"][0]["message"].get("tool_calls")
+        except (KeyError, IndexError, TypeError):
+            pass
+        tool_calls = (
+            [_ToolCall.from_openai(tc) for tc in raw_tool_calls]
+            if raw_tool_calls
+            else None
+        )
+
+        gen_config = self._build_generation_config(response, resolved=llm_kwargs)
+
+        reasoning_commit_info: CommitInfo | None = None
+        if reasoning_text and self._commit_reasoning and reasoning:
+            reasoning_commit_info = self.reasoning(
+                reasoning_text,
+                format=reasoning_format,
+            )
+
+        commit_meta = metadata
+        if tool_calls:
+            commit_meta = {**(metadata or {}), "tool_calls": [tc.to_dict() for tc in tool_calls]}
+        commit_info = self.assistant(
+            text, message=message, metadata=commit_meta, generation_config=gen_config
+        )
+
+        usage = None
+        if usage_dict:
+            usage = self._normalize_usage_dict(usage_dict)
+            self.record_usage(usage)
+
+        return ChatResponse(
+            text=text,
+            usage=usage,
+            commit_info=commit_info,
+            generation_config=LLMConfig.from_dict(gen_config) or LLMConfig(),
+            reasoning=reasoning_text,
+            reasoning_commit=reasoning_commit_info,
+            tool_calls=tool_calls,
+            raw_response=response,
         )
 
     def _generate_once(
@@ -3119,41 +3240,10 @@ class Tract:
         retry: RetryConfig | None = None,
         **kwargs: Any,
     ) -> ChatResponse:
-        """Single generate attempt (no retry). Internal helper.
-
-        Contains the original generate() logic: compile, LLM call, commit, usage.
-        When *retry* is provided, the raw LLM call is wrapped in
-        :func:`_retry_with_backoff` to handle transient failures.
-        """
-        from tract.protocols import ChatResponse
-
-        # 1. Compile context
-        compiled = self.compile()
-        messages = compiled.to_dicts()
-
-        # 1b. Persist compile record (SC-3: chat/generate auto-create)
-        if self._compile_record_repo is not None:
-            self._save_compile_record(
-                self.head or "",
-                compiled.token_count,
-                compiled.commit_count,
-                compiled.token_source,
-                compiled.commit_hashes,
-            )
-
-        # 2. Call LLM (resolve per-operation client and config)
-        chat_client = self._resolve_llm_client("chat")
-        llm_kwargs = self._resolve_llm_config(
-            "chat", model=model, temperature=temperature,
+        """Single generate attempt (no retry). Internal helper."""
+        chat_client, messages, llm_kwargs = self._generate_once_pre(
+            model=model, temperature=temperature,
             max_tokens=max_tokens, llm_config=llm_config, **kwargs,
-        )
-        if compiled.tools:
-            llm_kwargs["tools"] = compiled.tools
-
-        # Pre-generate middleware (can block)
-        self._run_middleware(
-            "pre_generate",
-            pending={"messages": messages, "config": llm_kwargs},
         )
 
         effective_retry = retry or self._retry_config
@@ -3161,83 +3251,9 @@ class Tract:
             chat_client.chat, effective_retry, messages, **llm_kwargs,
         )
 
-        # 3. Extract content and usage (dispatch to client methods, with
-        #    OpenAI-format defaults for duck-typed clients that lack them)
-        text = self._extract_content(response, client=chat_client)
-        usage_dict = self._extract_usage(response, client=chat_client)
-
-        # Post-generate middleware (informational, cannot block)
-        self._run_middleware(
-            "post_generate",
-            pending={
-                "response": text or "",
-                "tokens_used": (
-                    usage_dict.get("total_tokens", 0) if usage_dict else 0
-                ),
-            },
-        )
-
-        # 3a. Extract reasoning (duck-typed optional on LLM client)
-        reasoning_text: str | None = None
-        reasoning_format: str = "parsed"
-        if hasattr(chat_client, "extract_reasoning"):
-            reasoning_result = chat_client.extract_reasoning(response)
-            if reasoning_result is not None:
-                reasoning_text, reasoning_format = reasoning_result
-                # When <think> tags were extracted, strip them from the
-                # assistant text so ChatResponse.text is clean
-                if reasoning_format == "think_tags":
-                    import re as _re
-                    text = _re.sub(r"<think>.*?</think>", "", text, flags=_re.DOTALL).strip()
-
-        # 3b. Parse tool_calls from the raw response (if any)
-        from tract.protocols import ToolCall as _ToolCall
-
-        raw_tool_calls = None
-        try:
-            raw_tool_calls = response["choices"][0]["message"].get("tool_calls")
-        except (KeyError, IndexError, TypeError):
-            pass
-        tool_calls = (
-            [_ToolCall.from_openai(tc) for tc in raw_tool_calls]
-            if raw_tool_calls
-            else None
-        )
-
-        # 4. Build generation_config (use resolved kwargs for accurate tracking)
-        gen_config = self._build_generation_config(response, resolved=llm_kwargs)
-
-        # 5a. Commit reasoning trace (if extracted and enabled)
-        reasoning_commit_info: CommitInfo | None = None
-        if reasoning_text and self._commit_reasoning and reasoning:
-            reasoning_commit_info = self.reasoning(
-                reasoning_text,
-                format=reasoning_format,
-            )
-
-        # 5b. Commit assistant response (include tool_calls in metadata for provenance)
-        commit_meta = metadata
-        if tool_calls:
-            commit_meta = {**(metadata or {}), "tool_calls": [tc.to_dict() for tc in tool_calls]}
-        commit_info = self.assistant(
-            text, message=message, metadata=commit_meta, generation_config=gen_config
-        )
-
-        # 6. Record usage
-        usage = None
-        if usage_dict:
-            usage = self._normalize_usage_dict(usage_dict)
-            self.record_usage(usage)
-
-        return ChatResponse(
-            text=text,
-            usage=usage,
-            commit_info=commit_info,
-            generation_config=LLMConfig.from_dict(gen_config) or LLMConfig(),
-            reasoning=reasoning_text,
-            reasoning_commit=reasoning_commit_info,
-            tool_calls=tool_calls,
-            raw_response=response,
+        return self._generate_once_post(
+            response, chat_client, llm_kwargs,
+            message=message, metadata=metadata, reasoning=reasoning,
         )
 
     def chat(
@@ -3438,6 +3454,52 @@ class Tract:
             on_tool_result=on_tool_result,
         )
 
+    def _revise_post(
+        self,
+        response: ChatResponse,
+        commit_hash: str,
+        prompt: str,
+        message: str | None,
+    ) -> ChatResponse:
+        """Shared post-chat logic for revise/arevise: resolve, edit, skip."""
+        import dataclasses as _dc
+
+        resolved = self.resolve_commit(commit_hash)
+        target_row = self._commit_repo.get(resolved)
+        if target_row is None:
+            from tract.exceptions import EditTargetError
+            raise EditTargetError(f"EDIT target commit not found: {resolved}")
+
+        ct = target_row.content_type
+        if ct == "instruction":
+            role = "system"
+        elif ct == "dialogue":
+            blob = self._blob_repo.get(target_row.content_hash)
+            data = json.loads(blob.payload_json) if blob else {}
+            role = data.get("role", "assistant")
+        else:
+            role = "assistant"
+
+        shorthand = {"system": self.system, "user": self.user, "assistant": self.assistant}
+        edit_fn = shorthand.get(role, self.assistant)
+        edit_info = edit_fn(
+            response.text,
+            edit=resolved,
+            message=message or f"revise: {prompt[:60]}",
+        )
+
+        if response.commit_info.parent_hash is not None:
+            self.annotate(response.commit_info.parent_hash, Priority.SKIP)
+        self.annotate(response.commit_info.commit_hash, Priority.SKIP)
+        if response.reasoning_commit is not None:
+            self.annotate(response.reasoning_commit.commit_hash, Priority.SKIP)
+
+        return _dc.replace(
+            response,
+            commit_info=edit_info,
+            prompt=prompt,
+        )
+
     def revise(
         self,
         commit_hash: str,
@@ -3480,9 +3542,6 @@ class Tract:
             EditTargetError: If ``commit_hash`` cannot be found or is
                 itself an EDIT commit.
         """
-        import dataclasses as _dc
-
-        # Step 1: Get the LLM's revised text via a normal chat call.
         response = self.chat(
             prompt,
             model=model,
@@ -3492,50 +3551,7 @@ class Tract:
             reasoning=reasoning,
             **kwargs,
         )
-
-        # Step 2: Resolve the target to determine the content role.
-        resolved = self.resolve_commit(commit_hash)
-        target_row = self._commit_repo.get(resolved)
-        if target_row is None:
-            from tract.exceptions import EditTargetError
-            raise EditTargetError(f"EDIT target commit not found: {resolved}")
-
-        # Determine the role of the target commit so we use the right
-        # shorthand (system / user / assistant).
-        ct = target_row.content_type
-        if ct == "instruction":
-            role = "system"
-        elif ct == "dialogue":
-            # Load the blob to get the role field.
-            blob = self._blob_repo.get(target_row.content_hash)
-            data = json.loads(blob.payload_json) if blob else {}
-            role = data.get("role", "assistant")
-        else:
-            role = "assistant"
-
-        # Step 3: Apply as an EDIT commit.
-        shorthand = {"system": self.system, "user": self.user, "assistant": self.assistant}
-        edit_fn = shorthand.get(role, self.assistant)
-        edit_info = edit_fn(
-            response.text,
-            edit=resolved,
-            message=message or f"revise: {prompt[:60]}",
-        )
-
-        # Step 4: SKIP the intermediate user + assistant commits from
-        # the chat() call so only the EDIT survives in compiled context.
-        if response.commit_info.parent_hash is not None:
-            self.annotate(response.commit_info.parent_hash, Priority.SKIP)
-        self.annotate(response.commit_info.commit_hash, Priority.SKIP)
-        if response.reasoning_commit is not None:
-            self.annotate(response.reasoning_commit.commit_hash, Priority.SKIP)
-
-        # Return a ChatResponse pointing to the EDIT commit.
-        return _dc.replace(
-            response,
-            commit_info=edit_info,
-            prompt=prompt,
-        )
+        return self._revise_post(response, commit_hash, prompt, message)
 
     # ------------------------------------------------------------------
     # Async LLM methods
@@ -3556,34 +3572,10 @@ class Tract:
     ) -> ChatResponse:
         """Async version of :meth:`_generate_once`."""
         from tract.llm.protocols import acall_llm
-        from tract.protocols import ChatResponse
 
-        # 1. Compile context (sync — local operation)
-        compiled = self.compile()
-        messages = compiled.to_dicts()
-
-        if self._compile_record_repo is not None:
-            self._save_compile_record(
-                self.head or "",
-                compiled.token_count,
-                compiled.commit_count,
-                compiled.token_source,
-                compiled.commit_hashes,
-            )
-
-        # 2. Call LLM (async)
-        chat_client = self._resolve_llm_client("chat")
-        llm_kwargs = self._resolve_llm_config(
-            "chat", model=model, temperature=temperature,
+        chat_client, messages, llm_kwargs = self._generate_once_pre(
+            model=model, temperature=temperature,
             max_tokens=max_tokens, llm_config=llm_config, **kwargs,
-        )
-        if compiled.tools:
-            llm_kwargs["tools"] = compiled.tools
-
-        # Pre-generate middleware (can block)
-        self._run_middleware(
-            "pre_generate",
-            pending={"messages": messages, "config": llm_kwargs},
         )
 
         effective_retry = retry or self._retry_config
@@ -3593,80 +3585,9 @@ class Tract:
 
         response = await _aretry_with_backoff(_do_llm_call, effective_retry)
 
-        # 3. Extract content and usage (sync)
-        text = self._extract_content(response, client=chat_client)
-        usage_dict = self._extract_usage(response, client=chat_client)
-
-        # Post-generate middleware (informational, cannot block)
-        self._run_middleware(
-            "post_generate",
-            pending={
-                "response": text or "",
-                "tokens_used": (
-                    usage_dict.get("total_tokens", 0) if usage_dict else 0
-                ),
-            },
-        )
-
-        # 3a. Extract reasoning
-        reasoning_text: str | None = None
-        reasoning_format: str = "parsed"
-        if hasattr(chat_client, "extract_reasoning"):
-            reasoning_result = chat_client.extract_reasoning(response)
-            if reasoning_result is not None:
-                reasoning_text, reasoning_format = reasoning_result
-                if reasoning_format == "think_tags":
-                    import re as _re
-                    text = _re.sub(r"<think>.*?</think>", "", text, flags=_re.DOTALL).strip()
-
-        # 3b. Parse tool_calls
-        from tract.protocols import ToolCall as _ToolCall
-
-        raw_tool_calls = None
-        try:
-            raw_tool_calls = response["choices"][0]["message"].get("tool_calls")
-        except (KeyError, IndexError, TypeError):
-            pass
-        tool_calls = (
-            [_ToolCall.from_openai(tc) for tc in raw_tool_calls]
-            if raw_tool_calls
-            else None
-        )
-
-        # 4. Build generation_config
-        gen_config = self._build_generation_config(response, resolved=llm_kwargs)
-
-        # 5a. Commit reasoning (sync)
-        reasoning_commit_info: CommitInfo | None = None
-        if reasoning_text and self._commit_reasoning and reasoning:
-            reasoning_commit_info = self.reasoning(
-                reasoning_text,
-                format=reasoning_format,
-            )
-
-        # 5b. Commit assistant response (sync)
-        commit_meta = metadata
-        if tool_calls:
-            commit_meta = {**(metadata or {}), "tool_calls": [tc.to_dict() for tc in tool_calls]}
-        commit_info = self.assistant(
-            text, message=message, metadata=commit_meta, generation_config=gen_config
-        )
-
-        # 6. Record usage
-        usage = None
-        if usage_dict:
-            usage = self._normalize_usage_dict(usage_dict)
-            self.record_usage(usage)
-
-        return ChatResponse(
-            text=text,
-            usage=usage,
-            commit_info=commit_info,
-            generation_config=LLMConfig.from_dict(gen_config) or LLMConfig(),
-            reasoning=reasoning_text,
-            reasoning_commit=reasoning_commit_info,
-            tool_calls=tool_calls,
-            raw_response=response,
+        return self._generate_once_post(
+            response, chat_client, llm_kwargs,
+            message=message, metadata=metadata, reasoning=reasoning,
         )
 
     async def agenerate(
@@ -3690,17 +3611,7 @@ class Tract:
 
         Compile context, call LLM asynchronously, commit assistant response.
         """
-        self._check_open()
-        if not self._has_llm_client("chat"):
-            from tract.llm.errors import LLMConfigError
-
-            raise LLMConfigError(
-                "No LLM client configured. Pass api_key= or llm_client= "
-                "to Tract.open(), or call configure_llm(client)."
-            )
-
-        if self._in_batch:
-            raise TraceError("chat()/generate() cannot be used inside batch()")
+        self._generate_pre()
 
         if validator is None:
             return await self._agenerate_once(
@@ -3709,9 +3620,6 @@ class Tract:
                 message=message, metadata=metadata,
                 reasoning=reasoning, retry=retry, **kwargs,
             )
-
-        # Validation retry loop
-        import dataclasses as _dc
 
         intermediate_hashes: list[str] = []
         last_diagnosis: str | None = None
@@ -3724,39 +3632,13 @@ class Tract:
                 reasoning=reasoning, retry=retry, **kwargs,
             )
 
-            ok, diagnosis = validator(response.text)
-            if ok:
-                if hide_retries and intermediate_hashes:
-                    for h in intermediate_hashes:
-                        self.annotate(h, Priority.SKIP,
-                                      reason="retry: hidden intermediate")
-
-                if attempt > 0 and response.commit_info:
-                    retry_meta = {"retry_attempts": attempt}
-                    existing = response.commit_info.metadata or {}
-                    merged = {**existing, **retry_meta}
-                    self._commit_repo.update_metadata(
-                        response.commit_info.commit_hash, merged
-                    )
-                    self._commit_session()
-                    updated_info = response.commit_info.model_copy(
-                        update={"metadata": merged}
-                    )
-                    response = _dc.replace(response, commit_info=updated_info)
-
-                return response
-
+            final, diagnosis = self._generate_validate_loop(
+                response, validator, attempt, intermediate_hashes,
+                hide_retries, max_retries, retry_prompt,
+            )
+            if final is not None:
+                return final
             last_diagnosis = diagnosis
-            failed_hash = self.head
-            if failed_hash:
-                intermediate_hashes.append(failed_hash)
-
-            if attempt < max_retries:
-                steering = retry_prompt or "Your previous response did not pass validation. Please try again."
-                if diagnosis:
-                    steering = f"{steering}\n\nDiagnosis: {diagnosis}"
-                steering_info = self.user(steering)
-                intermediate_hashes.append(steering_info.commit_hash)
 
         from tract.exceptions import RetryExhaustedError
         raise RetryExhaustedError(
@@ -3890,8 +3772,6 @@ class Tract:
         **kwargs: Any,
     ) -> ChatResponse:
         """Async version of :meth:`revise`."""
-        import dataclasses as _dc
-
         response = await self.achat(
             prompt,
             model=model,
@@ -3901,42 +3781,7 @@ class Tract:
             reasoning=reasoning,
             **kwargs,
         )
-
-        resolved = self.resolve_commit(commit_hash)
-        target_row = self._commit_repo.get(resolved)
-        if target_row is None:
-            from tract.exceptions import EditTargetError
-            raise EditTargetError(f"EDIT target commit not found: {resolved}")
-
-        ct = target_row.content_type
-        if ct == "instruction":
-            role = "system"
-        elif ct == "dialogue":
-            blob = self._blob_repo.get(target_row.content_hash)
-            data = json.loads(blob.payload_json) if blob else {}
-            role = data.get("role", "assistant")
-        else:
-            role = "assistant"
-
-        shorthand = {"system": self.system, "user": self.user, "assistant": self.assistant}
-        edit_fn = shorthand.get(role, self.assistant)
-        edit_info = edit_fn(
-            response.text,
-            edit=resolved,
-            message=message or f"revise: {prompt[:60]}",
-        )
-
-        if response.commit_info.parent_hash is not None:
-            self.annotate(response.commit_info.parent_hash, Priority.SKIP)
-        self.annotate(response.commit_info.commit_hash, Priority.SKIP)
-        if response.reasoning_commit is not None:
-            self.annotate(response.reasoning_commit.commit_hash, Priority.SKIP)
-
-        return _dc.replace(
-            response,
-            commit_info=edit_info,
-            prompt=prompt,
-        )
+        return self._revise_post(response, commit_hash, prompt, message)
 
     async def acompress(
         self,
@@ -3962,51 +3807,20 @@ class Tract:
 
         The LLM summarization is awaited; commit finalization is sync.
         """
-        self._check_open()
         from tract.operations.compression import (
             _classify_by_priority,
             _commit_compression,
             _partition_around_pinned,
             _reconstruct_content,
-            _resolve_commit_range,
             acompress_range,
             sliding_window_compress,
         )
 
-        if self._ref_repo.is_detached(self._tract_id):
-            raise DetachedHeadError()
-
-        if self._event_repo is None:
-            from tract.exceptions import CompressionError
-            raise CompressionError("Compression repository not available")
-
-        has_client = self._has_llm_client("compress")
-        llm_client = self._resolve_llm_client("compress") if has_client else None
-
-        has_explicit_llm = (
-            model is not None
-            or temperature is not None
-            or max_tokens is not None
-            or llm_config is not None
-        )
-        if has_explicit_llm and llm_client is None and content is None:
-            from tract.llm.errors import LLMConfigError
-            raise LLMConfigError(
-                "LLM parameters provided but no LLM client is configured. "
-                "Call configure_llm() or pass api_key to Tract.open(), or "
-                "provide content= for manual compression."
-            )
-
-        llm_kwargs = self._resolve_llm_config(
-            "compress", model=model, temperature=temperature,
+        llm_client, llm_kwargs, effective_system_prompt = self._compress_pre(
+            model=model, temperature=temperature,
             max_tokens=max_tokens, llm_config=llm_config,
-        ) if llm_client is not None else {}
-
-        effective_system_prompt = system_prompt
-        if effective_system_prompt is None and self._operation_prompts.compress is not None:
-            effective_system_prompt = self._operation_prompts.compress
-
-        self._run_middleware("pre_compress")
+            content=content, system_prompt=system_prompt,
+        )
 
         # --- Sliding window strategy (delegates to sync helper) ---
         if strategy == "sliding_window":
@@ -4029,7 +3843,7 @@ class Tract:
                 _reconstruct_content_fn=_reconstruct_content,
             )
 
-        # Step 1: Async LLM summarization
+        # Async LLM summarization
         range_result = await acompress_range(
             tract_id=self._tract_id,
             commit_repo=self._commit_repo,
@@ -4055,61 +3869,14 @@ class Tract:
             two_stage=two_stage or False,
         )
 
-        # Step 2: Finalize (sync — same as sync compress)
-        head_hash = self._ref_repo.get_head(self._tract_id)
-        branch_name = self._ref_repo.get_current_branch(self._tract_id)
-        range_commits = _resolve_commit_range(
-            self._commit_repo, self._ref_repo, self._annotation_repo,
-            self._tract_id, head_hash,
+        return self._compress_finalize(
+            range_result,
             commits=commits, from_commit=from_commit, to_commit=to_commit,
+            target_tokens=target_tokens, preserve=preserve,
+            instructions=instructions,
+            effective_system_prompt=effective_system_prompt,
+            llm_kwargs=llm_kwargs,
         )
-        pinned_commits, _important, normal_commits, skip_commits = (
-            _classify_by_priority(range_commits, self._annotation_repo, preserve=preserve)
-        )
-        normal_commits = normal_commits + _important
-        pinned_hashes = {r.commit_hash for r in pinned_commits}
-        skip_hashes = {r.commit_hash for r in skip_commits}
-        groups = _partition_around_pinned(range_commits, pinned_hashes, skip_hashes)
-        original_tokens = sum(c.token_count for c in normal_commits)
-
-        nested = self._session.begin_nested()
-        try:
-            result = _commit_compression(
-                tract_id=self._tract_id,
-                commit_repo=self._commit_repo,
-                blob_repo=self._blob_repo,
-                ref_repo=self._ref_repo,
-                commit_engine=self._commit_engine,
-                token_counter=self._token_counter,
-                event_repo=self._event_repo,
-                summaries=range_result.summary_commits,
-                range_commits=range_commits,
-                pinned_commits=pinned_commits,
-                normal_commits=normal_commits,
-                pinned_hashes=pinned_hashes,
-                skip_hashes=skip_hashes,
-                groups=groups,
-                original_tokens=original_tokens,
-                target_tokens=target_tokens,
-                instructions=instructions,
-                system_prompt=effective_system_prompt,
-                branch_name=branch_name,
-                type_registry=self._custom_type_registry,
-                expected_head=head_hash,
-                generation_config=range_result.generation_config,
-            )
-        except Exception:
-            nested.rollback()
-            raise
-
-        self._commit_session()
-        self._cache.clear()
-
-        if llm_kwargs:
-            import dataclasses as _dc
-            result = _dc.replace(result, config=LLMConfig.from_dict(llm_kwargs))
-
-        return result
 
     async def acompress_tool_calls(
         self,
@@ -4127,145 +3894,21 @@ class Tract:
         triggered_by: str | None = None,
     ) -> ToolCompactResult:
         """Async version of :meth:`compress_tool_calls`."""
-        self._check_open()
-        from tract.exceptions import CompressionError
         from tract.llm.protocols import acall_llm
-        from tract.models.compression import ToolCompactResult
-        from tract.operations.compression import build_role_label
-        from tract.prompts.summarize import (
-            TOOL_COMPACT_CONTEXT_SYSTEM,
-            TOOL_COMPACT_SYSTEM,
-            build_tool_compact_prompt,
+
+        llm, messages, llm_kwargs, results_to_compact, turns = self._compress_tool_calls_pre(
+            commits, name=name, target_tokens=target_tokens,
+            instructions=instructions, system_prompt=system_prompt,
+            include_context=include_context, model=model,
+            temperature=temperature, max_tokens=max_tokens, llm_config=llm_config,
         )
 
-        turns = self.find_tool_turns(name=name)
+        response = await acall_llm(llm, messages, **llm_kwargs)
 
-        if commits is not None:
-            commit_set = set(commits)
-            turns = [
-                turn for turn in turns
-                if any(h in commit_set for h in turn.all_hashes)
-            ]
-
-        if not turns:
-            raise CompressionError("No tool turns found to compact")
-
-        results_to_compact: list[CommitInfo] = []
-        parts: list[str] = []
-
-        for turn in turns:
-            call_meta = turn.call.metadata or {}
-            call_text = self.get_content(turn.call) or ""
-            parts.append(f"{build_role_label('assistant', call_meta)}: {call_text}")
-
-            for r in turn.results:
-                r_meta = r.metadata or {}
-                r_text = self.get_content(r) or ""
-                parts.append(f"{build_role_label('tool', r_meta)}: {r_text}")
-                results_to_compact.append(r)
-
-        if not results_to_compact:
-            raise CompressionError("No tool results found to compact")
-
-        sequence_text = "\n".join(parts)
-
-        # Build context text if requested
-        context_text: str | None = None
-        if include_context:
-            try:
-                compiled = self.compile()
-                context_text = "\n".join(
-                    f"{m.role}: {m.content}" for m in compiled.messages
-                )
-            except Exception:
-                context_text = None
-
-        prompt = build_tool_compact_prompt(
-            sequence_text,
-            result_count=len(results_to_compact),
-            target_tokens=target_tokens,
-            instructions=instructions,
-            context_text=context_text,
-        )
-        if system_prompt is not None:
-            sys_prompt = system_prompt
-        elif include_context and context_text is not None:
-            sys_prompt = TOOL_COMPACT_CONTEXT_SYSTEM
-        else:
-            sys_prompt = TOOL_COMPACT_SYSTEM
-
-        llm_kwargs_resolved: dict = {}
-        if any(v is not None for v in (model, temperature, max_tokens, llm_config)):
-            resolved = self._resolve_llm_config(
-                "compress", model=model, temperature=temperature,
-                max_tokens=max_tokens, llm_config=llm_config,
-            )
-            if resolved:
-                llm_kwargs_resolved = resolved
-
-        llm = self._resolve_llm_client("compress")
-
-        # Async LLM call
-        response = await acall_llm(
-            llm,
-            [
-                {"role": "system", "content": sys_prompt},
-                {"role": "user", "content": prompt},
-            ],
-            **llm_kwargs_resolved,
-        )
-
-        raw_content = self._extract_content(response, client=llm)
-        try:
-            summaries = json.loads(raw_content)
-        except (json.JSONDecodeError, TypeError) as exc:
-            raise CompressionError(
-                f"LLM returned invalid JSON for tool compaction: {exc}\n"
-                f"Response: {raw_content[:200]}"
-            ) from exc
-
-        if not isinstance(summaries, list) or len(summaries) != len(results_to_compact):
-            raise CompressionError(
-                f"Expected {len(results_to_compact)} summaries, "
-                f"got {len(summaries) if isinstance(summaries, list) else type(summaries).__name__}"
-            )
-
-        original_tokens = 0
-        compacted_tokens = 0
-        edit_commits: list[str] = []
-        source_commits: list[str] = []
-
-        for result_ci, summary in zip(results_to_compact, summaries):
-            r_meta = result_ci.metadata or {}
-            original_tokens += result_ci.token_count
-            source_commits.append(result_ci.commit_hash)
-
-            edited = self.tool_result(
-                tool_call_id=r_meta.get("tool_call_id", ""),
-                name=r_meta.get("name", ""),
-                content=str(summary),
-                edit=result_ci.commit_hash,
-            )
-            compacted_tokens += edited.token_count
-            edit_commits.append(edited.commit_hash)
-
-        all_tool_names = sorted({n for turn in turns for n in turn.tool_names})
-
-        effective_config = LLMConfig.from_dict(
-            self._resolve_llm_config(
-                "compress", model=model, temperature=temperature,
-                max_tokens=max_tokens, llm_config=llm_config,
-            )
-        )
-
-        return ToolCompactResult(
-            edit_commits=tuple(edit_commits),
-            source_commits=tuple(source_commits),
-            tool_names=tuple(all_tool_names),
-            original_tokens=original_tokens,
-            compacted_tokens=compacted_tokens,
-            turn_count=len(turns),
-            config=effective_config,
+        return self._compress_tool_calls_post(
+            response, llm, results_to_compact, turns,
+            model=model, temperature=temperature,
+            max_tokens=max_tokens, llm_config=llm_config,
         )
 
     # ------------------------------------------------------------------
@@ -7125,6 +6768,136 @@ class Tract:
             self._config_index.invalidate()
         return result
 
+    def _compress_pre(
+        self,
+        *,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        llm_config: LLMConfig | None = None,
+        content: str | None = None,
+        system_prompt: str | None = None,
+    ) -> tuple[Any, dict, str | None]:
+        """Shared pre-LLM guards and setup for compress/acompress.
+
+        Returns (llm_client, llm_kwargs, effective_system_prompt).
+        """
+        self._check_open()
+
+        if self._ref_repo.is_detached(self._tract_id):
+            raise DetachedHeadError()
+
+        if self._event_repo is None:
+            from tract.exceptions import CompressionError
+            raise CompressionError("Compression repository not available")
+
+        has_client = self._has_llm_client("compress")
+        llm_client = self._resolve_llm_client("compress") if has_client else None
+
+        has_explicit_llm = (
+            model is not None
+            or temperature is not None
+            or max_tokens is not None
+            or llm_config is not None
+        )
+        if has_explicit_llm and llm_client is None and content is None:
+            from tract.llm.errors import LLMConfigError
+            raise LLMConfigError(
+                "LLM parameters provided (model, temperature, max_tokens, or "
+                "llm_config) but no LLM client is configured. Call "
+                "configure_llm() or pass api_key to Tract.open(), or provide "
+                "content= for manual compression."
+            )
+
+        llm_kwargs = self._resolve_llm_config(
+            "compress", model=model, temperature=temperature,
+            max_tokens=max_tokens, llm_config=llm_config,
+        ) if llm_client is not None else {}
+
+        effective_system_prompt = system_prompt
+        if effective_system_prompt is None and self._operation_prompts.compress is not None:
+            effective_system_prompt = self._operation_prompts.compress
+
+        self._run_middleware("pre_compress")
+
+        return llm_client, llm_kwargs, effective_system_prompt
+
+    def _compress_finalize(
+        self,
+        range_result: Any,
+        *,
+        commits: list[str] | None = None,
+        from_commit: str | None = None,
+        to_commit: str | None = None,
+        target_tokens: int | None = None,
+        preserve: list[str] | None = None,
+        instructions: str | None = None,
+        effective_system_prompt: str | None = None,
+        llm_kwargs: dict,
+    ) -> CompressResult:
+        """Shared post-LLM finalization for compress/acompress default strategy."""
+        from tract.operations.compression import (
+            _classify_by_priority,
+            _commit_compression,
+            _partition_around_pinned,
+            _resolve_commit_range,
+        )
+
+        head_hash = self._ref_repo.get_head(self._tract_id)
+        branch_name = self._ref_repo.get_current_branch(self._tract_id)
+        range_commits = _resolve_commit_range(
+            self._commit_repo, self._ref_repo, self._annotation_repo,
+            self._tract_id, head_hash,
+            commits=commits, from_commit=from_commit, to_commit=to_commit,
+        )
+        pinned_commits, _important, normal_commits, skip_commits = (
+            _classify_by_priority(range_commits, self._annotation_repo, preserve=preserve)
+        )
+        normal_commits = normal_commits + _important
+        pinned_hashes = {r.commit_hash for r in pinned_commits}
+        skip_hashes = {r.commit_hash for r in skip_commits}
+        groups = _partition_around_pinned(range_commits, pinned_hashes, skip_hashes)
+        original_tokens = sum(c.token_count for c in normal_commits)
+
+        nested = self._session.begin_nested()
+        try:
+            result = _commit_compression(
+                tract_id=self._tract_id,
+                commit_repo=self._commit_repo,
+                blob_repo=self._blob_repo,
+                ref_repo=self._ref_repo,
+                commit_engine=self._commit_engine,
+                token_counter=self._token_counter,
+                event_repo=self._event_repo,
+                summaries=range_result.summary_commits,
+                range_commits=range_commits,
+                pinned_commits=pinned_commits,
+                normal_commits=normal_commits,
+                pinned_hashes=pinned_hashes,
+                skip_hashes=skip_hashes,
+                groups=groups,
+                original_tokens=original_tokens,
+                target_tokens=target_tokens,
+                instructions=instructions,
+                system_prompt=effective_system_prompt,
+                branch_name=branch_name,
+                type_registry=self._custom_type_registry,
+                expected_head=head_hash,
+                generation_config=range_result.generation_config,
+            )
+        except Exception:
+            nested.rollback()
+            raise
+
+        self._commit_session()
+        self._cache.clear()
+
+        if llm_kwargs:
+            import dataclasses as _dc
+            result = _dc.replace(result, config=LLMConfig.from_dict(llm_kwargs))
+
+        return result
+
     def compress(
         self,
         *,
@@ -7201,57 +6974,20 @@ class Tract:
             CompressionError: On various error conditions.
             LLMConfigError: If explicit LLM params given without client.
         """
-        self._check_open()
         from tract.operations.compression import (
             _classify_by_priority,
             _commit_compression,
             _partition_around_pinned,
             _reconstruct_content,
-            _resolve_commit_range,
             compress_range,
             sliding_window_compress,
         )
 
-        # Guard: detached HEAD blocks compression
-        if self._ref_repo.is_detached(self._tract_id):
-            raise DetachedHeadError()
-
-        if self._event_repo is None:
-            from tract.exceptions import CompressionError
-            raise CompressionError("Compression repository not available")
-
-        has_client = self._has_llm_client("compress")
-        llm_client = self._resolve_llm_client("compress") if has_client else None
-
-        # Guard: explicit LLM config without LLM client
-        has_explicit_llm = (
-            model is not None
-            or temperature is not None
-            or max_tokens is not None
-            or llm_config is not None
-        )
-        if has_explicit_llm and llm_client is None and content is None:
-            from tract.llm.errors import LLMConfigError
-            raise LLMConfigError(
-                "LLM parameters provided (model, temperature, max_tokens, or "
-                "llm_config) but no LLM client is configured. Call "
-                "configure_llm() or pass api_key to Tract.open(), or provide "
-                "content= for manual compression."
-            )
-
-        # Resolve per-operation LLM config for compress
-        llm_kwargs = self._resolve_llm_config(
-            "compress", model=model, temperature=temperature,
+        llm_client, llm_kwargs, effective_system_prompt = self._compress_pre(
+            model=model, temperature=temperature,
             max_tokens=max_tokens, llm_config=llm_config,
-        ) if llm_client is not None else {}
-
-        # Use operation prompt as fallback for system_prompt
-        effective_system_prompt = system_prompt
-        if effective_system_prompt is None and self._operation_prompts.compress is not None:
-            effective_system_prompt = self._operation_prompts.compress
-
-        # Pre-compress middleware (can block)
-        self._run_middleware("pre_compress")
+            content=content, system_prompt=system_prompt,
+        )
 
         # --- Sliding window strategy ---
         if strategy == "sliding_window":
@@ -7273,8 +7009,6 @@ class Tract:
             )
 
         # --- Default strategy (partition-around-pinned) ---
-
-        # Step 1: Generate summaries via compress_range
         range_result = compress_range(
             tract_id=self._tract_id,
             commit_repo=self._commit_repo,
@@ -7300,63 +7034,14 @@ class Tract:
             two_stage=two_stage or False,
         )
 
-        # Step 2: Re-resolve range data for the commit phase
-        head_hash = self._ref_repo.get_head(self._tract_id)
-        branch_name = self._ref_repo.get_current_branch(self._tract_id)
-        range_commits = _resolve_commit_range(
-            self._commit_repo, self._ref_repo, self._annotation_repo,
-            self._tract_id, head_hash,
+        return self._compress_finalize(
+            range_result,
             commits=commits, from_commit=from_commit, to_commit=to_commit,
+            target_tokens=target_tokens, preserve=preserve,
+            instructions=instructions,
+            effective_system_prompt=effective_system_prompt,
+            llm_kwargs=llm_kwargs,
         )
-        pinned_commits, _important, normal_commits, skip_commits = (
-            _classify_by_priority(range_commits, self._annotation_repo, preserve=preserve)
-        )
-        normal_commits = normal_commits + _important
-        pinned_hashes = {r.commit_hash for r in pinned_commits}
-        skip_hashes = {r.commit_hash for r in skip_commits}
-        groups = _partition_around_pinned(range_commits, pinned_hashes, skip_hashes)
-        original_tokens = sum(c.token_count for c in normal_commits)
-
-        # Step 3: Commit compression
-        nested = self._session.begin_nested()
-        try:
-            result = _commit_compression(
-                tract_id=self._tract_id,
-                commit_repo=self._commit_repo,
-                blob_repo=self._blob_repo,
-                ref_repo=self._ref_repo,
-                commit_engine=self._commit_engine,
-                token_counter=self._token_counter,
-                event_repo=self._event_repo,
-                summaries=range_result.summary_commits,
-                range_commits=range_commits,
-                pinned_commits=pinned_commits,
-                normal_commits=normal_commits,
-                pinned_hashes=pinned_hashes,
-                skip_hashes=skip_hashes,
-                groups=groups,
-                original_tokens=original_tokens,
-                target_tokens=target_tokens,
-                instructions=instructions,
-                system_prompt=effective_system_prompt,
-                branch_name=branch_name,
-                type_registry=self._custom_type_registry,
-                expected_head=head_hash,
-                generation_config=range_result.generation_config,
-            )
-        except Exception:
-            nested.rollback()
-            raise
-
-        self._commit_session()
-        self._cache.clear()
-
-        # Attach resolved config to result for display
-        if llm_kwargs:
-            import dataclasses as _dc
-            result = _dc.replace(result, config=LLMConfig.from_dict(llm_kwargs))
-
-        return result
 
     def _compress_sliding_window(
         self,
@@ -7499,6 +7184,174 @@ class Tract:
 
         return result
 
+    def _compress_tool_calls_pre(
+        self,
+        commits: list[str] | None = None,
+        *,
+        name: str | None = None,
+        target_tokens: int | None = None,
+        instructions: str | None = None,
+        system_prompt: str | None = None,
+        include_context: bool = False,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        llm_config: LLMConfig | None = None,
+    ) -> tuple[Any, list[dict], dict, list, list]:
+        """Shared pre-LLM logic for compress_tool_calls/acompress_tool_calls.
+
+        Returns (llm_client, messages, llm_kwargs, results_to_compact, turns).
+        """
+        self._check_open()
+        from tract.exceptions import CompressionError
+        from tract.operations.compression import build_role_label
+        from tract.prompts.summarize import (
+            TOOL_COMPACT_CONTEXT_SYSTEM,
+            TOOL_COMPACT_SYSTEM,
+            build_tool_compact_prompt,
+        )
+
+        turns = self.find_tool_turns(name=name)
+
+        if commits is not None:
+            commit_set = set(commits)
+            turns = [
+                turn for turn in turns
+                if any(h in commit_set for h in turn.all_hashes)
+            ]
+
+        if not turns:
+            raise CompressionError("No tool turns found to compact")
+
+        results_to_compact: list[CommitInfo] = []
+        parts: list[str] = []
+
+        for turn in turns:
+            call_meta = turn.call.metadata or {}
+            call_text = self.get_content(turn.call) or ""
+            parts.append(f"{build_role_label('assistant', call_meta)}: {call_text}")
+
+            for r in turn.results:
+                r_meta = r.metadata or {}
+                r_text = self.get_content(r) or ""
+                parts.append(f"{build_role_label('tool', r_meta)}: {r_text}")
+                results_to_compact.append(r)
+
+        if not results_to_compact:
+            raise CompressionError("No tool results found to compact")
+
+        sequence_text = "\n".join(parts)
+
+        context_text: str | None = None
+        if include_context:
+            try:
+                compiled = self.compile()
+                context_text = "\n".join(
+                    f"{m.role}: {m.content}" for m in compiled.messages
+                )
+            except Exception:
+                context_text = None
+
+        prompt = build_tool_compact_prompt(
+            sequence_text,
+            result_count=len(results_to_compact),
+            target_tokens=target_tokens,
+            instructions=instructions,
+            context_text=context_text,
+        )
+        if system_prompt is not None:
+            sys_prompt = system_prompt
+        elif include_context and context_text is not None:
+            sys_prompt = TOOL_COMPACT_CONTEXT_SYSTEM
+        else:
+            sys_prompt = TOOL_COMPACT_SYSTEM
+
+        llm_kwargs: dict = {}
+        if any(v is not None for v in (model, temperature, max_tokens, llm_config)):
+            resolved = self._resolve_llm_config(
+                "compress", model=model, temperature=temperature,
+                max_tokens=max_tokens, llm_config=llm_config,
+            )
+            if resolved:
+                llm_kwargs = resolved
+
+        llm = self._resolve_llm_client("compress")
+        messages = [
+            {"role": "system", "content": sys_prompt},
+            {"role": "user", "content": prompt},
+        ]
+
+        return llm, messages, llm_kwargs, results_to_compact, turns
+
+    def _compress_tool_calls_post(
+        self,
+        response: Any,
+        llm: Any,
+        results_to_compact: list,
+        turns: list,
+        *,
+        model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        llm_config: LLMConfig | None = None,
+    ) -> ToolCompactResult:
+        """Shared post-LLM logic for compress_tool_calls/acompress_tool_calls."""
+        from tract.exceptions import CompressionError
+        from tract.models.compression import ToolCompactResult
+
+        raw_content = self._extract_content(response, client=llm)
+        try:
+            summaries = json.loads(raw_content)
+        except (json.JSONDecodeError, TypeError) as exc:
+            raise CompressionError(
+                f"LLM returned invalid JSON for tool compaction: {exc}\n"
+                f"Response: {raw_content[:200]}"
+            ) from exc
+
+        if not isinstance(summaries, list) or len(summaries) != len(results_to_compact):
+            raise CompressionError(
+                f"Expected {len(results_to_compact)} summaries, "
+                f"got {len(summaries) if isinstance(summaries, list) else type(summaries).__name__}"
+            )
+
+        original_tokens = 0
+        compacted_tokens = 0
+        edit_commits: list[str] = []
+        source_commits: list[str] = []
+
+        for result_ci, summary in zip(results_to_compact, summaries):
+            r_meta: CommitMetadata = result_ci.metadata or {}  # type: ignore[assignment]  # {} is valid CommitMetadata (total=False)
+            original_tokens += result_ci.token_count
+            source_commits.append(result_ci.commit_hash)
+
+            edited = self.tool_result(
+                tool_call_id=r_meta.get("tool_call_id", ""),
+                name=r_meta.get("name", ""),
+                content=str(summary),
+                edit=result_ci.commit_hash,
+            )
+            compacted_tokens += edited.token_count
+            edit_commits.append(edited.commit_hash)
+
+        all_tool_names = sorted({n for turn in turns for n in turn.tool_names})
+
+        effective_config = LLMConfig.from_dict(
+            self._resolve_llm_config(
+                "compress", model=model, temperature=temperature,
+                max_tokens=max_tokens, llm_config=llm_config,
+            )
+        )
+
+        return ToolCompactResult(
+            edit_commits=tuple(edit_commits),
+            source_commits=tuple(source_commits),
+            original_tokens=original_tokens,
+            compacted_tokens=compacted_tokens,
+            tool_names=tuple(all_tool_names),
+            turn_count=len(turns),
+            config=effective_config,
+        )
+
     def compress_tool_calls(
         self,
         commits: list[str] | None = None,
@@ -7553,152 +7406,19 @@ class Tract:
             CompressionError: If no tool turns found or LLM returns
                 malformed response.
         """
-
-        from tract.exceptions import CompressionError
-        from tract.models.compression import ToolCompactResult
-        from tract.operations.compression import build_role_label
-        from tract.prompts.summarize import (
-            TOOL_COMPACT_CONTEXT_SYSTEM,
-            TOOL_COMPACT_SYSTEM,
-            build_tool_compact_prompt,
+        llm, messages, llm_kwargs, results_to_compact, turns = self._compress_tool_calls_pre(
+            commits, name=name, target_tokens=target_tokens,
+            instructions=instructions, system_prompt=system_prompt,
+            include_context=include_context, model=model,
+            temperature=temperature, max_tokens=max_tokens, llm_config=llm_config,
         )
 
-        # 1. Find tool turns
-        turns = self.find_tool_turns(name=name)
+        response = llm.chat(messages, **llm_kwargs)
 
-        # Scope to explicit commits if provided
-        if commits is not None:
-            commit_set = set(commits)
-            turns = [
-                turn for turn in turns
-                if any(h in commit_set for h in turn.all_hashes)
-            ]
-
-        if not turns:
-            raise CompressionError("No tool turns found to compact")
-
-        # 2. Collect tool results to compact and build sequence text
-        results_to_compact: list[CommitInfo] = []
-        parts: list[str] = []
-
-        for turn in turns:
-            # Add assistant tool-calling message for context
-            call_meta = turn.call.metadata or {}
-            call_text = self.get_content(turn.call) or ""
-            parts.append(f"{build_role_label('assistant', call_meta)}: {call_text}")
-
-            # Add each tool result (these will be compacted)
-            for r in turn.results:
-                r_meta = r.metadata or {}
-                r_text = self.get_content(r) or ""
-                parts.append(f"{build_role_label('tool', r_meta)}: {r_text}")
-                results_to_compact.append(r)
-
-        if not results_to_compact:
-            raise CompressionError("No tool results found to compact")
-
-        sequence_text = "\n".join(parts)
-
-        # 3. Build context text if requested
-        context_text: str | None = None
-        if include_context:
-            try:
-                compiled = self.compile()
-                context_text = "\n".join(
-                    f"{m.role}: {m.content}" for m in compiled.messages
-                )
-            except Exception:
-                context_text = None
-
-        # 4. Build prompt and call LLM
-        prompt = build_tool_compact_prompt(
-            sequence_text,
-            result_count=len(results_to_compact),
-            target_tokens=target_tokens,
-            instructions=instructions,
-            context_text=context_text,
-        )
-        if system_prompt is not None:
-            sys_prompt = system_prompt
-        elif include_context and context_text is not None:
-            sys_prompt = TOOL_COMPACT_CONTEXT_SYSTEM
-        else:
-            sys_prompt = TOOL_COMPACT_SYSTEM
-
-        # Resolve LLM config and client
-        llm_kwargs: dict = {}
-        if any(v is not None for v in (model, temperature, max_tokens, llm_config)):
-            resolved = self._resolve_llm_config(
-                "compress", model=model, temperature=temperature,
-                max_tokens=max_tokens, llm_config=llm_config,
-            )
-            if resolved:
-                llm_kwargs = resolved
-
-        llm = self._resolve_llm_client("compress")
-        response = llm.chat(
-            [
-                {"role": "system", "content": sys_prompt},
-                {"role": "user", "content": prompt},
-            ],
-            **llm_kwargs,
-        )
-
-        # 4. Parse per-result summaries from LLM response
-        raw_content = self._extract_content(response, client=llm)
-        try:
-            summaries = json.loads(raw_content)
-        except (json.JSONDecodeError, TypeError) as exc:
-            raise CompressionError(
-                f"LLM returned invalid JSON for tool compaction: {exc}\n"
-                f"Response: {raw_content[:200]}"
-            ) from exc
-
-        if not isinstance(summaries, list) or len(summaries) != len(results_to_compact):
-            raise CompressionError(
-                f"Expected {len(results_to_compact)} summaries, "
-                f"got {len(summaries) if isinstance(summaries, list) else type(summaries).__name__}"
-            )
-
-        # 5. Apply each summary as an EDIT commit
-        original_tokens = 0
-        compacted_tokens = 0
-        edit_commits: list[str] = []
-        source_commits: list[str] = []
-
-        for result_ci, summary in zip(results_to_compact, summaries):
-            r_meta: CommitMetadata = result_ci.metadata or {}  # type: ignore[assignment]  # {} is valid CommitMetadata (total=False)
-            original_tokens += result_ci.token_count
-            source_commits.append(result_ci.commit_hash)
-
-            edited = self.tool_result(
-                tool_call_id=r_meta.get("tool_call_id", ""),
-                name=r_meta.get("name", ""),
-                content=str(summary),
-                edit=result_ci.commit_hash,
-            )
-            compacted_tokens += edited.token_count
-            edit_commits.append(edited.commit_hash)
-
-        # 6. Return result
-        all_tool_names = sorted({n for turn in turns for n in turn.tool_names})
-
-        # Build effective config for display
-        effective_config = LLMConfig.from_dict(
-            self._resolve_llm_config(
-                "compress", model=model, temperature=temperature,
-                max_tokens=max_tokens, llm_config=llm_config,
-            )
-        )
-
-        return ToolCompactResult(
-            edit_commits=tuple(edit_commits),
-            source_commits=tuple(source_commits),
-            original_tokens=original_tokens,
-            compacted_tokens=compacted_tokens,
-            tool_names=tuple(all_tool_names),
-            turn_count=len(turns),
-            config=effective_config,
+        return self._compress_tool_calls_post(
+            response, llm, results_to_compact, turns,
+            model=model, temperature=temperature,
+            max_tokens=max_tokens, llm_config=llm_config,
         )
 
     def gc(
