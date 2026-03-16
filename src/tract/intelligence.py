@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from tract._helpers import async_safe_llm_call as _async_safe_llm_call
+from tract._helpers import resolve_llm_client as _resolve_llm_client
 from tract._helpers import safe_llm_call as _safe_llm_call
 from tract._helpers import strip_fences as _strip_fences
 
@@ -303,21 +304,16 @@ def cherry_pick(
         :class:`CherryPickResult` with selected commit hashes.
     """
     # Resolve LLM client
-    try:
-        client = tract._resolve_llm_client("intelligence")
-    except RuntimeError:
-        try:
-            client = tract._resolve_llm_client("chat")
-        except RuntimeError:
-            # No client at all -- fail-open with all commits
-            entries = tract.log(limit=50)
-            all_hashes = tuple(e.commit_hash for e in entries)
-            return CherryPickResult(
-                selected_hashes=all_hashes,
-                total_candidates=len(all_hashes),
-                tokens_used=0,
-                reasoning="No LLM client configured; returning all commits (fail-open).",
-            )
+    client = _resolve_llm_client(tract, "intelligence", "chat")
+    if client is None:
+        entries = tract.log(limit=50)
+        all_hashes = tuple(e.commit_hash for e in entries)
+        return CherryPickResult(
+            selected_hashes=all_hashes,
+            total_candidates=len(all_hashes),
+            tokens_used=0,
+            reasoning="No LLM client configured; returning all commits (fail-open).",
+        )
 
     # Build manifest
     manifest, commit_entries = _build_intelligence_manifest(
@@ -394,20 +390,16 @@ async def acherry_pick(
 ) -> CherryPickResult:
     """Async version of :func:`cherry_pick`."""
     # Resolve LLM client
-    try:
-        client = tract._resolve_llm_client("intelligence")
-    except RuntimeError:
-        try:
-            client = tract._resolve_llm_client("chat")
-        except RuntimeError:
-            entries = tract.log(limit=50)
-            all_hashes = tuple(e.commit_hash for e in entries)
-            return CherryPickResult(
-                selected_hashes=all_hashes,
-                total_candidates=len(all_hashes),
-                tokens_used=0,
-                reasoning="No LLM client configured; returning all commits (fail-open).",
-            )
+    client = _resolve_llm_client(tract, "intelligence", "chat")
+    if client is None:
+        entries = tract.log(limit=50)
+        all_hashes = tuple(e.commit_hash for e in entries)
+        return CherryPickResult(
+            selected_hashes=all_hashes,
+            total_candidates=len(all_hashes),
+            tokens_used=0,
+            reasoning="No LLM client configured; returning all commits (fail-open).",
+        )
 
     manifest, commit_entries = _build_intelligence_manifest(
         tract, include_content_preview=True, preview_length=200,
@@ -504,18 +496,14 @@ def deduplicate(
         :class:`DedupResult` with duplicate groups and actions taken.
     """
     # Resolve LLM client
-    try:
-        client = tract._resolve_llm_client("intelligence")
-    except RuntimeError:
-        try:
-            client = tract._resolve_llm_client("chat")
-        except RuntimeError:
-            return DedupResult(
-                duplicate_groups=(),
-                actions_taken=0,
-                tokens_used=0,
-                reasoning="No LLM client configured; no deduplication performed (fail-open).",
-            )
+    client = _resolve_llm_client(tract, "intelligence", "chat")
+    if client is None:
+        return DedupResult(
+            duplicate_groups=(),
+            actions_taken=0,
+            tokens_used=0,
+            reasoning="No LLM client configured; no deduplication performed (fail-open).",
+        )
 
     # Build manifest with longer previews for dedup
     manifest, commit_entries = _build_intelligence_manifest(
@@ -595,18 +583,14 @@ async def adeduplicate(
 ) -> DedupResult:
     """Async version of :func:`deduplicate`."""
     # Resolve LLM client
-    try:
-        client = tract._resolve_llm_client("intelligence")
-    except RuntimeError:
-        try:
-            client = tract._resolve_llm_client("chat")
-        except RuntimeError:
-            return DedupResult(
-                duplicate_groups=(),
-                actions_taken=0,
-                tokens_used=0,
-                reasoning="No LLM client configured; no deduplication performed (fail-open).",
-            )
+    client = _resolve_llm_client(tract, "intelligence", "chat")
+    if client is None:
+        return DedupResult(
+            duplicate_groups=(),
+            actions_taken=0,
+            tokens_used=0,
+            reasoning="No LLM client configured; no deduplication performed (fail-open).",
+        )
 
     manifest, commit_entries = _build_intelligence_manifest(
         tract, include_content_preview=True, preview_length=300,

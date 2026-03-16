@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from tract._helpers import async_safe_llm_call as _async_safe_llm_call
+from tract._helpers import resolve_llm_client as _resolve_llm_client
 from tract._helpers import safe_llm_call as _safe_llm_call
 from tract._helpers import strip_fences as _strip_fences
 
@@ -170,13 +171,9 @@ def _resolve_client(tract: Tract, operation: str = "autonomous") -> Any | None:
     """Resolve the LLM client, trying autonomous > intelligence > chat.
 
     Returns None if no client available (fail-open).
+    Delegates to :func:`tract._helpers.resolve_llm_client`.
     """
-    for op in (operation, "intelligence", "chat"):
-        try:
-            return tract._resolve_llm_client(op)
-        except RuntimeError:
-            continue
-    return None
+    return _resolve_llm_client(tract, operation, "intelligence", "chat")
 
 
 def _build_llm_kwargs(

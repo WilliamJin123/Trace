@@ -35,6 +35,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, ClassVar
 
+from tract._helpers import safe_llm_call as _safe_llm_call
 from tract._helpers import strip_fences
 from tract.exceptions import BlockedError
 from tract.gate import build_manifest as _build_manifest
@@ -467,47 +468,26 @@ class SemanticMaintainer:
     def _safe_llm_call_raw(
         self, client: Any, messages: list[dict[str, str]], llm_kwargs: dict[str, Any]
     ) -> tuple[str, int] | None:
-        """Make an LLM call, return (raw_text, tokens_used) or None on failure."""
-        tokens_used = 0
-        try:
-            response = client.chat(messages, **llm_kwargs)
-        except Exception:
-            logger.warning(
-                "Maintainer '%s' LLM call failed; skipping (fail-open).",
-                self.name, exc_info=True,
-            )
-            self.last_result = MaintainResult(
-                maintainer_name=self.name,
-                actions_requested=0, actions_executed=0, actions_failed=0,
-                tokens_used=0, reasoning="LLM call failed; fail-open default.",
-                errors=(),
-            )
-            return None
+        """Make an LLM call, return (raw_text, tokens_used) or None on failure.
 
-        try:
-            raw_text = client.extract_content(response)
-        except Exception:
-            logger.warning(
-                "Maintainer '%s' failed to extract LLM response; skipping (fail-open).",
-                self.name, exc_info=True,
-            )
+        Delegates to :func:`tract._helpers.safe_llm_call` and stores a
+        fail-open :class:`MaintainResult` on ``self.last_result`` when the
+        helper returns ``None``.
+        """
+        result = _safe_llm_call(
+            client, messages, llm_kwargs,
+            caller=f"Maintainer '{self.name}'",
+        )
+        if result is None:
             self.last_result = MaintainResult(
                 maintainer_name=self.name,
                 actions_requested=0, actions_executed=0, actions_failed=0,
                 tokens_used=0,
-                reasoning="Failed to extract LLM response; fail-open default.",
+                reasoning="LLM call failed; fail-open default.",
                 errors=(),
             )
             return None
-
-        try:
-            usage = client.extract_usage(response) if hasattr(client, "extract_usage") else None
-            if usage and isinstance(usage, dict):
-                tokens_used = int(usage.get("total_tokens", 0))
-        except Exception:
-            pass
-
-        return raw_text, tokens_used
+        return result
 
     def _safe_llm_call(
         self, client: Any, messages: list[dict[str, str]], llm_kwargs: dict[str, Any]

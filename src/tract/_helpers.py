@@ -8,9 +8,38 @@ reusable plumbing -- no business logic.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from tract.tract import Tract
 
 logger = logging.getLogger(__name__)
+
+
+def resolve_llm_client(
+    tract: Tract,
+    *operation_names: str,
+) -> Any | None:
+    """Try to resolve an LLM client by cascading through *operation_names*.
+
+    Each name is passed to ``tract._resolve_llm_client(name)`` in order.
+    The first one that succeeds is returned.  If **all** raise
+    ``RuntimeError``, the function returns ``None`` (fail-open).
+
+    Parameters
+    ----------
+    tract:
+        The Tract instance whose LLM registry is consulted.
+    *operation_names:
+        One or more operation names to try, in priority order.
+        Example: ``resolve_llm_client(t, "intelligence", "chat")``.
+    """
+    for name in operation_names:
+        try:
+            return tract._resolve_llm_client(name)
+        except RuntimeError:
+            continue
+    return None
 
 
 def strip_fences(text: str) -> str:

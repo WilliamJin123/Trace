@@ -26,6 +26,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable
 
+from tract._helpers import safe_llm_call as _safe_llm_call
 from tract._helpers import strip_fences as _strip_fences
 from tract.exceptions import BlockedError
 
@@ -269,19 +270,14 @@ class SemanticGate:
         messages = self._build_messages(manifest, ctx)
 
         # 4. LLM call — fail-open on infrastructure errors
-        tokens_used = 0
-        try:
-            llm_kwargs: dict[str, Any] = {"temperature": self.temperature}
-            if self.model is not None:
-                llm_kwargs["model"] = self.model
+        llm_kwargs: dict[str, Any] = {"temperature": self.temperature}
+        if self.model is not None:
+            llm_kwargs["model"] = self.model
 
-            response = client.chat(messages, **llm_kwargs)
-        except Exception:
-            logger.warning(
-                "Gate '%s' LLM call failed; passing by default (fail-open).",
-                self.name,
-                exc_info=True,
-            )
+        llm_result = _safe_llm_call(
+            client, messages, llm_kwargs, caller=f"Gate '{self.name}'",
+        )
+        if llm_result is None:
             self.last_result = GateResult(
                 gate_name=self.name,
                 passed=True,
@@ -290,29 +286,7 @@ class SemanticGate:
             )
             return
 
-        try:
-            raw_text = client.extract_content(response)
-        except Exception:
-            logger.warning(
-                "Gate '%s' failed to extract LLM response; passing by default (fail-open).",
-                self.name,
-                exc_info=True,
-            )
-            self.last_result = GateResult(
-                gate_name=self.name,
-                passed=True,
-                reason="Failed to extract LLM response; fail-open default.",
-                tokens_used=0,
-            )
-            return
-
-        # Track token usage if available
-        try:
-            usage = client.extract_usage(response) if hasattr(client, "extract_usage") else None
-            if usage and isinstance(usage, dict):
-                tokens_used = int(usage.get("total_tokens", 0))
-        except Exception:
-            pass  # Usage tracking is best-effort
+        raw_text, tokens_used = llm_result
 
         # 5. Parse response
         passed, reason = self._parse_response(raw_text)
