@@ -124,16 +124,23 @@ class Session:
         db_path: str,
         *,
         autonomy: str = "collaborative",
+        adapter: object | None = None,
     ) -> None:
         self._engine = engine
         self._session_factory = session_factory
         self._spawn_repo = spawn_repo
         self._db_path = db_path
         self._autonomy = autonomy
+        self._adapter = adapter
         self._tracts: dict[str, Tract] = {}
         self._closed = False
         # Keep the session used by spawn_repo alive
         self._spawn_session = spawn_repo._session
+
+    @property
+    def adapter(self) -> object | None:
+        """The agent adapter set on this session, or ``None``."""
+        return self._adapter
 
     @classmethod
     def open(
@@ -141,6 +148,7 @@ class Session:
         path: str = ":memory:",
         *,
         autonomy: str = "collaborative",
+        adapter: object | None = None,
     ) -> Session:
         """Open (or create) a multi-agent session.
 
@@ -148,6 +156,8 @@ class Session:
             path: SQLite path. ``":memory:"`` for in-memory (default).
             autonomy: Default autonomy level for collapse operations.
                 "manual", "collaborative" (default), or "autonomous".
+            adapter: Optional :class:`~tract.adapters.AgentAdapter` to
+                propagate to all tracts created in this session.
 
         Returns:
             A ready-to-use Session instance.
@@ -171,6 +181,7 @@ class Session:
             spawn_repo=spawn_repo,
             db_path=path,
             autonomy=autonomy,
+            adapter=adapter,
         )
 
     # ------------------------------------------------------------------
@@ -267,6 +278,10 @@ class Session:
         )
         tract._spawn_repo = self._spawn_repo
         tract._session_owner = self
+
+        # Propagate adapter from session to tract
+        if self._adapter is not None:
+            tract.adapter = self._adapter
 
         self._tracts[tract_id] = tract
         return tract

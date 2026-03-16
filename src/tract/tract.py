@@ -1648,6 +1648,138 @@ class Tract:
 
         return await _adeduplicate(self, threshold=threshold, auto_skip=auto_skip, **llm_kwargs)
 
+    # ------------------------------------------------------------------
+    # Autonomous operations
+    # ------------------------------------------------------------------
+
+    def auto_split(self, commit_hash: str, **llm_kwargs: Any) -> Any:
+        """Split a commit into smaller, logically coherent pieces using LLM judgment.
+
+        Gets the commit content, asks an LLM to split it, then creates new
+        APPEND commits for each piece and SKIPs the original.
+
+        Fail-open: on LLM error, returns original hash unchanged.
+
+        Args:
+            commit_hash: Hash of the commit to split.
+            **llm_kwargs: Forwarded to LLM (model, temperature, max_tokens).
+
+        Returns:
+            :class:`~tract.autonomous.AutoSplitResult`.
+        """
+        self._check_open()
+        from tract.autonomous import auto_split as _auto_split
+
+        return _auto_split(self, commit_hash, **llm_kwargs)
+
+    async def aauto_split(self, commit_hash: str, **llm_kwargs: Any) -> Any:
+        """Async version of :meth:`auto_split`."""
+        self._check_open()
+        from tract.autonomous import aauto_split as _aauto_split
+
+        return await _aauto_split(self, commit_hash, **llm_kwargs)
+
+    def auto_rebase(self, **llm_kwargs: Any) -> Any:
+        """Decide whether to rebase the current branch using LLM judgment.
+
+        Builds a manifest of branch state and asks the LLM whether a rebase
+        would be beneficial. If yes, executes the rebase.
+
+        Fail-open: on error, returns rebased=False.
+
+        Args:
+            **llm_kwargs: Forwarded to LLM (model, temperature, max_tokens).
+
+        Returns:
+            :class:`~tract.autonomous.AutoRebaseResult`.
+        """
+        self._check_open()
+        from tract.autonomous import auto_rebase as _auto_rebase
+
+        return _auto_rebase(self, **llm_kwargs)
+
+    async def aauto_rebase(self, **llm_kwargs: Any) -> Any:
+        """Async version of :meth:`auto_rebase`."""
+        self._check_open()
+        from tract.autonomous import aauto_rebase as _aauto_rebase
+
+        return await _aauto_rebase(self, **llm_kwargs)
+
+    def auto_branch(self, *, context: str = "", **llm_kwargs: Any) -> Any:
+        """Decide whether to create a new branch using LLM judgment.
+
+        Builds a manifest of current state and asks the LLM whether a new
+        branch should be created. If yes, creates and switches to it.
+
+        Fail-open: on error, returns branched=False.
+
+        Args:
+            context: Optional task/context description to inform the decision.
+            **llm_kwargs: Forwarded to LLM (model, temperature, max_tokens).
+
+        Returns:
+            :class:`~tract.autonomous.AutoBranchResult`.
+        """
+        self._check_open()
+        from tract.autonomous import auto_branch as _auto_branch
+
+        return _auto_branch(self, context=context, **llm_kwargs)
+
+    async def aauto_branch(self, *, context: str = "", **llm_kwargs: Any) -> Any:
+        """Async version of :meth:`auto_branch`."""
+        self._check_open()
+        from tract.autonomous import aauto_branch as _aauto_branch
+
+        return await _aauto_branch(self, context=context, **llm_kwargs)
+
+    def manage_middleware(
+        self,
+        name: str,
+        rules: list[dict],
+        **llm_kwargs: Any,
+    ) -> str:
+        """Create a self-managing middleware handler.
+
+        Creates a :class:`~tract.autonomous.MiddlewareManager` and registers
+        it on ``post_commit``. The manager evaluates its rules after each commit
+        and adds/removes other middleware handlers accordingly.
+
+        Args:
+            name: Human-readable name for the manager.
+            rules: List of rule dicts with keys like ``event``, ``condition``,
+                ``action``, ``handler_event``, ``handler_type``, ``criterion``.
+            **llm_kwargs: Forwarded to the manager (model, temperature, max_tokens).
+
+        Returns:
+            Handler ID for the registered manager.
+
+        Example::
+
+            handler_id = t.manage_middleware(
+                "auto-gate",
+                rules=[{
+                    "event": "post_commit",
+                    "condition": "more than 20 commits",
+                    "action": "add_middleware",
+                    "handler_event": "pre_compile",
+                    "handler_type": "gate",
+                    "criterion": "Context is focused and relevant",
+                }],
+            )
+        """
+        self._check_open()
+        from tract.autonomous import MiddlewareManager
+
+        manager = MiddlewareManager(
+            name=name,
+            rules=rules,
+            model=llm_kwargs.get("model"),
+            temperature=llm_kwargs.get("temperature", 0.2),
+            max_tokens=llm_kwargs.get("max_tokens"),
+        )
+        handler_id = self.add_middleware("post_commit", manager)
+        return handler_id
+
     def _ensure_routing_table(self) -> None:
         """Lazily initialize the default routing table."""
         if self._routing_table is None:
@@ -8519,6 +8651,275 @@ class Tract:
         file_path.write_text(code, encoding="utf-8")
 
         return file_path
+
+    # ------------------------------------------------------------------
+    # State snapshot / restore (in-memory behavioral state)
+    # ------------------------------------------------------------------
+
+    def snapshot_state(self) -> dict[str, Any]:
+        """Capture full behavioral state as a serializable dict.
+
+        Snapshots the in-memory behavioral state that is NOT automatically
+        persisted in SQLite (middleware registrations, gate/maintainer
+        configs, registry contents, config values).
+
+        The returned dict can be serialized to JSON and later restored
+        with :meth:`restore_state`.
+
+        Returns:
+            Dict with keys: ``middleware``, ``gates``, ``maintainers``,
+            ``profiles``, ``templates``, ``config``, ``operation_configs``.
+        """
+        self._check_open()
+        from tract.gate import SemanticGate
+        from tract.maintain import SemanticMaintainer
+        from tract.profiles import WorkflowProfile
+        from tract.templates import DirectiveTemplate
+
+        # Middleware registrations (handler_id + event + type info)
+        middleware_list: list[dict[str, str]] = []
+        for event, handlers in self._middleware.items():
+            for handler_id, handler in handlers:
+                handler_type = type(handler).__name__
+                middleware_list.append({
+                    "handler_id": handler_id,
+                    "event": event,
+                    "handler_type": handler_type,
+                })
+
+        # Gates (from live gate objects registered in middleware)
+        gate_specs: list[dict[str, Any]] = []
+        for gate_name, handler_id in self._gates.items():
+            for event, handlers in self._middleware.items():
+                for hid, handler in handlers:
+                    if hid == handler_id and isinstance(handler, SemanticGate):
+                        spec = handler.to_spec()
+                        spec["event"] = event
+                        gate_specs.append(spec)
+
+        # Maintainers (from live maintainer objects registered in middleware)
+        maintainer_specs: list[dict[str, Any]] = []
+        for maint_name, handler_id in self._maintainers.items():
+            for event, handlers in self._middleware.items():
+                for hid, handler in handlers:
+                    if hid == handler_id and isinstance(handler, SemanticMaintainer):
+                        spec = handler.to_spec()
+                        spec["event"] = event
+                        maintainer_specs.append(spec)
+
+        # Profiles from per-instance registry
+        profile_specs: list[dict[str, Any]] = []
+        for name, profile in self._profile_registry.items():
+            if isinstance(profile, WorkflowProfile):
+                profile_specs.append(profile.to_spec())
+
+        # Templates from per-instance registry
+        template_specs: list[dict[str, Any]] = []
+        for name, template in self._template_registry.items():
+            if isinstance(template, DirectiveTemplate):
+                template_specs.append(template.to_spec())
+
+        # Config values from DAG
+        try:
+            config_values = self.get_all_configs()
+        except Exception:
+            config_values = {}
+
+        # Operation configs (serialize non-None dataclass fields)
+        op_config_snapshot: dict[str, dict[str, Any] | None] = {}
+        for f in dc_fields(self._operation_configs):
+            val = getattr(self._operation_configs, f.name)
+            if val is not None and hasattr(val, "__dataclass_fields__"):
+                op_config_snapshot[f.name] = {
+                    k: getattr(val, k)
+                    for k in val.__dataclass_fields__
+                }
+            elif val is not None:
+                op_config_snapshot[f.name] = {"value": val}
+
+        return {
+            "middleware": middleware_list,
+            "gates": gate_specs,
+            "maintainers": maintainer_specs,
+            "profiles": profile_specs,
+            "templates": template_specs,
+            "config": config_values,
+            "operation_configs": op_config_snapshot,
+        }
+
+    def restore_state(
+        self,
+        snapshot: dict[str, Any],
+        *,
+        llm_client: Any = None,
+    ) -> dict[str, list[str]]:
+        """Restore behavioral state from a snapshot dict.
+
+        Restores what can be restored from the snapshot:
+
+        - **Profiles**: restored to per-instance registry
+        - **Templates**: restored to per-instance registry
+        - **Config**: re-applied via :meth:`configure`
+        - **Gates**: restored as specs (NOT auto-wired -- needs LLM client + event)
+        - **Maintainers**: same as gates
+        - **Middleware**: NOT restored (callables cannot be serialized)
+
+        Args:
+            snapshot: Dict previously returned by :meth:`snapshot_state`.
+            llm_client: Optional LLM client for re-wiring gates/maintainers.
+                When ``None``, gate/maintainer specs are returned in the
+                ``skipped`` list for manual re-registration.
+
+        Returns:
+            Report dict with keys: ``restored`` (list of descriptions),
+            ``skipped`` (list), ``errors`` (list).
+        """
+        self._check_open()
+        from tract.profiles import WorkflowProfile
+        from tract.templates import DirectiveTemplate
+
+        restored: list[str] = []
+        skipped: list[str] = []
+        errors: list[str] = []
+
+        # Restore profiles
+        for spec in snapshot.get("profiles", []):
+            try:
+                profile = WorkflowProfile.from_spec(spec)
+                self._profile_registry[profile.name] = profile
+                restored.append(f"profile:{profile.name}")
+            except Exception as exc:
+                errors.append(f"profile:{spec.get('name', '?')}: {exc}")
+
+        # Restore templates
+        for spec in snapshot.get("templates", []):
+            try:
+                template = DirectiveTemplate.from_spec(spec)
+                self._template_registry[template.name] = template
+                restored.append(f"template:{template.name}")
+            except Exception as exc:
+                errors.append(f"template:{spec.get('name', '?')}: {exc}")
+
+        # Restore config (only if there are settings)
+        config_vals = snapshot.get("config", {})
+        if config_vals:
+            try:
+                self.configure(**config_vals)
+                restored.append(f"config:{len(config_vals)} keys")
+            except Exception as exc:
+                errors.append(f"config: {exc}")
+
+        # Gates -- report as specs, not auto-wired
+        for spec in snapshot.get("gates", []):
+            gate_name = spec.get("name", "?")
+            skipped.append(f"gate:{gate_name} (requires re-registration with event + LLM client)")
+
+        # Maintainers -- report as specs, not auto-wired
+        for spec in snapshot.get("maintainers", []):
+            maint_name = spec.get("name", "?")
+            skipped.append(f"maintainer:{maint_name} (requires re-registration with event + LLM client)")
+
+        # Middleware -- never restored
+        mw_count = len(snapshot.get("middleware", []))
+        if mw_count > 0:
+            skipped.append(f"middleware:{mw_count} handlers (callables not serializable)")
+
+        # Operation configs -- informational only (not auto-applied)
+        op_configs = snapshot.get("operation_configs", {})
+        if op_configs:
+            skipped.append(f"operation_configs:{len(op_configs)} entries (apply via configure_operations)")
+
+        return {
+            "restored": restored,
+            "skipped": skipped,
+            "errors": errors,
+        }
+
+    def save_state(self, path: str | None = None) -> str:
+        """Snapshot behavioral state and save to a JSON file.
+
+        Args:
+            path: File path to write. Defaults to ``{db_name}.state.json``
+                alongside the database file. Required for ``:memory:`` databases.
+
+        Returns:
+            The path the state was written to.
+
+        Raises:
+            ValueError: If database is ``:memory:`` and no path provided.
+        """
+        self._check_open()
+        import os
+
+        if path is None:
+            if self._db_path == ":memory:":
+                raise ValueError(
+                    "Cannot auto-derive state file path for :memory: databases. "
+                    "Pass an explicit path= argument."
+                )
+            # Derive from DB path: /path/to/tract.db -> /path/to/tract.db.state.json
+            path = self._db_path + ".state.json"
+
+        snapshot = self.snapshot_state()
+        state_json = json.dumps(snapshot, indent=2, default=str)
+
+        # Ensure parent directory exists
+        parent_dir = os.path.dirname(path)
+        if parent_dir:
+            os.makedirs(parent_dir, exist_ok=True)
+
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(state_json)
+
+        return path
+
+    def load_state(
+        self,
+        path: str | None = None,
+        *,
+        llm_client: Any = None,
+    ) -> dict[str, list[str]]:
+        """Load behavioral state from a JSON file and restore it.
+
+        Args:
+            path: File path to read. Defaults to ``{db_name}.state.json``
+                alongside the database file. Required for ``:memory:`` databases.
+            llm_client: Optional LLM client for re-wiring gates/maintainers.
+
+        Returns:
+            Report dict from :meth:`restore_state`.
+
+        Raises:
+            ValueError: If database is ``:memory:`` and no path provided.
+            FileNotFoundError: If the state file does not exist.
+        """
+        self._check_open()
+
+        if path is None:
+            if self._db_path == ":memory:":
+                raise ValueError(
+                    "Cannot auto-derive state file path for :memory: databases. "
+                    "Pass an explicit path= argument."
+                )
+            path = self._db_path + ".state.json"
+
+        with open(path, "r", encoding="utf-8") as f:
+            snapshot = json.load(f)
+
+        return self.restore_state(snapshot, llm_client=llm_client)
+
+    # ------------------------------------------------------------------
+    # Adapter support
+    # ------------------------------------------------------------------
+
+    @property
+    def adapter(self) -> Any:
+        """The agent adapter set on this tract, or ``None``."""
+        return getattr(self, "_adapter", None)
+
+    @adapter.setter
+    def adapter(self, value: Any) -> None:
+        self._adapter = value
 
     def close(self) -> None:
         """Close the session and dispose the engine."""

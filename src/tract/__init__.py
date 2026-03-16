@@ -95,6 +95,9 @@ from tract.maintain import SemanticMaintainer, MaintainResult
 # Context intelligence
 from tract.intelligence import CherryPickResult, DedupResult
 
+# Autonomous operations
+from tract.autonomous import AutoSplitResult, AutoRebaseResult, AutoBranchResult, MiddlewareManager
+
 # Routing
 from tract.routing import Route, RoutingTable, SemanticRouter, RoutingResult, AutoConfig, ConfigSuggestion
 
@@ -108,6 +111,9 @@ from tract.profiles import (
     list_profiles as list_workflow_profiles,
     register_profile as register_workflow_profile,
 )
+
+# External SDK adapters (always available — no external deps)
+from tract.adapters import AgentAdapter, PassthroughAdapter, AnthropicAdapter, AdapterRegistry
 
 # LLM protocol (always available — these are just Protocol definitions)
 from tract.llm.protocols import LLMClient, AgentLoop
@@ -267,6 +273,11 @@ __all__ = [
     # Context intelligence
     "CherryPickResult",
     "DedupResult",
+    # Autonomous operations
+    "AutoSplitResult",
+    "AutoRebaseResult",
+    "AutoBranchResult",
+    "MiddlewareManager",
     # Routing
     "Route",
     "RoutingTable",
@@ -332,6 +343,11 @@ __all__ = [
     "SessionContent",
     "SpawnInfo",
     "CollapseResult",
+    # External SDK adapters
+    "AgentAdapter",
+    "PassthroughAdapter",
+    "AnthropicAdapter",
+    "AdapterRegistry",
     # LLM protocol
     "LLMClient",
     "AgentLoop",
