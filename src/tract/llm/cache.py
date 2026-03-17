@@ -267,7 +267,7 @@ class CachingLLMClient:
         return cursor.fetchone()[0]
 
     @property
-    def stats(self) -> dict[str, int]:
+    def stats(self) -> dict[str, int | float]:
         """Cache hit/miss statistics."""
         return {
             "hits": self.hits,

@@ -133,7 +133,9 @@ class RoutingManager:
         from tract.routing import SemanticRouter
 
         if router is not None and isinstance(router, SemanticRouter):
-            tract = self._tract_ref() if self._tract_ref else self
+            from tract.tract import Tract
+
+            tract: Tract = self._tract_ref() if self._tract_ref else self  # type: ignore[assignment]
             result = router.route(query, tract)
         else:
             result = self._fallback(query)
@@ -155,7 +157,9 @@ class RoutingManager:
         from tract.routing import SemanticRouter
 
         if router is not None and isinstance(router, SemanticRouter):
-            tract = self._tract_ref() if self._tract_ref else self
+            from tract.tract import Tract
+
+            tract: Tract = self._tract_ref() if self._tract_ref else self  # type: ignore[assignment]
             result = await router.aroute(query, tract)
         else:
             result = self._fallback(query)

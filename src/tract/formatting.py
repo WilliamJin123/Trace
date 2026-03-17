@@ -179,7 +179,7 @@ def pprint_chat_response(response: ChatResponse, *, max_chars: int | None = None
         if text:
             body_parts.append(Markdown(text))
             body_parts.append(Text(""))
-        for tc in tool_calls:
+        for tc in tool_calls or []:
             call_text = Text()
             call_text.append(f"{tc.name}", style="bold cyan")
             call_text.append("(", style="dim")
@@ -208,6 +208,7 @@ def pprint_chat_response(response: ChatResponse, *, max_chars: int | None = None
         footer_parts_str.append(config_inline)
 
     # Combine markdown body + plain-text footer into a single panel
+    content: Text | Markdown | Group
     if footer_parts_str:
         content = Group(body, Text(""), Text.from_markup("\n".join(footer_parts_str)))
     else:
@@ -270,7 +271,7 @@ def pprint_compiled_context(
         # Tool-calling assistant messages: show function calls
         if msg.role == "assistant" and getattr(msg, "tool_calls", None):
             call_parts = []
-            for tc in msg.tool_calls:
+            for tc in msg.tool_calls or []:
                 args = ", ".join(f"{k}={v!r}" for k, v in tc.arguments.items())
                 call_parts.append(f"{tc.name}({args})")
             display_text = "; ".join(call_parts)
@@ -397,7 +398,7 @@ def _pprint_compiled_compact(ctx: CompiledContext, *, max_chars: int | None = No
             color = "magenta"
             role_label = "tool call"
             call_parts = []
-            for tc in msg.tool_calls:
+            for tc in msg.tool_calls or []:
                 args = ", ".join(f"{k}={v!r}" for k, v in tc.arguments.items())
                 call_parts.append(f"{tc.name}({args})")
             preview = "; ".join(call_parts)
@@ -835,12 +836,10 @@ def pprint_conflict_info(conflict: ConflictInfo, *, file: IO[str] | None = None)
 
     # Header
     target_short = conflict.target_hash[:8] if conflict.target_hash else "???"
-    ctype = conflict.conflict_type
-    if hasattr(ctype, "value"):
-        ctype = ctype.value
+    ctype_str = conflict.conflict_type.value if hasattr(conflict.conflict_type, "value") else str(conflict.conflict_type)
     header = Text()
     header.append("CONFLICT ", style="bold red")
-    header.append(f"({ctype}) ", style="dim")
+    header.append(f"({ctype_str}) ", style="dim")
     header.append(f"on {target_short}", style="bold")
     console.print(header)
 
@@ -977,10 +976,10 @@ def pprint_tag_registry(entries: list[dict[str, object]], *, file: IO[str] | Non
     table.add_column("Description", no_wrap=False)
 
     for entry in entries:
-        name = entry.get("name", "")
+        name = str(entry.get("name", ""))
         count = entry.get("count", 0)
         auto = entry.get("auto_created", False)
-        desc = entry.get("description", "") or ""
+        desc = str(entry.get("description", "") or "")
         source = "auto" if auto else "custom"
         source_text = Text(source, style="dim" if auto else "cyan")
         table.add_row(name, str(count), source_text, desc)

@@ -45,4 +45,4 @@ class PydanticJSON(TypeDecorator):
 
     def coerce_compared_value(self, op: Any, value: Any) -> Any:
         """Ensure comparisons use the underlying JSON type."""
-        return self.impl.coerce_compared_value(op, value)
+        return super().coerce_compared_value(op, value)

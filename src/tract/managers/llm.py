@@ -27,7 +27,7 @@ if TYPE_CHECKING:
         BlobRepository,
         CommitRepository,
         CompileRecordRepository,
-        ParentRepository,
+        CommitParentRepository as ParentRepository,
         RefRepository,
     )
     from tract.toolkit.models import ToolProfile
@@ -963,6 +963,7 @@ class LLMManager:
         from tract.models.commit import CommitOperation
         from tract.models.content import DialogueContent, InstructionContent
 
+        content: InstructionContent | DialogueContent
         if role == "system":
             content = InstructionContent(text=improved_text)
         else:

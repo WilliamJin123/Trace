@@ -31,10 +31,10 @@ if TYPE_CHECKING:
     from tract.storage.repositories import (
         AnnotationRepository,
         BlobRepository,
+        CommitParentRepository as ParentRepository,
         CommitRepository,
         CompileRecordRepository,
         OperationEventRepository,
-        ParentRepository,
         RefRepository,
     )
 
@@ -199,6 +199,8 @@ class CompressionManager:
         )
 
         head_hash = self._ref_repo.get_head(self._tract_id)
+        if head_hash is None:
+            raise RuntimeError("Cannot compress: no HEAD commit on current branch")
         branch_name = self._ref_repo.get_current_branch(self._tract_id)
         range_commits = _resolve_commit_range(
             self._commit_repo, self._ref_repo, self._annotation_repo,

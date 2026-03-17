@@ -35,7 +35,8 @@ _VALID_PROMPT_NAMES: frozenset[str] = frozenset({
 class ConfigManager:
     """Configuration: configure, get_config, configure_llm, configure_operations, etc."""
 
-    # Well-known config key type validators
+    _commit_fn: Callable
+
     _WELL_KNOWN_CONFIG_TYPES: dict[str, type | tuple[type, ...]] = {
         "model": (str,),
         "temperature": (int, float),
@@ -78,7 +79,7 @@ class ConfigManager:
         self._parent_repo = parent_repo
         self._check_open_fn = check_open or (lambda: None)
         self._commit_session_fn = commit_session or (lambda: None)
-        self._commit_fn = commit_fn
+        self._commit_fn = commit_fn  # type: ignore[assignment]
         self._get_head = get_head or (lambda: self._ref_repo.get_head(self._tract_id))
 
         # Lazy, stale-aware config index cache
@@ -616,7 +617,8 @@ class ConfigManager:
             )
         if resolver is None:
             return self._llm_state.default_resolver
-        return resolver
+        # At this point resolver is a ResolverCallable (str "llm" was handled above)
+        return resolver  # type: ignore[return-value]
 
     # ------------------------------------------------------------------
     # Internal helpers

@@ -327,21 +327,21 @@ class SemanticMaintainer:
         peeks_performed = 0
 
         if self.max_peeks > 0:
-            result = self._run_with_peeking(
+            peek_result = self._run_with_peeking(
                 ctx, tract, client, manifest, llm_kwargs,
                 maintain_prompt=maintain_prompt, peek_prompt=peek_prompt,
             )
-            if result is None:
+            if peek_result is None:
                 return  # fail-open already stored last_result
-            reasoning, action_list, tokens_used, peeks_requested, peeks_performed = result
+            reasoning, action_list, tokens_used, peeks_requested, peeks_performed = peek_result
         else:
-            result = self._run_single_pass(
+            single_result = self._run_single_pass(
                 ctx, tract, client, manifest, llm_kwargs,
                 maintain_prompt=maintain_prompt,
             )
-            if result is None:
+            if single_result is None:
                 return  # fail-open already stored last_result
-            reasoning, action_list, tokens_used = result
+            reasoning, action_list, tokens_used = single_result
 
         # 5. Filter out disallowed action types
         allowed = set(self.actions)

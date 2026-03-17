@@ -6,6 +6,7 @@ constructor dependencies.
 
 from __future__ import annotations
 
+import builtins
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -17,8 +18,8 @@ if TYPE_CHECKING:
     from tract.storage.repositories import (
         AnnotationRepository,
         BlobRepository,
+        CommitParentRepository as ParentRepository,
         CommitRepository,
-        ParentRepository,
         TagAnnotationRepository,
         TagRegistryRepository,
     )
@@ -108,7 +109,7 @@ class TagManager:
         self._commit_session()
         return result
 
-    def get(self, target_hash: str) -> list[str]:
+    def get(self, target_hash: str) -> builtins.list[str]:
         """Get all tags for a commit (immutable + mutable combined).
 
         Args:
@@ -149,7 +150,7 @@ class TagManager:
         )
         self._commit_session()
 
-    def list(self) -> list[dict]:
+    def list(self) -> builtins.list[dict]:
         """List all registered tags with descriptions and usage counts.
 
         Returns:
@@ -195,11 +196,11 @@ class TagManager:
 
     def query(
         self,
-        tags: list[str],
+        tags: builtins.list[str],
         *,
         match: str = "any",
         limit: int = 100,
-    ) -> list[CommitInfo]:
+    ) -> builtins.list[CommitInfo]:
         """Query commits by tags (combining immutable and mutable tags).
 
         Args:
@@ -222,13 +223,13 @@ class TagManager:
         ancestors = self._get_ancestors(head, limit=500)
 
         # Batch-fetch annotation tags for all ancestors
-        annotation_map: dict[str, list[str]] = {}
+        annotation_map: dict[str, builtins.list[str]] = {}
         if self._get_tag_annotation_repo() is not None:
             all_hashes = [r.commit_hash for r in ancestors]
             annotation_map = self._get_tag_annotation_repo().batch_get_tags(all_hashes)
 
         tag_set = set(tags)
-        results: list[CommitInfo] = []
+        results: builtins.list[CommitInfo] = []
         for row in ancestors:
             # Combine immutable + mutable tags
             commit_tags = set(row.tags_json) if row.tags_json else set()
@@ -272,18 +273,19 @@ class TagManager:
             )
         self._commit_session()
 
-    def _validate(self, tags: list[str]) -> None:
+    def _validate(self, tags: builtins.list[str]) -> None:
         """Validate tags against registry in strict mode.
 
         Raises:
             TagNotRegisteredError: If any tag is not registered (reports all
                 unregistered tags at once).
         """
-        if not self._get_strict_tags() or self._get_tag_registry_repo() is None:
+        registry = self._get_tag_registry_repo()
+        if not self._get_strict_tags() or registry is None:
             return
         from tract.exceptions import TagNotRegisteredError
 
-        registered = self._get_tag_registry_repo().batch_is_registered(self._tract_id, tags)
+        registered = registry.batch_is_registered(self._tract_id, tags)
         unregistered = [tag for tag in tags if tag not in registered]
         if unregistered:
             raise TagNotRegisteredError(unregistered)
@@ -295,7 +297,7 @@ class TagManager:
         role: str | None = None,
         operation: CommitOperation | None = None,
         metadata: dict | None = None,
-    ) -> list[str]:
+    ) -> builtins.list[str]:
         """Heuristic-based tag classification (no LLM call).
 
         Args:
@@ -309,7 +311,7 @@ class TagManager:
         """
         from tract.models.commit import CommitOperation
 
-        tags: list[str] = []
+        tags: builtins.list[str] = []
 
         # Classify based on content type and role
         if content_type == "instruction" or role == "system":
@@ -334,7 +336,7 @@ class TagManager:
 
         # Deduplicate preserving order
         seen: set[str] = set()
-        unique_tags: list[str] = []
+        unique_tags: builtins.list[str] = []
         for tag in tags:
             if tag not in seen:
                 seen.add(tag)

@@ -218,10 +218,10 @@ def validate_content(
     try:
         return _builtin_adapter.validate_python(data)
     except ValidationError as e:
-        model_class = _BUILTIN_TYPE_MODELS.get(content_type)
-        if model_class is not None:
+        model_class_or_none = _BUILTIN_TYPE_MODELS.get(content_type)
+        if model_class_or_none is not None:
             raise ContentValidationError(
-                _format_field_error(content_type, data, model_class)
+                _format_field_error(content_type, data, model_class_or_none)
             ) from e
         # Fallback (should not happen for known types)
         raise ContentValidationError(

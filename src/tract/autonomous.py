@@ -657,12 +657,14 @@ def _build_branch_manifest(tract: Tract, context: str = "") -> str:
 
     # Active directives
     try:
-        ci = tract.config_index
-        if ci.directives:
+        directive_commits = tract.search.find(content_type="instruction", limit=20)
+        if directive_commits:
             lines.append("")
             lines.append("ACTIVE DIRECTIVES:")
-            for name, text in ci.directives.items():
-                lines.append(f"  {name}: {text[:80]}...")
+            for dc in directive_commits:
+                text = tract.search.get_content(dc) or ""
+                label = dc.message or dc.commit_hash[:8]
+                lines.append(f"  {label}: {str(text)[:80]}...")
     except Exception:
         pass
 

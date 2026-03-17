@@ -74,6 +74,7 @@ class AnthropicClient:
         if base_url:
             sdk_kwargs["base_url"] = base_url.rstrip("/")
         self._client = anthropic.Anthropic(**sdk_kwargs)
+        self._async_client: anthropic.AsyncAnthropic | None = None
 
     # ------------------------------------------------------------------
     # LLMClient protocol: chat()
@@ -257,7 +258,7 @@ class AnthropicClient:
     def close(self) -> None:
         """Close the underlying client."""
         self._client.close()
-        if hasattr(self, '_async_client') and self._async_client is not None:
+        if self._async_client is not None:
             # Can't await in sync context, but httpx.AsyncClient.aclose()
             # also has a sync close() fallback
             try:
@@ -357,7 +358,7 @@ class AnthropicClient:
 
     def _get_async_client(self) -> Any:
         """Lazily create the async Anthropic client."""
-        if not hasattr(self, "_async_client") or self._async_client is None:
+        if self._async_client is None:
             sdk_kwargs: dict[str, Any] = {
                 "api_key": self._api_key,
                 "max_retries": self._max_retries,
@@ -370,7 +371,7 @@ class AnthropicClient:
 
     async def aclose(self) -> None:
         """Close async resources."""
-        if hasattr(self, "_async_client") and self._async_client is not None:
+        if self._async_client is not None:
             await self._async_client.close()
             self._async_client = None
 

@@ -87,10 +87,10 @@ class ToolCall:
     def from_dict(cls, d: ToolCallDict | dict[str, object]) -> ToolCall:
         """Reconstruct from a stored dict (e.g. metadata_json)."""
         return cls(
-            id=d["id"],
-            name=d["name"],
-            arguments=d.get("arguments", {}),
-            type=d.get("type", "function"),
+            id=str(d["id"]),
+            name=str(d["name"]),
+            arguments=d.get("arguments", {}),  # type: ignore[arg-type]
+            type=str(d.get("type", "function")),
         )
 
     def to_openai(self) -> ToolCallOpenAIDict:
@@ -267,12 +267,13 @@ class CompiledContext:
 
         system_text = "\n\n".join(system_parts) if system_parts else None
 
+        system_value: str | list[dict[str, object]] | None = system_text
         if cache_control:
             _apply_anthropic_cache_control(system_text, merged, self.priorities)
             # When cache_control is enabled the system value may have been
             # converted from a plain string to a block list.
             if system_text is not None:
-                system_text = [
+                system_value = [
                     {
                         "type": "text",
                         "text": system_text,
@@ -281,7 +282,7 @@ class CompiledContext:
                 ]
 
         return {
-            "system": system_text,
+            "system": system_value,
             "messages": merged,
         }
 

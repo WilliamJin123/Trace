@@ -20,8 +20,8 @@ if TYPE_CHECKING:
     from tract.storage.repositories import (
         AnnotationRepository,
         BlobRepository,
+        CommitParentRepository as ParentRepository,
         CommitRepository,
-        ParentRepository,
         RefRepository,
         ToolSchemaRepository,
     )
@@ -225,6 +225,8 @@ class ToolManager:
         self, commit_hash: str, tools: list[dict]
     ) -> None:
         """Store tool schemas (content-addressed) and link to a commit."""
+        if self._tool_schema_repo is None:
+            return
         from tract.models.tools import hash_tool_schema
 
         now = datetime.now(timezone.utc)

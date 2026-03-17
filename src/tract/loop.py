@@ -667,7 +667,7 @@ def _maybe_summarize_tool_result(
     instructions = config.instructions.get(tool_name, config.default_instructions)
 
     # Need an LLM client to summarize
-    if not tract._has_llm_client("compress"):
+    if not tract._config_mgr._has_llm_client("compress"):
         logger.debug(
             "Tool result for %s exceeds threshold (%d > %d) but no LLM client "
             "available for summarization",

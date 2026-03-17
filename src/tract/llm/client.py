@@ -102,6 +102,7 @@ class OpenAIClient:
                 "Authorization": f"Bearer {self._api_key}",
             },
         )
+        self._async_client: httpx.AsyncClient | None = None
 
     def chat(
         self,
@@ -240,7 +241,7 @@ class OpenAIClient:
     def close(self) -> None:
         """Close the underlying httpx client."""
         self._client.close()
-        if hasattr(self, '_async_client') and self._async_client is not None:
+        if self._async_client is not None:
             # httpx.AsyncClient has no sync close(); drop the reference
             # so GC can reclaim the connection pool.
             self._async_client = None
@@ -619,7 +620,7 @@ class OpenAIClient:
 
     def _get_async_client(self) -> httpx.AsyncClient:
         """Lazily create the async httpx client."""
-        if not hasattr(self, "_async_client") or self._async_client is None:
+        if self._async_client is None:
             self._async_client = httpx.AsyncClient(
                 timeout=self._timeout,
                 headers={
@@ -766,6 +767,6 @@ class OpenAIClient:
 
     async def aclose(self) -> None:
         """Close async resources."""
-        if hasattr(self, "_async_client") and self._async_client is not None:
+        if self._async_client is not None:
             await self._async_client.aclose()
             self._async_client = None

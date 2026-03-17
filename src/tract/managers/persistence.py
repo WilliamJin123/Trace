@@ -26,10 +26,10 @@ if TYPE_CHECKING:
     from tract.storage.repositories import (
         AnnotationRepository,
         BlobRepository,
+        CommitParentRepository as ParentRepository,
         CommitRepository,
         CompileRecordRepository,
         OperationEventRepository,
-        ParentRepository,
         PersistenceRepository,
         RefRepository,
     )

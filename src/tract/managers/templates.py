@@ -15,17 +15,20 @@ if TYPE_CHECKING:
 class TemplateManager:
     """Directive templates and workflow profiles."""
 
+    _directive_fn: Callable
+    _configure_fn: Callable
+
     def __init__(
         self,
-        check_open: Callable | None = None,  # Callable (for consistency)
-        directive_fn: Callable | None = None,  # Callable - Tract.directive
-        configure_fn: Callable | None = None,  # Callable - ConfigManager.set (was configure)
-        template_registry: dict | None = None,  # shared with Tract
-        profile_registry: dict | None = None,  # shared with Tract
+        check_open: Callable | None = None,
+        directive_fn: Callable | None = None,
+        configure_fn: Callable | None = None,
+        template_registry: dict | None = None,
+        profile_registry: dict | None = None,
     ) -> None:
         self._check_open_fn = check_open or (lambda: None)
-        self._directive_fn = directive_fn
-        self._configure_fn = configure_fn
+        self._directive_fn = directive_fn  # type: ignore[assignment]
+        self._configure_fn = configure_fn  # type: ignore[assignment]
 
         # Use shared registries from Tract, or create defaults
         if template_registry is not None:

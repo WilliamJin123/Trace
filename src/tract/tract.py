@@ -1374,15 +1374,7 @@ class Tract:
             result = t.routing.route("time to start implementing")
             print(result.route.target, result.route.confidence)
         """
-        self._check_open()
-        from tract.routing import SemanticRouter
-
-        if router is not None and isinstance(router, SemanticRouter):
-            result = router.route(query, self)
-        else:
-            result = self._route_fallback(query)
-
-        return self._route_apply(result, apply)
+        return self._routing_mgr.route(query=query, router=router, apply=apply)
 
     async def aroute(
         self,
@@ -1703,6 +1695,7 @@ class Tract:
 
         text = _resolve_text(text, path, label="text", prompt_dir=self._prompt_dir)
 
+        content: InstructionContent | DialogueContent
         if role == "system":
             content = InstructionContent(text=text)
         else:
@@ -2881,10 +2874,7 @@ class Tract:
                 except Exception:
                     logger.debug("Failed to async-close LLM client", exc_info=True)
                 # Prevent sync close() from double-closing the client
-                if s:
-                    s.owns_llm_client = False
-                else:
-                    self._owns_llm_client = False
+                self._llm_state.owns_llm_client = False
         # Delegate remaining teardown to sync close()
         self.close()
 

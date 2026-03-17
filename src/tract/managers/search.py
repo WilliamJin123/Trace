@@ -25,6 +25,12 @@ logger = logging.getLogger(__name__)
 class SearchManager:
     """Search, query, status, and commit inspection operations."""
 
+    _get_ancestors: Callable
+    _compile_fn: Callable
+    _compile_at_fn: Callable
+    _resolve_commit_fn: Callable
+    _commit_fn: Callable
+
     def __init__(
         self,
         tract_id: str,
@@ -39,18 +45,18 @@ class SearchManager:
         compiler,  # ContextCompiler
         config: TractConfig,
         custom_type_registry: dict,
-        check_open: Callable | None = None,  # Callable
-        enrich: Callable | None = None,  # Callable - AnnotationManager._enrich_with_priorities
-        get_head: Callable | None = None,  # Callable -> str|None
-        get_ancestors: Callable | None = None,  # Callable - _get_merge_aware_ancestors
-        row_to_info: Callable | None = None,  # Callable - commit_engine._row_to_info
-        compile_fn: Callable | None = None,  # Callable - Tract.compile
-        compile_at_fn: Callable | None = None,  # Callable - Tract._compile_at
-        resolve_commit_fn: Callable | None = None,  # Callable - BranchManager.resolve
-        get_config_fn: Callable | None = None,  # Callable - ConfigManager.get (for get_config)
-        commit_fn: Callable | None = None,  # Callable - Tract.commit
+        check_open: Callable | None = None,
+        enrich: Callable | None = None,
+        get_head: Callable | None = None,
+        get_ancestors: Callable | None = None,
+        row_to_info: Callable | None = None,
+        compile_fn: Callable | None = None,
+        compile_at_fn: Callable | None = None,
+        resolve_commit_fn: Callable | None = None,
+        get_config_fn: Callable | None = None,
+        commit_fn: Callable | None = None,
         tag_annotation_repo=None,
-        tract_ref: Any = None,  # The Tract instance (for build_manifest)
+        tract_ref: Any = None,
     ) -> None:
         self._tract_id = tract_id
         self._commit_repo = commit_repo
@@ -67,13 +73,13 @@ class SearchManager:
         self._check_open_fn = check_open or (lambda: None)
         self._enrich = enrich or (lambda entries: entries)
         self._get_head = get_head or (lambda: self._ref_repo.get_head(self._tract_id))
-        self._get_ancestors = get_ancestors
+        self._get_ancestors = get_ancestors or self._get_merge_aware_ancestors
         self._row_to_info = row_to_info or self._commit_engine._row_to_info
-        self._compile_fn = compile_fn
-        self._compile_at_fn = compile_at_fn
-        self._resolve_commit_fn = resolve_commit_fn
+        self._compile_fn = compile_fn  # type: ignore[assignment]
+        self._compile_at_fn = compile_at_fn  # type: ignore[assignment]
+        self._resolve_commit_fn = resolve_commit_fn  # type: ignore[assignment]
         self._get_config_fn = get_config_fn
-        self._commit_fn = commit_fn
+        self._commit_fn = commit_fn  # type: ignore[assignment]
         self._tag_annotation_repo = tag_annotation_repo
         self._tract_ref = tract_ref
 
@@ -640,7 +646,8 @@ class SearchManager:
         else:
             info = commit_or_hash
 
-        content = self.get_content(info)
+        raw_content = self.get_content(info)
+        content = str(raw_content) if isinstance(raw_content, dict) else raw_content
         pprint_commit_info(info, content=content)
 
     # ------------------------------------------------------------------

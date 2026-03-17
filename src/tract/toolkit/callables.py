@@ -188,9 +188,10 @@ def callable_to_tool(
     if not callable(fn):
         raise TypeError(f"Expected a callable, got {type(fn).__name__}")
 
-    tool_name = name or getattr(fn, "__name__", "unknown_tool")
+    tool_name: str = name if name is not None else str(getattr(fn, "__name__", "unknown_tool"))
 
     # Description: explicit override > docstring first line > fallback
+    tool_desc: str
     if description is not None:
         tool_desc = description
     elif fn.__doc__:

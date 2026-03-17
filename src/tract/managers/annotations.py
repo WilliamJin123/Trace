@@ -102,7 +102,7 @@ class AnnotationManager:
                 pass  # No-op: annotation didn't change compiled output
             else:
                 self._cache.clear()
-                if patched is not None:
+                if patched is not None and current_head is not None:
                     self._cache.put(current_head, patched)
         else:
             self._cache.clear()

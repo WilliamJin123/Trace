@@ -16,8 +16,8 @@ if TYPE_CHECKING:
     from tract.models.branch import BranchInfo
     from tract.operations.config_index import ConfigIndex
     from tract.storage.repositories import (
+        CommitParentRepository as ParentRepository,
         CommitRepository,
-        ParentRepository,
         RefRepository,
     )
 

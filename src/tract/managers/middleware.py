@@ -7,7 +7,7 @@ with explicit constructor dependencies.
 from __future__ import annotations
 
 import uuid
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -262,10 +262,10 @@ class MiddlewareManager:
             return
         self._in_middleware_events.add(event)
         try:
-            from tract.middleware import MiddlewareContext
+            from tract.middleware import MiddlewareContext, MiddlewareEvent
 
             ctx = MiddlewareContext(
-                event=event,
+                event=cast("MiddlewareEvent", event),
                 commit=kwargs.get("commit"),
                 tract=self._tract_ref(),
                 branch=self._get_current_branch() or "",
