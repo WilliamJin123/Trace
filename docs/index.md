@@ -245,7 +245,7 @@ Rich terminal output for debugging:
 from tract.formatting import pprint
 
 t.compile().pprint()           # Pretty-print compiled context
-t.compile().pprint(style="compact")  # Compact view
+t.compile().pprint(style="chat")  # Compact view
 t.status().pprint()            # Current tract status
 ```
 
