@@ -145,8 +145,8 @@ def main() -> None:
     # print(f"compressed {grep_result.turn_count} grep turns")
 
     # Query tool results for token analysis
-    grep_results = t.find_tool_results(name="grep")
-    bash_results = t.find_tool_results(name="bash")
+    grep_results = t.tools.find_results(name="grep")
+    bash_results = t.tools.find_results(name="bash")
     print(f"\ngrep results: {len(grep_results)}, bash results: {len(bash_results)}")
     t.close()
 

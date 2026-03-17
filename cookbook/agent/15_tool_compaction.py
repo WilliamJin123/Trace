@@ -4,14 +4,14 @@ Agent loops with heavy tool use accumulate verbose tool results that
 eat the context window. This example shows three compaction approaches:
 
   1. Manual edit: trim a tool result with tool_result(edit=hash)
-  2. Drop failures: skip error tool turns with drop_failed_tool_turns()
+  2. Drop failures: skip error tool turns with tools.drop_failed_turns()
   3. Batch compaction: compress_tool_calls() summarizes all results
 
 Then demonstrates a post_tool_execute middleware that auto-triggers
 compaction when tool results exceed a token threshold.
 
-Demonstrates: compress_tool_calls(), find_tool_turns(),
-              drop_failed_tool_turns(), tool_result(edit=),
+Demonstrates: compress_tool_calls(), tools.find_turns(),
+              tools.drop_failed_turns(), tool_result(edit=),
               post_tool_execute middleware for auto-compaction
 
 Requires: LLM API key for compress_tool_calls() (uses Cerebras)
@@ -80,7 +80,7 @@ def main() -> None:
     # =================================================================
     # 2. Drop failed tool turns
     # =================================================================
-    # Error tool results waste context. drop_failed_tool_turns()
+    # Error tool results waste context. tools.drop_failed_turns()
     # annotates them as SKIP so they fall out of compilation.
 
     print("\n=== 2. Drop Failed Tool Turns ===\n")
@@ -113,9 +113,9 @@ def main() -> None:
 
         before = t.compile().token_count
         print(f"\n  Before dropping failed turns: {before} tokens")
-        print(f"  Context includes {len(t.find_tool_turns())} tool turns (2 failed, 1 success)")
+        print(f"  Context includes {len(t.tools.find_turns())} tool turns (2 failed, 1 success)")
 
-        drop = t.drop_failed_tool_turns()
+        drop = t.tools.drop_failed_turns()
         after = t.compile().token_count
 
         print(f"  After drop: {after} tokens ({before - after} saved)")
@@ -197,7 +197,7 @@ def main() -> None:
                 print(f"  read_file({fname}) -> {lines} lines of code")
 
             before = t.compile().token_count
-            turns_before = len(t.find_tool_turns())
+            turns_before = len(t.tools.find_turns())
             print(f"\n  Before compaction: {turns_before} tool turns, {before} tokens")
 
             # Compact all tool results at once
@@ -269,7 +269,7 @@ def main() -> None:
     #       max_steps=20,
     #       tool_profile="self",
     #   )
-    #   t.drop_failed_tool_turns()                  # clean up errors
+    #   t.tools.drop_failed_turns()                  # clean up errors
     #   t.compression.compress_tool_calls()                     # final compaction
     #
     # The middleware handles compaction DURING the loop (zero agent
@@ -277,7 +277,7 @@ def main() -> None:
 
     print("\n=== Summary ===\n")
     print("  Manual edit:           tool_result(edit=hash) -- no LLM")
-    print("  Drop failures:         drop_failed_tool_turns() -- no LLM")
+    print("  Drop failures:         tools.drop_failed_turns() -- no LLM")
     print("  Batch compaction:      compress_tool_calls() -- LLM")
     print("  Auto-compact:          post_commit middleware + compress_tool_calls()")
     print()

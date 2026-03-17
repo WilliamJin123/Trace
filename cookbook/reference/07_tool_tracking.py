@@ -1,6 +1,6 @@
 """Tool tracking reference: commits, errors, summarization, reasoning, provenance.
 
-Covers: tool_call/tool_result commits, is_error + drop_failed_tool_turns,
+Covers: tool_call/tool_result commits, is_error + tools.drop_failed_turns,
 tool summarization, reasoning commits, query_by_config, tool provenance.
 """
 
@@ -31,7 +31,7 @@ def main() -> None:
     t.close()
 
     # =================================================================
-    # 2. Error handling: is_error + drop_failed_tool_turns
+    # 2. Error handling: is_error + tools.drop_failed_turns
     # =================================================================
 
     t = Tract.open()
@@ -54,18 +54,18 @@ def main() -> None:
     t.tool_result("c3", "deploy", "Deployed. Build #1847.")
 
     # Drop failed turns (SKIP-annotates error turn)
-    drop = t.drop_failed_tool_turns()
+    drop = t.tools.drop_failed_turns()
     drop.pprint()
 
     print(f"\n  After dropping failed turns:")
     ctx = t.compile()
     ctx.pprint(style="compact")
 
-    # Query tools: find_tool_turns, find_tool_results
-    turns = t.find_tool_turns()
+    # Query tools: tools.find_turns, tools.find_results
+    turns = t.tools.find_turns()
     print(f"{len(turns)} tool turns remaining")
-    grep_turns = t.find_tool_turns(name="deploy")  # filter by name
-    results = t.find_tool_results(name="health_check")
+    grep_turns = t.tools.find_turns(name="deploy")  # filter by name
+    results = t.tools.find_results(name="health_check")
     t.close()
 
     # =================================================================
