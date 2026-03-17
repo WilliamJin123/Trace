@@ -31,6 +31,7 @@ from tract._helpers import strip_fences as _strip_fences
 from tract.exceptions import BlockedError
 
 if TYPE_CHECKING:
+    from tract.context_view import ContextView
     from tract.middleware import MiddlewareContext
     from tract.tract import Tract
 
@@ -134,7 +135,8 @@ class GateResult:
     gate_name: str
     passed: bool
     reason: str
-    tokens_used: int  # tokens consumed by the gate's LLM call
+    tokens_used: int
+    consulted_hashes: tuple[str, ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -178,6 +180,7 @@ class SemanticGate:
     condition: Callable[[Any], bool] | None = None
     temperature: float = 0.1
     max_log_entries: int = 30
+    context: ContextView | None = None
 
     # Stored after each invocation so callers can inspect.
     last_result: GateResult | None = field(default=None, init=False, repr=False)
@@ -186,12 +189,13 @@ class SemanticGate:
         """Serialize gate configuration to a dict for persistence.
 
         Callables (``condition``) are NOT serialized -- only a flag
-        indicating whether one was present.
+        indicating whether one was present.  The ``context`` field is
+        serialized as a dict of non-default ContextView fields when set.
 
         Returns:
             Dict with all declarative gate configuration.
         """
-        return {
+        spec: dict[str, Any] = {
             "name": self.name,
             "check": self.check,
             "model": self.model,
@@ -199,6 +203,9 @@ class SemanticGate:
             "temperature": self.temperature,
             "max_log_entries": self.max_log_entries,
         }
+        if self.context is not None:
+            spec["context"] = self.context.to_dict()
+        return spec
 
     @classmethod
     def from_spec(cls, data: dict[str, Any]) -> SemanticGate:
@@ -207,6 +214,12 @@ class SemanticGate:
         The ``condition`` callback is NOT restored (it is not serializable).
         Callers must re-register it manually if needed.
         """
+        context = None
+        if "context" in data and data["context"]:
+            from tract.context_view import ContextView
+
+            context = ContextView(**data["context"])
+
         return cls(
             name=data["name"],
             check=data["check"],
@@ -214,6 +227,7 @@ class SemanticGate:
             condition=None,  # not restorable
             temperature=data.get("temperature", 0.1),
             max_log_entries=data.get("max_log_entries", 30),
+            context=context,
         )
 
     # ------------------------------------------------------------------
@@ -237,6 +251,7 @@ class SemanticGate:
                     passed=True,
                     reason="Condition callback raised; defaulting to pass.",
                     tokens_used=0,
+                    consulted_hashes=(),
                 )
                 return
             if not should_check:
@@ -245,6 +260,7 @@ class SemanticGate:
                     passed=True,
                     reason="Condition returned False; gate skipped.",
                     tokens_used=0,
+                    consulted_hashes=(),
                 )
                 return
 
@@ -258,6 +274,7 @@ class SemanticGate:
                 passed=True,
                 reason="No LLM client configured; fail-open default.",
                 tokens_used=0,
+                consulted_hashes=(),
             )
             raise RuntimeError(
                 f"SemanticGate '{self.name}' requires an LLM client but none "
@@ -266,8 +283,9 @@ class SemanticGate:
             ) from exc
 
         # 3. Build manifest and messages
-        manifest = self._build_manifest(tract)
-        messages = self._build_messages(manifest, ctx)
+        manifest, consulted_hashes = self._build_manifest(tract)
+        prompt_override = tract.config.get_prompt("gate")
+        messages = self._build_messages(manifest, ctx, system_prompt=prompt_override)
 
         # 4. LLM call — fail-open on infrastructure errors
         llm_kwargs: dict[str, Any] = {"temperature": self.temperature}
@@ -283,6 +301,7 @@ class SemanticGate:
                 passed=True,
                 reason="LLM call failed; fail-open default.",
                 tokens_used=0,
+                consulted_hashes=consulted_hashes,
             )
             return
 
@@ -295,6 +314,7 @@ class SemanticGate:
             passed=passed,
             reason=reason,
             tokens_used=tokens_used,
+            consulted_hashes=consulted_hashes,
         )
 
         # 6. Block if failed
@@ -307,15 +327,23 @@ class SemanticGate:
     # ------------------------------------------------------------------
     # Manifest construction
     # ------------------------------------------------------------------
-    def _build_manifest(self, tract: Tract) -> str:
-        """Delegate to the module-level :func:`build_manifest`."""
-        return build_manifest(tract, self.max_log_entries)
+    def _build_manifest(self, tract: Tract) -> tuple[str, tuple[str, ...]]:
+        """Build context manifest via :func:`~tract.context_view.build_context`.
+
+        Returns (manifest_text, consulted_hashes).
+        """
+        from tract.context_view import ContextView, build_context
+
+        view = self.context or ContextView()
+        built = build_context(view, tract, default_scope=self.max_log_entries)
+        hashes = tuple(e["hash"] for e in built.commit_entries)
+        return built.text, hashes
 
     # ------------------------------------------------------------------
     # Message construction
     # ------------------------------------------------------------------
     def _build_messages(
-        self, manifest: str, ctx: MiddlewareContext
+        self, manifest: str, ctx: MiddlewareContext, system_prompt: str | None = None,
     ) -> list[dict[str, str]]:
         """Construct the LLM messages for the gate evaluation."""
         user_content = (
@@ -328,7 +356,7 @@ class SemanticGate:
             f"{manifest}"
         )
         return [
-            {"role": "system", "content": _GATE_SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt or _GATE_SYSTEM_PROMPT},
             {"role": "user", "content": user_content},
         ]
 

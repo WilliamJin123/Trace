@@ -11,7 +11,7 @@ from __future__ import annotations
 import enum
 import types
 from dataclasses import dataclass, field, fields as dc_fields
-from typing import TYPE_CHECKING, Callable, Literal, Optional
+from typing import TYPE_CHECKING, Any, Callable, Literal, Optional
 
 from pydantic import BaseModel
 
@@ -247,6 +247,7 @@ class OperationPrompts:
         from tract import OperationPrompts
         t.configure_prompts(OperationPrompts(
             compress="You are a concise summarizer.",
+            gate="Only pass if all safety checks are met.",
         ))
     """
 
@@ -254,6 +255,17 @@ class OperationPrompts:
     merge: str | None = None
     message: str | None = None
     commit_message: str | None = None
+    gate: str | None = None
+    maintain: str | None = None
+    maintain_peek: str | None = None
+    cherry_pick: str | None = None
+    dedup: str | None = None
+    split: str | None = None
+    rebase: str | None = None
+    branch: str | None = None
+    route: str | None = None
+    tool_compact: str | None = None
+    peek: str | None = None
 
 
 @dataclass(frozen=True)
@@ -306,5 +318,5 @@ class ToolSummarizationConfig:
     instructions: dict[str, str] = field(default_factory=dict)
     auto_threshold: int | None = None
     default_instructions: str | None = None
-    include_context: bool = False
+    context: Any = None  # ContextView | None — controls what DAG context to include
     system_prompt: str | None = None

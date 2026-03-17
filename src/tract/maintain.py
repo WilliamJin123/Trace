@@ -41,6 +41,7 @@ from tract.exceptions import BlockedError
 from tract.gate import build_manifest as _build_manifest
 
 if TYPE_CHECKING:
+    from tract.context_view import ContextView
     from tract.middleware import MiddlewareContext
     from tract.tract import Tract
 
@@ -114,9 +115,10 @@ class MaintainResult:
     actions_failed: int
     tokens_used: int
     reasoning: str
-    errors: tuple[str, ...] = ()  # descriptions of failed actions
+    errors: tuple[str, ...] = ()
     peeks_requested: int = 0
     peeks_performed: int = 0
+    consulted_hashes: tuple[str, ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +179,7 @@ class SemanticMaintainer:
     temperature: float = 0.1
     max_log_entries: int = 30
     max_peeks: int = 0
+    context: ContextView | None = None
 
     # Stored after each invocation so callers can inspect.
     last_result: MaintainResult | None = field(default=None, init=False, repr=False)
@@ -206,7 +209,7 @@ class SemanticMaintainer:
         Returns:
             Dict with all declarative maintainer configuration.
         """
-        return {
+        spec: dict[str, Any] = {
             "name": self.name,
             "instructions": self.instructions,
             "actions": list(self.actions),
@@ -216,6 +219,9 @@ class SemanticMaintainer:
             "max_log_entries": self.max_log_entries,
             "max_peeks": self.max_peeks,
         }
+        if self.context is not None:
+            spec["context"] = self.context.to_dict()
+        return spec
 
     @classmethod
     def from_spec(cls, data: dict[str, Any]) -> SemanticMaintainer:
@@ -224,6 +230,11 @@ class SemanticMaintainer:
         The ``condition`` callback is NOT restored (it is not serializable).
         Callers must re-register it manually if needed.
         """
+        from tract.context_view import ContextView
+
+        ctx_data = data.get("context")
+        ctx_view = ContextView(**ctx_data) if ctx_data is not None else None
+
         return cls(
             name=data["name"],
             instructions=data["instructions"],
@@ -233,6 +244,7 @@ class SemanticMaintainer:
             temperature=data.get("temperature", 0.1),
             max_log_entries=data.get("max_log_entries", 30),
             max_peeks=data.get("max_peeks", 0),
+            context=ctx_view,
         )
 
     # ------------------------------------------------------------------
@@ -259,6 +271,7 @@ class SemanticMaintainer:
                     tokens_used=0,
                     reasoning="Condition callback raised; skipping.",
                     errors=(),
+                    consulted_hashes=(),
                 )
                 return
             if not should_run:
@@ -270,6 +283,7 @@ class SemanticMaintainer:
                     tokens_used=0,
                     reasoning="Condition returned False; maintainer skipped.",
                     errors=(),
+                    consulted_hashes=(),
                 )
                 return
 
@@ -284,6 +298,7 @@ class SemanticMaintainer:
                 tokens_used=0,
                 reasoning="No LLM client configured; cannot run maintainer.",
                 errors=(),
+                consulted_hashes=(),
             )
             raise RuntimeError(
                 f"SemanticMaintainer '{self.name}' requires an LLM client but none "
@@ -291,11 +306,20 @@ class SemanticMaintainer:
                 f"Tract.open()."
             ) from exc
 
-        # 3. Build manifest
-        manifest = build_manifest(tract, self.max_log_entries)
+        # 3. Build manifest via ContextView
+        from tract.context_view import ContextView, build_context
+
+        view = self.context or ContextView()
+        built = build_context(view, tract, default_scope=self.max_log_entries)
+        manifest = built.text
+        consulted_hashes = tuple(e["hash"] for e in built.commit_entries)
         llm_kwargs: dict[str, Any] = {"temperature": self.temperature}
         if self.model is not None:
             llm_kwargs["model"] = self.model
+
+        # 3b. Resolve prompt overrides
+        maintain_prompt = tract.config.get_prompt("maintain")
+        peek_prompt = tract.config.get_prompt("maintain_peek")
 
         # 4. Run LLM flow (single-pass or two-pass with peeking)
         tokens_used = 0
@@ -304,13 +328,17 @@ class SemanticMaintainer:
 
         if self.max_peeks > 0:
             result = self._run_with_peeking(
-                ctx, tract, client, manifest, llm_kwargs
+                ctx, tract, client, manifest, llm_kwargs,
+                maintain_prompt=maintain_prompt, peek_prompt=peek_prompt,
             )
             if result is None:
                 return  # fail-open already stored last_result
             reasoning, action_list, tokens_used, peeks_requested, peeks_performed = result
         else:
-            result = self._run_single_pass(ctx, tract, client, manifest, llm_kwargs)
+            result = self._run_single_pass(
+                ctx, tract, client, manifest, llm_kwargs,
+                maintain_prompt=maintain_prompt,
+            )
             if result is None:
                 return  # fail-open already stored last_result
             reasoning, action_list, tokens_used = result
@@ -369,6 +397,7 @@ class SemanticMaintainer:
             errors=tuple(errors),
             peeks_requested=peeks_requested,
             peeks_performed=peeks_performed,
+            consulted_hashes=consulted_hashes,
         )
 
         # 9. Execute block actions (raises BlockedError)
@@ -388,9 +417,10 @@ class SemanticMaintainer:
         client: Any,
         manifest: str,
         llm_kwargs: dict[str, Any],
+        maintain_prompt: str | None = None,
     ) -> tuple[str, list[dict[str, Any]], int] | None:
         """Single LLM call. Returns (reasoning, actions, tokens) or None on failure."""
-        messages = self._build_messages(manifest, ctx)
+        messages = self._build_messages(manifest, ctx, system_prompt=maintain_prompt)
         return self._safe_llm_call(client, messages, llm_kwargs)
 
     # ------------------------------------------------------------------
@@ -403,6 +433,8 @@ class SemanticMaintainer:
         client: Any,
         manifest: str,
         llm_kwargs: dict[str, Any],
+        maintain_prompt: str | None = None,
+        peek_prompt: str | None = None,
     ) -> tuple[str, list[dict[str, Any]], int, int, int] | None:
         """Two-pass flow: peek selection → enriched action decision.
 
@@ -410,7 +442,7 @@ class SemanticMaintainer:
         or None on failure.
         """
         # Pass 1: Ask what to peek (or get direct actions)
-        peek_messages = self._build_peek_messages(manifest, ctx)
+        peek_messages = self._build_peek_messages(manifest, ctx, system_prompt=peek_prompt)
         pass1 = self._safe_llm_call_raw(client, peek_messages, llm_kwargs)
         if pass1 is None:
             return None
@@ -426,7 +458,7 @@ class SemanticMaintainer:
 
         if not peek_hashes:
             # Empty peek list — fall through to normal action call
-            messages = self._build_messages(manifest, ctx)
+            messages = self._build_messages(manifest, ctx, system_prompt=maintain_prompt)
             result = self._safe_llm_call(client, messages, llm_kwargs)
             if result is None:
                 return None
@@ -455,7 +487,9 @@ class SemanticMaintainer:
         performed = len(peeked_content)
 
         # Pass 2: Enriched action call
-        enriched_messages = self._build_enriched_messages(manifest, ctx, peeked_content)
+        enriched_messages = self._build_enriched_messages(
+            manifest, ctx, peeked_content, system_prompt=maintain_prompt,
+        )
         result = self._safe_llm_call(client, enriched_messages, llm_kwargs)
         if result is None:
             return None
@@ -485,6 +519,7 @@ class SemanticMaintainer:
                 tokens_used=0,
                 reasoning="LLM call failed; fail-open default.",
                 errors=(),
+                consulted_hashes=(),
             )
             return None
         return result
@@ -504,7 +539,7 @@ class SemanticMaintainer:
     # Message construction
     # ------------------------------------------------------------------
     def _build_messages(
-        self, manifest: str, ctx: MiddlewareContext
+        self, manifest: str, ctx: MiddlewareContext, system_prompt: str | None = None,
     ) -> list[dict[str, str]]:
         """Construct the LLM messages for the maintainer (single-pass)."""
         allowed_actions_str = ", ".join(sorted(self.actions))
@@ -521,15 +556,17 @@ class SemanticMaintainer:
             f"{manifest}"
         )
         return [
-            {"role": "system", "content": _MAINTAINER_SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt or _MAINTAINER_SYSTEM_PROMPT},
             {"role": "user", "content": user_content},
         ]
 
     def _build_peek_messages(
-        self, manifest: str, ctx: MiddlewareContext
+        self, manifest: str, ctx: MiddlewareContext, system_prompt: str | None = None,
     ) -> list[dict[str, str]]:
         """Construct messages for the peek selection pass."""
-        system = _PEEK_SYSTEM_PROMPT.replace("{max_peeks}", str(self.max_peeks))
+        system = system_prompt or _PEEK_SYSTEM_PROMPT.replace(
+            "{max_peeks}", str(self.max_peeks)
+        )
         allowed_actions_str = ", ".join(sorted(self.actions))
         user_content = (
             f"=== MAINTENANCE INSTRUCTIONS ===\n"
@@ -553,6 +590,7 @@ class SemanticMaintainer:
         manifest: str,
         ctx: MiddlewareContext,
         peeked_content: dict[str, str],
+        system_prompt: str | None = None,
     ) -> list[dict[str, str]]:
         """Construct messages with peeked content for the action pass."""
         allowed_actions_str = ", ".join(sorted(self.actions))
@@ -581,7 +619,7 @@ class SemanticMaintainer:
             f"Now provide your maintenance actions based on the manifest and peeked content above."
         )
         return [
-            {"role": "system", "content": _MAINTAINER_SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt or _MAINTAINER_SYSTEM_PROMPT},
             {"role": "user", "content": user_content},
         ]
 

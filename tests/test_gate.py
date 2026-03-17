@@ -96,6 +96,8 @@ def _make_tract_mock(
     mock.current_branch = "main"
     mock.head = "a" * 40
 
+    mock.config.get_prompt.return_value = None
+
     if client is not None:
         mock.config._resolve_llm_client.return_value = client
     else:
@@ -259,13 +261,12 @@ class TestBuildManifest:
     def test_empty_log(self):
         tract_mock = _make_tract_mock(commits=[], config={})
         gate = SemanticGate(name="m1", check="x")
-        manifest = gate._build_manifest(tract_mock)
+        manifest, hashes = gate._build_manifest(tract_mock)
 
-        assert "CONTEXT MANIFEST" in manifest
+        assert isinstance(manifest, str)
+        assert isinstance(hashes, tuple)
+        assert len(hashes) == 0
         assert "Branch: main" in manifest
-        assert "Commits shown: 0" in manifest
-        # No COMMIT LOG section
-        assert "COMMIT LOG" not in manifest
 
     def test_with_commits(self):
         commits = [
@@ -288,27 +289,27 @@ class TestBuildManifest:
         ]
         tract_mock = _make_tract_mock(commits=commits, config={"stage": "research"})
         gate = SemanticGate(name="m2", check="x")
-        manifest = gate._build_manifest(tract_mock)
+        manifest, hashes = gate._build_manifest(tract_mock)
 
         assert "COMMIT LOG" in manifest
         assert "a1b2c3d4" in manifest
         assert "assistant" in manifest
         assert "847" in manifest
         assert "research" in manifest
-        assert "(no message)" in manifest  # None message
-        assert "ACTIVE CONFIG" in manifest
-        assert "TAGS: research(1)" in manifest
+        assert len(hashes) == 2
+        assert "a1b2c3d4" + "0" * 32 in hashes
+        assert "b2c3d4e5" + "0" * 32 in hashes
 
     def test_message_truncation(self):
         long_msg = "A" * 100
         commits = [_make_commit_info(message=long_msg)]
         tract_mock = _make_tract_mock(commits=commits)
         gate = SemanticGate(name="m3", check="x")
-        manifest = gate._build_manifest(tract_mock)
+        manifest, hashes = gate._build_manifest(tract_mock)
 
-        # Message should be truncated to 60 chars (57 + "...")
-        assert "..." in manifest
+        # Message should be truncated
         assert "A" * 100 not in manifest
+        assert len(hashes) == 1
 
     def test_max_log_entries_respected(self):
         commits = [

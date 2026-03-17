@@ -1,8 +1,8 @@
 """Tests for context-aware tool compaction.
 
-Verifies that compress_tool_calls(include_context=True) compiles the
+Verifies that compress_tool_calls(context=...) compiles the
 current context and passes it to the LLM for relevance-aware compaction,
-and that the default (include_context=False) path is unchanged.
+and that the default (context=None) path is unchanged.
 """
 
 from __future__ import annotations
@@ -148,35 +148,35 @@ class TestBuildToolCompactPrompt:
 
 
 # ===========================================================================
-# compress_tool_calls(include_context=...) tests
+# compress_tool_calls(context=...) tests
 # ===========================================================================
 
 
 class TestCompressToolCallsContext:
-    """Tests for the include_context parameter on compress_tool_calls."""
+    """Tests for the context parameter on compress_tool_calls."""
 
-    def test_include_context_true_uses_context_system_prompt(self):
-        """include_context=True selects TOOL_COMPACT_CONTEXT_SYSTEM."""
+    def test_context_truthy_uses_context_system_prompt(self):
+        """context=True selects TOOL_COMPACT_CONTEXT_SYSTEM."""
         t, _, _ = _build_tool_call_tract()
 
         mock = MockLLMClient(responses=[json.dumps(["Compacted."])])
         t.config.configure_llm(mock)
 
-        t.compression.compress_tool_calls(include_context=True)
+        t.compression.compress_tool_calls(context=True)
 
         assert mock.last_messages is not None
         system_msg = mock.last_messages[0]
         assert system_msg["role"] == "system"
         assert system_msg["content"] == TOOL_COMPACT_CONTEXT_SYSTEM
 
-    def test_include_context_true_includes_context_in_prompt(self):
-        """include_context=True embeds compiled context in the user prompt."""
+    def test_context_truthy_includes_context_in_prompt(self):
+        """context=True embeds compiled context in the user prompt."""
         t, _, _ = _build_tool_call_tract()
 
         mock = MockLLMClient(responses=[json.dumps(["Compacted."])])
         t.config.configure_llm(mock)
 
-        t.compression.compress_tool_calls(include_context=True)
+        t.compression.compress_tool_calls(context=True)
 
         user_msg = mock.last_messages[1]
         assert user_msg["role"] == "user"
@@ -184,8 +184,22 @@ class TestCompressToolCallsContext:
         assert "code search agent" in user_msg["content"]
         assert "Here is the conversation so far:" in user_msg["content"]
 
-    def test_include_context_false_uses_default_system_prompt(self):
-        """Default (include_context=False) uses TOOL_COMPACT_SYSTEM."""
+    def test_context_string_uses_literal_text(self):
+        """context='some text' uses the string directly as context_text."""
+        t, _, _ = _build_tool_call_tract()
+
+        mock = MockLLMClient(responses=[json.dumps(["Compacted."])])
+        t.config.configure_llm(mock)
+
+        t.compression.compress_tool_calls(context="custom context for compaction")
+
+        user_msg = mock.last_messages[1]
+        assert "custom context for compaction" in user_msg["content"]
+        system_msg = mock.last_messages[0]
+        assert system_msg["content"] == TOOL_COMPACT_CONTEXT_SYSTEM
+
+    def test_context_none_uses_default_system_prompt(self):
+        """Default (context=None) uses TOOL_COMPACT_SYSTEM."""
         t, _, _ = _build_tool_call_tract()
 
         mock = MockLLMClient(responses=[json.dumps(["Compacted."])])
@@ -196,26 +210,26 @@ class TestCompressToolCallsContext:
         system_msg = mock.last_messages[0]
         assert system_msg["content"] == TOOL_COMPACT_SYSTEM
 
-    def test_include_context_false_no_context_in_prompt(self):
+    def test_context_none_no_context_in_prompt(self):
         """Default path does not embed context in the user prompt."""
         t, _, _ = _build_tool_call_tract()
 
         mock = MockLLMClient(responses=[json.dumps(["Compacted."])])
         t.config.configure_llm(mock)
 
-        t.compression.compress_tool_calls(include_context=False)
+        t.compression.compress_tool_calls(context=None)
 
         user_msg = mock.last_messages[1]
         assert "conversation so far" not in user_msg["content"]
 
-    def test_include_context_result_is_tool_compact_result(self):
-        """include_context=True returns a valid ToolCompactResult."""
+    def test_context_truthy_result_is_tool_compact_result(self):
+        """context=True returns a valid ToolCompactResult."""
         t, _, _ = _build_tool_call_tract()
 
         mock = MockLLMClient(responses=[json.dumps(["Compacted grep output."])])
         t.config.configure_llm(mock)
 
-        result = t.compression.compress_tool_calls(include_context=True)
+        result = t.compression.compress_tool_calls(context=True)
 
         assert isinstance(result, ToolCompactResult)
         assert result.turn_count == 1
@@ -223,20 +237,20 @@ class TestCompressToolCallsContext:
         assert "grep" in result.tool_names
 
     def test_system_prompt_override_takes_precedence_over_context(self):
-        """Explicit system_prompt= overrides even when include_context=True."""
+        """Explicit system_prompt= overrides even when context=True."""
         t, _, _ = _build_tool_call_tract()
 
         custom = "You are a custom compactor."
         mock = MockLLMClient(responses=[json.dumps(["Custom."])])
         t.config.configure_llm(mock)
 
-        t.compression.compress_tool_calls(include_context=True, system_prompt=custom)
+        t.compression.compress_tool_calls(context=True, system_prompt=custom)
 
         system_msg = mock.last_messages[0]
         assert system_msg["content"] == custom
 
     def test_no_regression_basic_compaction(self):
-        """Basic compaction without include_context works as before."""
+        """Basic compaction without context works as before."""
         t, tool_results, _ = _build_tool_call_tract()
 
         mock = MockLLMClient(

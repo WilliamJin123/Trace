@@ -339,7 +339,8 @@ class SemanticRouter:
             )
             return None, self._fuzzy_fallback(query)
 
-        messages = self._build_messages(query)
+        prompt_override = tract.config.get_prompt("route")
+        messages = self._build_messages(query, system_prompt=prompt_override)
         llm_kwargs: dict[str, Any] = {"temperature": self.temperature}
         if self.model is not None:
             llm_kwargs["model"] = self.model
@@ -469,9 +470,9 @@ class SemanticRouter:
     # ------------------------------------------------------------------
     # Message construction
     # ------------------------------------------------------------------
-    def _build_messages(self, query: str) -> list[dict[str, str]]:
+    def _build_messages(self, query: str, system_prompt: str | None = None) -> list[dict[str, str]]:
         """Build LLM messages for routing."""
-        system = _ROUTER_SYSTEM_PROMPT
+        system = system_prompt or _ROUTER_SYSTEM_PROMPT
         if self.instructions:
             system += f"\n\nAdditional instructions:\n{self.instructions}"
 

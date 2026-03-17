@@ -58,6 +58,7 @@ class CherryPickResult:
     total_candidates: int
     tokens_used: int
     reasoning: str
+    consulted_hashes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -68,6 +69,7 @@ class DedupResult:
     actions_taken: int  # number of SKIP annotations applied
     tokens_used: int
     reasoning: str
+    consulted_hashes: tuple[str, ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -282,6 +284,7 @@ class _CherryPickCtx(NamedTuple):
     llm_kwargs: dict[str, Any]
     commit_entries: list[dict[str, Any]]
     limit: int
+    consulted_hashes: tuple[str, ...]
 
 
 def _cherry_pick_prepare(
@@ -303,6 +306,7 @@ def _cherry_pick_prepare(
             total_candidates=len(all_hashes),
             tokens_used=0,
             reasoning="No LLM client configured; returning all commits (fail-open).",
+            consulted_hashes=(),
         )
 
     manifest, commit_entries = _build_intelligence_manifest(
@@ -315,7 +319,10 @@ def _cherry_pick_prepare(
             total_candidates=0,
             tokens_used=0,
             reasoning="No commits to evaluate.",
+            consulted_hashes=(),
         )
+
+    consulted_hashes = tuple(e["hash"] for e in commit_entries)
 
     user_content = (
         f"=== TASK/QUERY ===\n"
@@ -326,8 +333,9 @@ def _cherry_pick_prepare(
         f"\n"
         f"{manifest}"
     )
+    prompt_override = tract.config.get_prompt("cherry_pick")
     messages = [
-        {"role": "system", "content": _CHERRY_PICK_SYSTEM_PROMPT},
+        {"role": "system", "content": prompt_override or _CHERRY_PICK_SYSTEM_PROMPT},
         {"role": "user", "content": user_content},
     ]
 
@@ -341,7 +349,7 @@ def _cherry_pick_prepare(
     if max_tokens is not None:
         llm_kwargs["max_tokens"] = max_tokens
 
-    return _CherryPickCtx(client, messages, llm_kwargs, commit_entries, limit), None
+    return _CherryPickCtx(client, messages, llm_kwargs, commit_entries, limit, consulted_hashes), None
 
 
 def _cherry_pick_finalize(
@@ -356,6 +364,7 @@ def _cherry_pick_finalize(
             total_candidates=len(ctx.commit_entries),
             tokens_used=0,
             reasoning="LLM call failed; returning all commits (fail-open).",
+            consulted_hashes=ctx.consulted_hashes,
         )
 
     raw_text, tokens_used = result
@@ -367,6 +376,7 @@ def _cherry_pick_finalize(
         total_candidates=len(ctx.commit_entries),
         tokens_used=tokens_used,
         reasoning=reasoning,
+        consulted_hashes=ctx.consulted_hashes,
     )
 
 
@@ -440,6 +450,7 @@ class _DedupCtx(NamedTuple):
     commit_entries: list[dict[str, Any]]
     auto_skip: bool
     tract: Any  # Tract instance, needed for _apply_skip_annotations
+    consulted_hashes: tuple[str, ...]
 
 
 def _deduplicate_prepare(
@@ -459,6 +470,7 @@ def _deduplicate_prepare(
             actions_taken=0,
             tokens_used=0,
             reasoning="No LLM client configured; no deduplication performed (fail-open).",
+            consulted_hashes=(),
         )
 
     manifest, commit_entries = _build_intelligence_manifest(
@@ -471,7 +483,10 @@ def _deduplicate_prepare(
             actions_taken=0,
             tokens_used=0,
             reasoning="No commits to analyze.",
+            consulted_hashes=(),
         )
+
+    consulted_hashes = tuple(e["hash"] for e in commit_entries)
 
     threshold_desc = (
         "very strict (only near-identical content)" if threshold >= 0.9
@@ -485,8 +500,9 @@ def _deduplicate_prepare(
         f"\n"
         f"{manifest}"
     )
+    prompt_override = tract.config.get_prompt("dedup")
     messages = [
-        {"role": "system", "content": _DEDUP_SYSTEM_PROMPT},
+        {"role": "system", "content": prompt_override or _DEDUP_SYSTEM_PROMPT},
         {"role": "user", "content": user_content},
     ]
 
@@ -500,7 +516,7 @@ def _deduplicate_prepare(
     if max_tokens is not None:
         llm_kwargs["max_tokens"] = max_tokens
 
-    return _DedupCtx(client, messages, llm_kwargs, commit_entries, auto_skip, tract), None
+    return _DedupCtx(client, messages, llm_kwargs, commit_entries, auto_skip, tract, consulted_hashes), None
 
 
 def _deduplicate_finalize(
@@ -514,6 +530,7 @@ def _deduplicate_finalize(
             actions_taken=0,
             tokens_used=0,
             reasoning="LLM call failed; no deduplication performed (fail-open).",
+            consulted_hashes=ctx.consulted_hashes,
         )
 
     raw_text, tokens_used = result
@@ -528,6 +545,7 @@ def _deduplicate_finalize(
         actions_taken=actions_taken,
         tokens_used=tokens_used,
         reasoning=reasoning,
+        consulted_hashes=ctx.consulted_hashes,
     )
 
 

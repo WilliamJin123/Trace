@@ -25,7 +25,11 @@ logger = logging.getLogger(__name__)
 # Valid operation names for configure_operations / configure_clients
 # ---------------------------------------------------------------------------
 _VALID_OPERATION_NAMES: frozenset[str] = frozenset({"chat", "merge", "compress", "message"})
-_VALID_PROMPT_NAMES: frozenset[str] = frozenset({"compress", "merge", "message", "commit_message"})
+_VALID_PROMPT_NAMES: frozenset[str] = frozenset({
+    "compress", "merge", "message", "commit_message",
+    "gate", "maintain", "maintain_peek", "cherry_pick", "dedup",
+    "split", "rebase", "branch", "route", "tool_compact", "peek",
+})
 
 
 class ConfigManager:
@@ -410,7 +414,7 @@ class ConfigManager:
         *,
         auto_threshold: int | None = None,
         default_instructions: str | None = None,
-        include_context: bool = False,
+        context: Any = None,
         system_prompt: str | None = None,
     ) -> None:
         """Configure automatic tool result summarization.
@@ -421,7 +425,7 @@ class ConfigManager:
             instructions: Per-tool summarization instructions.
             auto_threshold: Token count threshold for auto-summarization.
             default_instructions: Fallback instructions for tools not listed.
-            include_context: If True, compile context for summarization LLM.
+            context: Optional ContextView controlling what DAG context to include.
             system_prompt: Override the default summarization system prompt.
         """
         from tract.models.config import ToolSummarizationConfig
@@ -430,7 +434,7 @@ class ConfigManager:
             instructions=instructions or {},
             auto_threshold=auto_threshold,
             default_instructions=default_instructions,
-            include_context=include_context,
+            context=context,
             system_prompt=system_prompt,
         )
 
@@ -572,6 +576,16 @@ class ConfigManager:
             "No LLM client configured. Pass api_key= to Tract.open() "
             "or call configure_llm(client)."
         )
+
+    def get_prompt(self, operation: str) -> str | None:
+        """Get the prompt override for an operation, or None if using default.
+
+        This enables all LLM-powered operations (gates, maintainers,
+        intelligence, autonomous, routing) to check for user-configured
+        prompt overrides before falling back to their hardcoded defaults.
+        """
+        prompts = self._llm_state.operation_prompts
+        return getattr(prompts, operation, None)
 
     def _has_llm_client(self, operation: str | None = None) -> bool:
         """Check if an LLM client is available."""

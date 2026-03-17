@@ -66,6 +66,7 @@ class AutoSplitResult:
     split_count: int
     tokens_used: int
     reasoning: str
+    consulted_hashes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -76,6 +77,7 @@ class AutoRebaseResult:
     reason: str
     target_branch: str | None
     tokens_used: int
+    consulted_hashes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -86,6 +88,7 @@ class AutoBranchResult:
     branch_name: str | None
     reason: str
     tokens_used: int
+    consulted_hashes: tuple[str, ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -204,6 +207,7 @@ class _AutoSplitCtx(NamedTuple):
     llm_kwargs: dict[str, Any]
     commit_hash: str
     tract: Any  # needed by _execute_split
+    consulted_hashes: tuple[str, ...]
 
 
 def _auto_split_prepare(
@@ -221,6 +225,7 @@ def _auto_split_prepare(
         split_count=1,
         tokens_used=0,
         reasoning="No split performed (fail-open).",
+        consulted_hashes=(),
     )
 
     client = _resolve_client(tract)
@@ -231,6 +236,7 @@ def _auto_split_prepare(
             split_count=1,
             tokens_used=0,
             reasoning="No LLM client configured; no split performed (fail-open).",
+            consulted_hashes=(),
         )
 
     try:
@@ -242,14 +248,17 @@ def _auto_split_prepare(
         logger.warning("Failed to get content for commit %s; no split.", commit_hash[:12], exc_info=True)
         return None, fail_open
 
+    consulted_hashes = (commit_hash,)
+
+    prompt_override = tract.config.get_prompt("split")
     messages = [
-        {"role": "system", "content": _SPLIT_SYSTEM_PROMPT},
+        {"role": "system", "content": prompt_override or _SPLIT_SYSTEM_PROMPT},
         {"role": "user", "content": f"=== COMMIT CONTENT ===\n{content_str}"},
     ]
 
     llm_kwargs = _build_llm_kwargs(model, temperature, max_tokens)
 
-    return _AutoSplitCtx(client, messages, llm_kwargs, commit_hash, tract), None
+    return _AutoSplitCtx(client, messages, llm_kwargs, commit_hash, tract, consulted_hashes), None
 
 
 def _auto_split_finalize(
@@ -264,6 +273,7 @@ def _auto_split_finalize(
             split_count=1,
             tokens_used=0,
             reasoning="No split performed (fail-open).",
+            consulted_hashes=ctx.consulted_hashes,
         )
 
     raw_text, tokens_used = result
@@ -275,9 +285,10 @@ def _auto_split_finalize(
             split_count=1,
             tokens_used=tokens_used,
             reasoning="LLM returned no split pieces; keeping original.",
+            consulted_hashes=ctx.consulted_hashes,
         )
 
-    return _execute_split(ctx.tract, ctx.commit_hash, pieces, tokens_used)
+    return _execute_split(ctx.tract, ctx.commit_hash, pieces, tokens_used, ctx.consulted_hashes)
 
 
 def auto_split(
@@ -363,6 +374,7 @@ def _execute_split(
     original_hash: str,
     pieces: list[dict[str, str]],
     tokens_used: int,
+    consulted_hashes: tuple[str, ...] = (),
 ) -> AutoSplitResult:
     """Create new commits for each split piece and SKIP the original."""
     from tract.models.annotations import Priority
@@ -393,6 +405,7 @@ def _execute_split(
             split_count=1,
             tokens_used=tokens_used,
             reasoning="All split commit creations failed; keeping original.",
+            consulted_hashes=consulted_hashes,
         )
 
     # SKIP the original commit
@@ -411,6 +424,7 @@ def _execute_split(
         split_count=len(new_hashes),
         tokens_used=tokens_used,
         reasoning=reasoning,
+        consulted_hashes=consulted_hashes,
     )
 
 
@@ -451,6 +465,7 @@ class _AutoRebaseCtx(NamedTuple):
     messages: list[dict[str, str]]
     llm_kwargs: dict[str, Any]
     tract: Any  # needed for rebase execution
+    consulted_hashes: tuple[str, ...]
 
 
 def _auto_rebase_prepare(
@@ -468,16 +483,21 @@ def _auto_rebase_prepare(
             reason="No LLM client configured; no rebase performed (fail-open).",
             target_branch=None,
             tokens_used=0,
+            consulted_hashes=(),
         )
 
     manifest = _build_rebase_manifest(tract)
+    entries = tract.search.log(limit=10)
+    consulted_hashes = tuple(e.commit_hash for e in entries) if entries else ()
+
+    prompt_override = tract.config.get_prompt("rebase")
     messages = [
-        {"role": "system", "content": _REBASE_SYSTEM_PROMPT},
+        {"role": "system", "content": prompt_override or _REBASE_SYSTEM_PROMPT},
         {"role": "user", "content": manifest},
     ]
     llm_kwargs = _build_llm_kwargs(model, temperature, max_tokens)
 
-    return _AutoRebaseCtx(client, messages, llm_kwargs, tract), None
+    return _AutoRebaseCtx(client, messages, llm_kwargs, tract, consulted_hashes), None
 
 
 def _auto_rebase_finalize(
@@ -491,6 +511,7 @@ def _auto_rebase_finalize(
             reason="No rebase performed (fail-open).",
             target_branch=None,
             tokens_used=0,
+            consulted_hashes=ctx.consulted_hashes,
         )
 
     raw_text, tokens_used = result
@@ -501,6 +522,7 @@ def _auto_rebase_finalize(
             reason="Could not parse LLM response; no rebase performed.",
             target_branch=None,
             tokens_used=tokens_used,
+            consulted_hashes=ctx.consulted_hashes,
         )
 
     should_rebase, target_branch, reasoning = decision
@@ -511,6 +533,7 @@ def _auto_rebase_finalize(
             reason=reasoning,
             target_branch=None,
             tokens_used=tokens_used,
+            consulted_hashes=ctx.consulted_hashes,
         )
 
     try:
@@ -520,6 +543,7 @@ def _auto_rebase_finalize(
             reason=reasoning,
             target_branch=target_branch,
             tokens_used=tokens_used,
+            consulted_hashes=ctx.consulted_hashes,
         )
     except Exception as exc:
         logger.warning(
@@ -530,6 +554,7 @@ def _auto_rebase_finalize(
             reason=f"Rebase failed: {exc}",
             target_branch=target_branch,
             tokens_used=tokens_used,
+            consulted_hashes=ctx.consulted_hashes,
         )
 
 
@@ -654,6 +679,7 @@ class _AutoBranchCtx(NamedTuple):
     messages: list[dict[str, str]]
     llm_kwargs: dict[str, Any]
     tract: Any  # needed for branch creation
+    consulted_hashes: tuple[str, ...]
 
 
 def _auto_branch_prepare(
@@ -672,16 +698,21 @@ def _auto_branch_prepare(
             branch_name=None,
             reason="No LLM client configured; no branch created (fail-open).",
             tokens_used=0,
+            consulted_hashes=(),
         )
 
     manifest = _build_branch_manifest(tract, context)
+    entries = tract.search.log(limit=10)
+    consulted_hashes = tuple(e.commit_hash for e in entries) if entries else ()
+
+    prompt_override = tract.config.get_prompt("branch")
     messages = [
-        {"role": "system", "content": _BRANCH_SYSTEM_PROMPT},
+        {"role": "system", "content": prompt_override or _BRANCH_SYSTEM_PROMPT},
         {"role": "user", "content": manifest},
     ]
     llm_kwargs = _build_llm_kwargs(model, temperature, max_tokens)
 
-    return _AutoBranchCtx(client, messages, llm_kwargs, tract), None
+    return _AutoBranchCtx(client, messages, llm_kwargs, tract, consulted_hashes), None
 
 
 def _auto_branch_finalize(
@@ -695,6 +726,7 @@ def _auto_branch_finalize(
             branch_name=None,
             reason="No branch created (fail-open).",
             tokens_used=0,
+            consulted_hashes=ctx.consulted_hashes,
         )
 
     raw_text, tokens_used = result
@@ -705,6 +737,7 @@ def _auto_branch_finalize(
             branch_name=None,
             reason="Could not parse LLM response; no branch created.",
             tokens_used=tokens_used,
+            consulted_hashes=ctx.consulted_hashes,
         )
 
     should_branch, branch_name, reasoning = decision
@@ -715,6 +748,7 @@ def _auto_branch_finalize(
             branch_name=None,
             reason=reasoning,
             tokens_used=tokens_used,
+            consulted_hashes=ctx.consulted_hashes,
         )
 
     try:
@@ -724,6 +758,7 @@ def _auto_branch_finalize(
             branch_name=branch_name,
             reason=reasoning,
             tokens_used=tokens_used,
+            consulted_hashes=ctx.consulted_hashes,
         )
     except Exception as exc:
         logger.warning(
@@ -734,6 +769,7 @@ def _auto_branch_finalize(
             branch_name=branch_name,
             reason=f"Branch creation failed: {exc}",
             tokens_used=tokens_used,
+            consulted_hashes=ctx.consulted_hashes,
         )
 
 

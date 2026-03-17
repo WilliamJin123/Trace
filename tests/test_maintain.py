@@ -99,6 +99,8 @@ def _make_tract_mock(
     mock.current_branch = "main"
     mock.head = "a" * 40
 
+    mock.config.get_prompt.return_value = None
+
     if client is not None:
         mock.config._resolve_llm_client.return_value = client
     else:

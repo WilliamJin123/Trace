@@ -405,7 +405,7 @@ class CompressionManager:
         target_tokens: int | None = None,
         instructions: str | None = None,
         system_prompt: str | None = None,
-        include_context: bool = False,
+        context: Any = None,
         model: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
@@ -456,14 +456,18 @@ class CompressionManager:
         sequence_text = "\n".join(parts)
 
         context_text: str | None = None
-        if include_context:
-            try:
-                compiled = self._compile_fn()
-                context_text = "\n".join(
-                    f"{m.role}: {m.content}" for m in compiled.messages
-                )
-            except Exception:
-                context_text = None
+        if context is not None:
+            if isinstance(context, str):
+                context_text = context
+            else:
+                # ContextView or other object -- fall back to compiled context
+                try:
+                    compiled = self._compile_fn()
+                    context_text = "\n".join(
+                        f"{m.role}: {m.content}" for m in compiled.messages
+                    )
+                except Exception:
+                    context_text = None
 
         prompt = build_tool_compact_prompt(
             sequence_text,
@@ -474,7 +478,7 @@ class CompressionManager:
         )
         if system_prompt is not None:
             sys_prompt = system_prompt
-        elif include_context and context_text is not None:
+        elif context is not None and context_text is not None:
             sys_prompt = TOOL_COMPACT_CONTEXT_SYSTEM
         else:
             sys_prompt = TOOL_COMPACT_SYSTEM
@@ -723,7 +727,7 @@ class CompressionManager:
         target_tokens: int | None = None,
         instructions: str | None = None,
         system_prompt: str | None = None,
-        include_context: bool = False,
+        context: Any = None,
         model: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
@@ -753,9 +757,10 @@ class CompressionManager:
             instructions: Extra guidance appended to the compaction
                 prompt.
             system_prompt: Override the compaction system prompt.
-            include_context: If ``True``, compile the current context
-                and include it in the compaction prompt so the LLM can
-                judge relevance. Defaults to ``False``.
+            context: Optional context to include in the compaction
+                prompt.  Pass a string for literal context text, or a
+                ``ContextView`` to use compiled DAG context as a
+                fallback.  ``None`` (default) omits context.
             model: Override model for LLM compaction.
             temperature: Override temperature for LLM compaction.
             max_tokens: Override max_tokens for LLM compaction.
@@ -772,7 +777,7 @@ class CompressionManager:
         llm, messages, llm_kwargs, results_to_compact, turns = self._compress_tool_calls_pre(
             commits, name=name, target_tokens=target_tokens,
             instructions=instructions, system_prompt=system_prompt,
-            include_context=include_context, model=model,
+            context=context, model=model,
             temperature=temperature, max_tokens=max_tokens, llm_config=llm_config,
         )
 
@@ -1038,7 +1043,7 @@ class CompressionManager:
         target_tokens: int | None = None,
         instructions: str | None = None,
         system_prompt: str | None = None,
-        include_context: bool = False,
+        context: Any = None,
         model: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
@@ -1051,7 +1056,7 @@ class CompressionManager:
         llm, messages, llm_kwargs, results_to_compact, turns = self._compress_tool_calls_pre(
             commits, name=name, target_tokens=target_tokens,
             instructions=instructions, system_prompt=system_prompt,
-            include_context=include_context, model=model,
+            context=context, model=model,
             temperature=temperature, max_tokens=max_tokens, llm_config=llm_config,
         )
 

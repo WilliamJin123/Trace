@@ -678,7 +678,7 @@ def _maybe_summarize_tool_result(
     try:
         summarized = _summarize_tool_output(
             tract, tool_name, output, instructions,
-            include_context=config.include_context,
+            context=config.context,
             system_prompt=config.system_prompt,
         )
         # Update metadata with original token count
@@ -703,7 +703,7 @@ def _summarize_tool_output(
     output: str,
     instructions: str | None,
     *,
-    include_context: bool = False,
+    context: Any = None,
     system_prompt: str | None = None,
 ) -> str:
     """Call the LLM to summarize a single tool result.
@@ -713,7 +713,8 @@ def _summarize_tool_output(
         tool_name: Name of the tool whose result is being summarized.
         output: The raw tool output to summarize.
         instructions: Per-tool or default summarization instructions.
-        include_context: If True, compile current context for relevance.
+        context: Optional ContextView or truthy value controlling what DAG
+            context to include. String values are used directly.
         system_prompt: Override the default summarization system prompt.
 
     Returns:
@@ -728,21 +729,24 @@ def _summarize_tool_output(
     # Resolve system prompt
     if system_prompt is not None:
         sys_prompt = system_prompt
-    elif include_context:
+    elif context is not None:
         sys_prompt = TOOL_CONTEXT_SUMMARIZE_SYSTEM
     else:
         sys_prompt = TOOL_SUMMARIZE_SYSTEM
 
     # Build context text if requested
     context_text: str | None = None
-    if include_context:
-        try:
-            compiled = tract.compile()
-            context_text = "\n".join(
-                f"{m.role}: {m.content}" for m in compiled.messages
-            )
-        except Exception:
-            context_text = None
+    if context is not None:
+        if isinstance(context, str):
+            context_text = context
+        else:
+            try:
+                compiled = tract.compile()
+                context_text = "\n".join(
+                    f"{m.role}: {m.content}" for m in compiled.messages
+                )
+            except Exception:
+                context_text = None
 
     # Build the user prompt
     user_prompt = build_summarize_prompt(

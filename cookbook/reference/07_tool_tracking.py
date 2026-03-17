@@ -88,7 +88,7 @@ def main() -> None:
     # t.config.configure_tool_summarization(
     #     auto_threshold=50,                                # requires LLM
     #     default_instructions="Keep ONLY relevant facts.", # requires LLM
-    #     include_context=True,                             # requires LLM
+    #     context=True,                                      # requires LLM
     # )
     t.close()
 
