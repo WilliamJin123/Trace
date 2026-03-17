@@ -23,17 +23,7 @@ Key patterns demonstrated:
   5. Cross-branch diff  -- compare() to analyze attempt/1 vs attempt/2
   6. Searchable history -- find() to locate test results and past patterns
 
-Why this is impossible with naive prompt chains:
-  - Prompt chains lose context as conversations grow. Tract compresses
-    selectively, preserving pinned test cases while summarizing exploration.
-  - Prompt chains cannot branch. Tract creates isolated implementation
-    attempts and merges the one that passes.
-  - Prompt chains cannot diff. Tract compares two branches to extract
-    exactly what differed between a passing and failing approach.
-  - Prompt chains have no gates. Tract middleware enforces that tests exist
-    before implementation starts and that tests pass before review begins.
-
-Requires: LLM API key (uses Cerebras provider)
+Requires: LLM API key
 """
 
 import sys
@@ -503,15 +493,6 @@ def main() -> None:
         print(f"\n  Log (last 10 commits):")
         pprint_log(t.search.log(limit=10))
 
-        print(f"\n{'=' * 70}")
-        print("WHY TRACT > NAIVE PROMPT CHAINS:")
-        print(f"{'=' * 70}")
-        print("  1. BRANCHING: Isolated attempt/1 and attempt/2 without losing context")
-        print("  2. COMPRESSION: Planning shrank from exploration to summary, tests stayed pinned")
-        print("  3. QUALITY GATES: Middleware enforced TDD order (tests before code, pass before review)")
-        print("  4. CROSS-DIFF: compare() revealed exactly what changed between attempts")
-        print("  5. SEARCH: find() located test results by metadata across all branches")
-        print("  6. MERGE: Winning implementation merged cleanly back to main")
         print()
 
 
@@ -520,5 +501,5 @@ if __name__ == "__main__":
 
 
 # --- See also ---
-# Basic coding workflow:  workflows/01_coding_assistant.py
-# Implicit discovery:     agent/01_implicit_discovery.py
+# Adversarial review:    agentic/05_adversarial_review.py
+# Implicit discovery:    agentic/01_implicit_discovery.py

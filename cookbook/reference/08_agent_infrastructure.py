@@ -699,6 +699,5 @@ if __name__ == "__main__":
 
 # --- See also ---
 # Implicit discovery (LLM):     agentic/01_implicit_discovery.py
-# Multi-agent topologies:        agentic/03_topologies.py
-# Semantic gates (LLM):          agentic/06_semantic_automation.py
-# Config basics:                  config_and_middleware/01_config_and_precedence.py
+# Topology patterns:             reference/07_topology_patterns.py
+# Semantic automation (LLM):    agentic/04_semantic_automation.py

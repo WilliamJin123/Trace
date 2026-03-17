@@ -314,5 +314,5 @@ if __name__ == "__main__":
 
 
 # --- See also ---
-# Coding workflow:       workflows/01_coding_assistant.py
-# Self-routing:          workflows/07_self_routing.py
+# TDD coding workflow:  agentic/06_coding_with_tests.py
+# Semantic automation:  agentic/04_semantic_automation.py

@@ -313,6 +313,6 @@ if __name__ == "__main__":
 
 
 # --- See also ---
-# Branching basics (no LLM):     reference/03_branching.py
-# Config per branch:              config_and_middleware/01_config_and_precedence.py
-# Middleware patterns (no LLM):   config_and_middleware/02_event_automation.py
+# DAG operations (no LLM):      reference/03_dag_operations.py
+# Middleware reference:          reference/02_middleware.py
+# Semantic automation:           agentic/04_semantic_automation.py
