@@ -23,10 +23,10 @@ from tract import Tract
 from tract.toolkit import ToolConfig, ToolProfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _providers import groq as llm
+from _providers import claude_code as llm
 from _logging import StepLogger
 
-MODEL_ID = llm.xlarge
+MODEL_ID = llm.small
 
 
 PROFILE = ToolProfile(

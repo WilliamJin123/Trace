@@ -43,10 +43,10 @@ from tract import Tract, BlockedError, MiddlewareContext, Priority
 from tract.formatting import pprint_log
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _providers import cerebras as llm
+from _providers import claude_code as llm
 from _logging import StepLogger
 
-MODEL_ID = llm.large
+MODEL_ID = llm.small
 
 
 def main() -> None:

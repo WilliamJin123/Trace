@@ -24,10 +24,10 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 from tract import Tract, BlockedError, MiddlewareContext
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _providers import groq as llm
+from _providers import claude_code as llm
 from _logging import StepLogger
 
-MODEL_ID = llm.xlarge
+MODEL_ID = llm.small
 
 
 def main() -> None:

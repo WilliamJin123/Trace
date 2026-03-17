@@ -31,9 +31,9 @@ from pathlib import Path
 from tract import Tract, BlockedError, MiddlewareContext
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _providers import cerebras as llm
+from _providers import claude_code as llm
 
-MODEL_ID = llm.xlarge  # gpt-oss-120b
+MODEL_ID = llm.small
 
 
 def print_conversation(t: Tract, label: str) -> None:

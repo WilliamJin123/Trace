@@ -24,15 +24,15 @@ from tract import Tract, BlockedError, MiddlewareContext
 from tract.formatting import pprint_log
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _providers import cerebras as llm
+from _providers import claude_code as llm
 from _logging import StepLogger
 
-MODEL_ID = llm.large
+MODEL_ID = llm.small
 
 
 def main() -> None:
     if not llm.api_key:
-        print("SKIPPED (no API key -- set CEREBRAS_API_KEY)")
+        print("SKIPPED (no Claude Code credentials)")
         return
 
     with Tract.open(

@@ -22,10 +22,10 @@ from tract import Tract, TractConfig, TokenBudgetConfig
 from tract.toolkit import ToolConfig, ToolProfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _providers import cerebras as llm
+from _providers import claude_code as llm
 from _logging import StepLogger
 
-MODEL_ID = llm.large
+MODEL_ID = llm.small
 
 
 PROFILE = ToolProfile(
@@ -43,7 +43,7 @@ PROFILE = ToolProfile(
 
 def main() -> None:
     if not llm.api_key:
-        print("SKIPPED (no API key)")
+        print("SKIPPED (no Claude Code credentials)")
         return
 
     print("=" * 70)

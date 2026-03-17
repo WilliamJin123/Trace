@@ -24,10 +24,10 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 from tract import Tract
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from _providers import cerebras as llm
+from _providers import claude_code as llm
 from _logging import StepLogger
 
-MODEL_ID = llm.large
+MODEL_ID = llm.small
 
 
 def _get_maintainer_handler(t: Tract, name: str):
