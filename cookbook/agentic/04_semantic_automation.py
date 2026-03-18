@@ -7,8 +7,8 @@ Two middleware patterns that use LLM judgment instead of deterministic rules:
   just metadata. Cheap model, condition callbacks for efficiency, fail-open
   on errors.
 
-  Semantic Maintenance -- take housekeeping actions (annotate, configure,
-  tag, compress) based on LLM judgment. The maintainer monitors context
+  Context Health Monitor -- take housekeeping actions (annotate, configure,
+  tag, compress, directive) based on LLM judgment. The monitor tracks context
   health and acts when it detects redundancy or phase shifts. Two-pass
   peeking for content-aware decisions.
 
@@ -18,15 +18,12 @@ and error recovery.
 
 Sections:
   1. Semantic Gate: Quality-Gated Transitions
-  2. Gate Recovery: BlockedError -> Adapt -> Retry
-  3. Semantic Maintainer: Context Health Monitoring
-  4. Maintainer Observability: last_result inspection
-  5. Deterministic Content Routing: keyword-based auto-transitions (no LLM)
+  2. Context Health Monitor
 
 Demonstrates: t.middleware.gate(), t.middleware.maintain(),
               t.middleware.list_gates(), t.middleware.list_maintainers(),
               condition callbacks, BlockedError recovery, MaintainResult,
-              fail-open error handling, keyword-based middleware routing
+              fail-open error handling
 
 Requires: LLM API key (uses claude_code provider)
 """
@@ -38,7 +35,7 @@ from pathlib import Path
 # Windows console encoding fix
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
-from tract import Tract, BlockedError, MiddlewareContext
+from tract import Tract, BlockedError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import claude_code as llm
@@ -60,15 +57,8 @@ def _section(num: int, title: str) -> None:
 
 
 def _get_maintainer_handler(t: Tract, name: str):
-    """Retrieve the SemanticMaintainer object from the middleware system."""
-    handler_id = t._maintainers.get(name)
-    if not handler_id:
-        return None
-    for _event, handlers in t._middleware.items():
-        for hid, handler in handlers:
-            if hid == handler_id:
-                return handler
-    return None
+    """Retrieve the SemanticMaintainer object via public API."""
+    return t.middleware.get_maintainer(name)
 
 
 def _print_maintainer_result(handler) -> None:
@@ -258,46 +248,22 @@ def semantic_gate_transitions():
 
 
 # =====================================================================
-# Section 2: Why Semantic Gates Matter
-# =====================================================================
-
-def why_semantic_gates():
-    """Explain the value proposition vs deterministic gates."""
-
-    _section(2, "Why Semantic Gates Matter")
-
-    print("  Deterministic gates (count commits, check tags):")
-    print("    - Easy to game: agent commits 3 empty artifacts, gate passes")
-    print("    - No quality judgment: quantity != quality")
-    print("    - Brittle: hardcoded thresholds don't adapt to context")
-    print()
-    print("  Semantic gates (LLM evaluates meaning):")
-    print("    - Evaluates the CONTENT of the research, not just metadata")
-    print("    - Catches thin/repetitive analysis even with many commits")
-    print("    - Natural language criteria adapt to any domain")
-    print("    - Condition callbacks skip the LLM call when irrelevant")
-    print("      (e.g., transitioning to a different branch)")
-    print()
-    print("  Cost: one cheap LLM call per gate evaluation (~100 tokens).")
-    print("  The gate model can be smaller/cheaper than the main agent model.")
-    print()
-    print("  PASSED")
-
-
-# =====================================================================
-# Section 3: Semantic Maintainer -- Context Health Monitoring
+# Section 2: Context Health Monitor
 # =====================================================================
 
 def semantic_maintainer():
-    """Register a semantic maintainer that monitors context health.
+    """Register a context health monitor that maintains context quality.
 
     The maintainer fires on post_commit and uses LLM judgment to:
       - Annotate redundant commits as SKIP
+      - Compress clusters of related commits into summaries
       - Reconfigure stage when it detects a phase shift
+      - Add directives when a clear research focus emerges
+      - Tag commits that represent key findings
     A condition callback skips the LLM call when the log is still small.
     """
 
-    _section(3, "Semantic Maintainer: Context Health Monitoring")
+    _section(2, "Context Health Monitor")
 
     log = StepLogger()
 
@@ -313,20 +279,22 @@ def semantic_maintainer():
         )
         t.config.set(stage="research")
 
-        # --- Register semantic maintainer ---
+        # --- Register context health monitor ---
         # Condition: only fire when log has more than 5 entries.
-        # Actions: the maintainer can annotate (mark SKIP) and configure (change stage).
+        # Actions: annotate, compress, configure, directive, tag.
         t.middleware.maintain(
             name="context-health",
             event="post_commit",
             instructions=(
                 "Review the commit log for context health.\n"
                 "1. Annotate redundant commits (restating earlier content) as SKIP.\n"
-                "2. If research has shifted from exploration to recommendations, "
-                "configure stage='synthesis'.\n"
-                "Be conservative: only act on clear redundancy or phase shifts."
+                "2. If research has shifted to recommendations, configure stage='synthesis'.\n"
+                "3. Compress clusters of related commits into summaries when 3+ cover the same topic.\n"
+                "4. Add a directive when you detect a clear research focus emerging.\n"
+                "5. Tag commits that represent key findings with 'key-finding'.\n"
+                "Be conservative: only act on clear signals."
             ),
-            actions=["annotate", "configure"],
+            actions=["annotate", "compress", "configure", "directive", "tag"],
             model=llm.small,
             condition=lambda ctx: len(ctx.tract.search.log()) > 5,
         )
@@ -412,168 +380,6 @@ def semantic_maintainer():
 
 
 # =====================================================================
-# Section 4: Why Semantic Maintenance Matters
-# =====================================================================
-
-def why_semantic_maintenance():
-    """Explain the value proposition vs deterministic maintenance."""
-
-    _section(4, "Why Semantic Maintenance Matters")
-
-    print("  Deterministic maintenance (count-based TTL, fixed thresholds):")
-    print("    - Rigid: marks the Nth-oldest commit as stale regardless of content")
-    print("    - Blind to meaning: a critical early finding gets evicted by age")
-    print("    - No phase awareness: cannot detect research-to-synthesis shifts")
-    print()
-    print("  Semantic maintenance (LLM evaluates context health):")
-    print("    - Evaluates CONTENT to decide what is truly redundant")
-    print("    - Preserves important early findings even when old")
-    print("    - Detects phase shifts from the meaning of recent commits")
-    print("    - Condition callbacks skip the LLM call when context is small")
-    print()
-    print("  Cost: one cheap LLM call per invocation (~500-2000 tokens).")
-    print("  Fail-open: if the LLM call fails, no actions are taken.")
-    print()
-    print("  PASSED")
-
-
-# =====================================================================
-# Section 5: Deterministic Content Routing (Keyword-Based)
-# =====================================================================
-# Instead of LLM judgment, a post_commit middleware scans for keywords
-# and auto-transitions stages. Free and instant, but brittle.
-# Compare with semantic gates (Section 1) which handle ambiguity.
-
-ROUTING_STAGES = {
-    "research": {
-        "keywords": [],  # default stage
-        "config": {"temperature": 0.7, "compile_strategy": "full"},
-        "directive": "Focus on gathering information and structured notes.",
-    },
-    "implementation": {
-        "keywords": ["implement", "code", "write the", "class ", "def ",
-                     "function", "build", "create the"],
-        "config": {"temperature": 0.3, "compile_strategy": "messages"},
-        "directive": "Write precise, working code based on the research.",
-    },
-    "validation": {
-        "keywords": ["test", "verify", "assert", "check", "validate", "review"],
-        "config": {"temperature": 0.1, "compile_strategy": "full"},
-        "directive": "Write tests, verify correctness, check edge cases.",
-    },
-}
-
-
-def build_content_router(stages: dict, *, min_signals: int = 1):
-    """Build a keyword-routing middleware handler.
-
-    Returns (handler_func, state_dict). State dict tracks transitions.
-    """
-    state = {"current": "research", "transitions": []}
-
-    def router(ctx: MiddlewareContext):
-        if not ctx.commit or ctx.commit.content_type != "dialogue":
-            return
-        content = ctx.tract.search.get_content(ctx.commit)
-        if not content:
-            return
-        text = (str(content) if not isinstance(content, dict)
-                else content.get("text", "")).lower()
-        if not text:
-            return
-
-        best_stage, best_hits = None, 0
-        for stage_name, stage_def in stages.items():
-            if stage_name == state["current"]:
-                continue
-            hits = sum(1 for kw in stage_def["keywords"] if kw in text)
-            if hits >= min_signals and hits > best_hits:
-                best_stage, best_hits = stage_name, hits
-
-        if best_stage:
-            prev = state["current"]
-            state["current"] = best_stage
-            stage_def = stages[best_stage]
-            ctx.tract.config.set(stage=best_stage, **stage_def["config"])
-            ctx.tract.directive("current-stage", stage_def["directive"])
-            state["transitions"].append(f"{prev} -> {best_stage}")
-
-    return router, state
-
-
-def deterministic_content_routing():
-    """Keyword-based middleware routing -- no LLM cost.
-
-    A post_commit handler scans assistant content for keywords and
-    auto-transitions stages. Compare with semantic gates (Section 1).
-    """
-
-    _section(5, "Deterministic Content Routing (Keyword-Based)")
-
-    print("  post_commit middleware scans for keywords and auto-routes.")
-    print("  No LLM call -- instant, free, but keyword-dependent.")
-    print()
-
-    with Tract.open() as t:
-        router, route_state = build_content_router(ROUTING_STAGES)
-        t.middleware.add("post_commit", router)
-        t.config.set(stage="research", **ROUTING_STAGES["research"]["config"])
-
-        t.system("You are a software engineer.")
-
-        # Simulate agent producing content that shifts stages
-        t.user("Research LRU cache data structures and approaches.")
-        t.assistant(
-            "An LRU cache uses a doubly-linked list combined with a hash map. "
-            "The list maintains access order, the map provides O(1) lookup. "
-            "Key operations: get() moves node to front, put() evicts tail."
-        )
-        print(f"  After research commit:       stage={t.config.get('stage')}")
-
-        t.user("Now implement the LRU cache.")
-        t.assistant(
-            "Here's the implementation:\n\n"
-            "class LRUCache:\n"
-            "    def __init__(self, capacity):\n"
-            "        self.capacity = capacity\n"
-            "        self.cache = OrderedDict()\n\n"
-            "    def get(self, key):\n"
-            "        if key not in self.cache: return -1\n"
-            "        self.cache.move_to_end(key)\n"
-            "        return self.cache[key]\n\n"
-            "    def put(self, key, value):\n"
-            "        if key in self.cache: self.cache.move_to_end(key)\n"
-            "        self.cache[key] = value\n"
-            "        if len(self.cache) > self.capacity:\n"
-            "            self.cache.popitem(last=False)"
-        )
-        print(f"  After implementation commit:  stage={t.config.get('stage')}")
-
-        t.user("Write test cases for the cache.")
-        t.assistant(
-            "def test_basic_operations():\n"
-            "    cache = LRUCache(2)\n"
-            "    cache.put(1, 1)\n"
-            "    cache.put(2, 2)\n"
-            "    assert cache.get(1) == 1\n"
-            "    cache.put(3, 3)  # evicts key 2\n"
-            "    assert cache.get(2) == -1"
-        )
-        print(f"  After validation commit:      stage={t.config.get('stage')}")
-
-        print(f"\n  Transitions detected: {len(route_state['transitions'])}")
-        for tr in route_state["transitions"]:
-            print(f"    {tr}")
-
-    print()
-    print("  When to use which:")
-    print("    Keyword routing:  free, instant, good for predictable workflows")
-    print("    Semantic gates:   cheap LLM call, handles ambiguity, more robust")
-    print()
-    print("  PASSED")
-
-
-# =====================================================================
 # Main
 # =====================================================================
 
@@ -583,10 +389,7 @@ def main() -> None:
         return
 
     semantic_gate_transitions()
-    why_semantic_gates()
     semantic_maintainer()
-    why_semantic_maintenance()
-    deterministic_content_routing()
 
     print()
     print("=" * 70)
@@ -596,14 +399,7 @@ def main() -> None:
     print("  Section  Pattern                          Tract API Used")
     print("  -------  ------------------------------   ----------------------------------")
     print("  1        Semantic gate transitions         middleware.gate(), BlockedError")
-    print("  2        Why semantic gates                (conceptual -- no API)")
-    print("  3        Semantic maintainer               middleware.maintain(), MaintainResult")
-    print("  4        Why semantic maintenance          (conceptual -- no API)")
-    print("  5        Deterministic content routing     post_commit middleware, keyword scan")
-    print()
-    print("  Semantic (LLM) vs deterministic (keyword) routing:")
-    print("    Both auto-transition stages via middleware.")
-    print("    Semantic handles ambiguity; deterministic is free and instant.")
+    print("  2        Context health monitor             middleware.maintain(), MaintainResult")
     print()
     print("Done.")
 

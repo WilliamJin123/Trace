@@ -162,6 +162,17 @@ class MiddlewareManager:
         """Return names of all registered semantic gates."""
         return list(self._gates.keys())
 
+    def get_gate(self, name: str) -> Any:
+        """Return the SemanticGate handler for a named gate, or None."""
+        handler_id = self._gates.get(name)
+        if handler_id is None:
+            return None
+        for _event, handlers in self._middleware.items():
+            for hid, handler in handlers:
+                if hid == handler_id:
+                    return handler
+        return None
+
     def maintain(
         self,
         name: str,
@@ -249,6 +260,17 @@ class MiddlewareManager:
     def list_maintainers(self) -> list[str]:
         """Return names of all registered semantic maintainers."""
         return list(self._maintainers.keys())
+
+    def get_maintainer(self, name: str) -> Any:
+        """Return the SemanticMaintainer handler for a named maintainer, or None."""
+        handler_id = self._maintainers.get(name)
+        if handler_id is None:
+            return None
+        for _event, handlers in self._middleware.items():
+            for hid, handler in handlers:
+                if hid == handler_id:
+                    return handler
+        return None
 
     def _run(self, event: str, **kwargs: Any) -> None:
         """Run middleware handlers for an event.

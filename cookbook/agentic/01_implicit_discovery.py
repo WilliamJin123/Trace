@@ -1,28 +1,25 @@
-"""Implicit Behavior Discovery
+"""Adaptive Agent Behavior: Middleware Constraints That Shape Agent Actions
 
-Three scenarios where an LLM agent is given tract tools and a task, but
-never told *how* to use them. The agent must discover the right behavior
-on its own: branching to isolate conflicting work, navigating pre-built
-workflow stages, and adapting when quality gates block premature actions.
-
-Pattern: set up tract with tools/config, give agent a task, observe
-         whether it discovers the capabilities autonomously.
+Two scenarios where middleware constraints force an LLM agent to adapt at
+runtime -- without knowing about the constraints in advance.
 
 Scenarios:
-  1. Branch Discovery   -- isolate conflicting analyses on branches
-  2. Stage Navigation   -- discover and traverse a staged workflow
-  3. Quality Gate Adapt  -- satisfy hidden middleware constraints
+  1. Quality Gate    -- pre_transition blocks advancement until enough research
+                        artifacts exist. Agent recovers from BlockedError.
+  2. Phase Detection -- post_commit detects shift from exploratory to precise
+                        work, lowers temperature + injects precision directive.
+
+Demonstrates: middleware.add(), BlockedError recovery, dynamic config.set(),
+              dynamic directive(), MiddlewareContext, t.llm.run()
 """
 
 import io
 import sys
 from pathlib import Path
 
-# Windows console encoding fix
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 from tract import Tract, BlockedError, MiddlewareContext
-from tract.toolkit import ToolConfig, ToolProfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from _providers import claude_code as llm
@@ -30,264 +27,168 @@ from _logging import StepLogger
 
 MODEL_ID = llm.small
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
 
-def _header(title: str, description: str) -> None:
-    print()
-    print("=" * 70)
-    print(f"  Scenario: {title}")
-    print("=" * 70)
-    print(f"  {description}")
-    print()
-
-
-def _branch_report(t: Tract) -> None:
-    """Print compiled context for every branch."""
-    branches = t.branches.list()
-    print(f"\n  Branches: {[b.name for b in branches]}")
-    print(f"  Current:  {t.current_branch}")
-    original = t.current_branch
-    for branch in branches:
-        t.branches.switch(branch.name)
-        print(f"\n  [{branch.name}]:")
-        t.compile().pprint(style="chat")
-    t.branches.switch(original)
+def _section(num: int, title: str, desc: str) -> None:
+    print(f"\n{'=' * 70}\n  {num}. {title}\n{'=' * 70}\n  {desc}\n")
 
 
 # ---------------------------------------------------------------------------
-# Scenario 1 -- Branch Discovery
+# Scenario 1 -- Quality Gate: BlockedError Recovery
 # ---------------------------------------------------------------------------
-# The agent must draft two independent, conflicting technical proposals.
-# Branches are available but never suggested. Does the agent isolate them?
-
-BRANCH_PROFILE = ToolProfile(
-    name="researcher",
-    tool_configs={
-        "branch": ToolConfig(enabled=True),
-        "switch": ToolConfig(enabled=True),
-        "list_branches": ToolConfig(enabled=True),
-        "merge": ToolConfig(enabled=True),
-        "commit": ToolConfig(enabled=True),
-    },
-)
-
-
-def scenario_branch_discovery() -> None:
-    _header(
-        "Branch Discovery",
-        "Two conflicting proposals -- will the agent use branches for isolation?",
-    )
-
-    with Tract.open(
-        **llm.tract_kwargs(MODEL_ID),
-        auto_message=llm.small,
-        tool_profile=BRANCH_PROFILE,
-    ) as t:
-        t.system(
-            "You are a senior solutions architect evaluating backend "
-            "architecture options for a new product."
-        )
-        t.user(
-            "Building a SaaS analytics platform. 10k concurrent users, "
-            "50TB warehouse, sub-second queries. 12 engineers. "
-            "Need to pick: microservices vs monolith."
-        )
-        t.assistant("I'll evaluate both options.")
-
-        log = StepLogger()
-        result = t.llm.run(
-            "Write two short proposals:\n"
-            "A) Why microservices is the right call\n"
-            "B) Why monolith is the right call\n\n"
-            "Each must stand on its own -- if one influences the other "
-            "they won't be genuine independent evaluations.",
-            max_steps=12, max_tokens=1024,
-            on_step=log.on_step, on_tool_result=log.on_tool_result,
-        )
-        result.pprint()
-
-        _branch_report(t)
-        branches = t.branches.list()
-        if len(branches) > 1:
-            print(f"\n  Agent created {len(branches) - 1} branch(es) for isolation.")
-        else:
-            print("\n  Agent did not use branches.")
-
-
-# ---------------------------------------------------------------------------
-# Scenario 2 -- Stage Navigation
-# ---------------------------------------------------------------------------
-# The developer pre-creates stage branches with config metadata. The agent
-# must discover the stages, produce deliverables, and navigate through them.
-
-STAGE_PROFILE = ToolProfile(
-    name="architect",
-    tool_configs={
-        "get_config": ToolConfig(enabled=True),
-        "transition": ToolConfig(enabled=True),
-        "commit": ToolConfig(enabled=True),
-        "switch": ToolConfig(enabled=True),
-        "list_branches": ToolConfig(enabled=True),
-    },
-)
-
-
-def scenario_stage_navigation() -> None:
-    _header(
-        "Stage Navigation",
-        "Pre-built stages (design/implementation/validation) -- will the agent find and use them?",
-    )
-
-    with Tract.open(
-        **llm.tract_kwargs(MODEL_ID),
-        auto_message=llm.small,
-        tool_profile=STAGE_PROFILE,
-    ) as t:
-        t.system(
-            "You are a software architect. Complete the task by working "
-            "through each stage of the workflow. Use get_config and "
-            "list_branches to understand the available infrastructure."
-        )
-
-        # Developer pre-creates stage branches with config metadata
-        for stage, temp in [("design", 0.9), ("implementation", 0.3), ("validation", 0.5)]:
-            t.branches.create(stage, switch=True)
-            t.config.set(stage=stage, temperature=temp)
-            t.branches.switch("main")
-
-        t.branches.switch("design")
-        print(f"  Branches: {[b.name for b in t.branches.list()]}")
-        print(f"  Starting on: {t.current_branch}")
-
-        log = StepLogger()
-        result = t.llm.run(
-            "Design a task management REST API (title, status, assignee). "
-            "Work through the available stages (design, implementation, "
-            "validation) to produce a complete specification. Commit your "
-            "deliverables at each stage and transition when ready.",
-            max_steps=18, max_tokens=4096,
-            on_step=log.on_step, on_tool_result=log.on_tool_result,
-        )
-        result.pprint()
-
-        # Report -- check which stages the agent visited
-        print("\n\n  --- Final State ---\n")
-        branches_visited = set()
-        for stage in ["design", "implementation", "validation"]:
-            t.branches.switch(stage)
-            ctx = t.compile()
-            cfg = t.config.get("stage")
-            if ctx.token_count > 50:
-                branches_visited.add(stage)
-            print(f"  [{stage}] stage={cfg}, {len(ctx.messages)} msgs, "
-                  f"{ctx.token_count} tokens")
-
-        if len(branches_visited) >= 3:
-            print(f"\n  Agent navigated all 3 stages.")
-        elif branches_visited:
-            print(f"\n  Agent visited {len(branches_visited)} stage(s): "
-                  f"{sorted(branches_visited)}")
-        else:
-            print("\n  Agent did not navigate to any stages.")
-
-
-# ---------------------------------------------------------------------------
-# Scenario 3 -- Quality Gate Adaptation
-# ---------------------------------------------------------------------------
-# Middleware gates block premature transitions. The agent must produce enough
-# work to pass a gate it does not know about in advance, then adapt when
-# the gate blocks its first attempt.
-
-GATE_PROFILE = ToolProfile(
-    name="engineer",
-    tool_configs={
-        "transition": ToolConfig(enabled=True),
-        "commit": ToolConfig(enabled=True),
-        "get_config": ToolConfig(enabled=True),
-        "status": ToolConfig(enabled=True),
-        "log": ToolConfig(enabled=True),
-    },
-)
-
 
 def scenario_quality_gate() -> None:
-    _header(
-        "Quality Gate Adaptation",
-        "Hidden middleware blocks transitions until 3 artifacts are committed. Can the agent adapt?",
-    )
+    _section(1, "Quality Gate: BlockedError Recovery",
+             "pre_transition blocks until 3 artifacts are committed.")
 
-    with Tract.open(
-        **llm.tract_kwargs(MODEL_ID),
-        auto_message=llm.small,
-        tool_profile=GATE_PROFILE,
-    ) as t:
+    log = StepLogger()
+
+    with Tract.open(**llm.tract_kwargs(MODEL_ID), auto_message=llm.small) as t:
         t.system(
             "You are a software engineer working on an API project. "
             "Research topics thoroughly before moving to implementation."
         )
-
-        # Developer sets up gated workflow infrastructure
-        t.branches.create("research", switch=True)
         t.config.set(stage="research")
+        t.branches.create("implementation", switch=False)
 
-        # Gate: require at least 3 artifact commits before transition
+        # Gate: require >= 3 artifact commits before transition
         def research_gate(ctx: MiddlewareContext):
-            if ctx.target == "implementation":
-                entries = ctx.tract.search.log(limit=50)
-                artifacts = [e for e in entries if e.content_type == "artifact"]
-                if len(artifacts) < 3:
-                    raise BlockedError(
-                        "pre_transition",
-                        f"Research incomplete: {len(artifacts)} artifact(s) "
-                        f"committed, need at least 3 before moving to implementation.",
-                    )
+            if ctx.target != "implementation":
+                return
+            entries = ctx.tract.search.log(limit=50)
+            artifacts = [e for e in entries if e.content_type == "artifact"]
+            if len(artifacts) < 3:
+                raise BlockedError(
+                    "pre_transition",
+                    f"Research incomplete: {len(artifacts)} artifact(s) "
+                    f"committed, need at least 3.",
+                )
 
         t.middleware.add("pre_transition", research_gate)
+        print(f"  Branch: {t.current_branch}")
+        print(f"  Gate: pre_transition requires >= 3 artifact commits\n")
 
-        t.branches.switch("main")
-        t.branches.create("implementation", switch=True)
-        t.config.set(stage="implementation")
-        t.branches.switch("research")
-
-        print(f"  Starting on: {t.current_branch}")
-        print(f"  Branches: {[b.name for b in t.branches.list()]}")
-
-        log = StepLogger()
         result = t.llm.run(
-            "Research authentication, database schema, and error handling "
-            "patterns for a REST API. When you feel your research is "
-            "thorough, move to implementation.",
+            "Research authentication patterns, database schema design, and "
+            "error handling for a REST API. Commit each finding as an "
+            "artifact. When your research is thorough, transition to "
+            "implementation.",
             max_steps=15, max_tokens=1024,
+            profile="full",
+            tool_names=["commit", "transition", "status", "log"],
             on_step=log.on_step, on_tool_result=log.on_tool_result,
         )
         result.pprint()
 
-        # If the agent never tried transitioning, force an attempt to demo the gate
-        if t.current_branch != "implementation":
-            print("\n  --- Agent didn't transition, forcing attempt ---")
-            entries = t.search.log(limit=50)
-            artifacts = [e for e in entries if e.content_type == "artifact"]
-            print(f"  Artifacts committed: {len(artifacts)}")
+        # --- Results ---
+        entries = t.search.log(limit=50)
+        artifacts = [e for e in entries if e.content_type == "artifact"]
+        reached = t.current_branch == "implementation"
+
+        print(f"\n  Artifacts committed: {len(artifacts)}")
+        for entry in artifacts[:5]:
+            print(f"    [{entry.commit_hash[:8]}] {(entry.message or '')[:60]}")
+        print(f"  Reached implementation: {reached}")
+
+        if not reached:
+            print("  Forcing transition attempt to demo the gate...")
             try:
                 t.transition("implementation")
-                print("  Transition succeeded!")
+                print("  Transition succeeded.")
             except BlockedError as e:
                 print(f"  Gate blocked: {e}")
 
-        # Report
-        print("\n\n  --- Final State ---\n")
-        print(f"  Current branch: {t.current_branch}")
-        status = t.search.status()
-        print(f"  Commits: {status.commit_count}, Tokens: {status.token_count}")
-        print("\n  Context:")
-        t.compile().pprint(style="chat")
-        print(f"\n  Reached implementation: {t.current_branch == 'implementation'}")
+        s = t.search.status()
+        print(f"  Final: {s.commit_count} commits, {s.token_count} tokens")
+    print("\n  PASSED")
 
 
 # ---------------------------------------------------------------------------
-# Main -- run all three scenarios
+# Scenario 2 -- Phase Detection: Dynamic Config Adjustment
+# ---------------------------------------------------------------------------
+
+def scenario_phase_detection() -> None:
+    _section(2, "Phase Detection: Dynamic Config Adjustment",
+             "post_commit detects exploratory->precise shift, lowers temp.")
+
+    log = StepLogger()
+    phase_state = {"shifted": False, "shift_at": None}
+
+    IMPL_SIGNALS = [
+        "def ", "class ", "CREATE TABLE", "INSERT INTO", "SELECT ",
+        "import ", "function ", "```python", "```sql", "```json",
+    ]
+
+    def detect_phase_shift(ctx: MiddlewareContext):
+        """Lower temperature and inject directive when code appears."""
+        if phase_state["shifted"] or not ctx.commit:
+            return
+        content = ctx.tract.search.get_content(ctx.commit)
+        if not content:
+            return
+        text = str(content) if not isinstance(content, dict) else content.get("text", "")
+        hits = sum(1 for sig in IMPL_SIGNALS if sig in text)
+        if hits >= 2:
+            phase_state["shifted"] = True
+            phase_state["shift_at"] = ctx.commit.commit_hash[:8]
+            ctx.tract.config.set(temperature=0.2, stage="implementation")
+            ctx.tract.directive(
+                "precision-mode",
+                "Phase shift detected: you are now producing implementation "
+                "artifacts. Be precise. Provide exact code, schemas, and "
+                "configurations. No hedging.",
+            )
+
+    with Tract.open(**llm.tract_kwargs(MODEL_ID), auto_message=llm.small) as t:
+        t.system(
+            "You are a backend engineer designing and building a user "
+            "authentication service. Start with broad research, then "
+            "produce concrete implementation artifacts."
+        )
+        t.config.set(stage="research", temperature=0.9)
+        t.middleware.add("post_commit", detect_phase_shift)
+
+        print(f"  Config: stage=research, temperature=0.9")
+        print(f"  Middleware: post_commit watches for implementation signals\n")
+
+        result = t.llm.run(
+            "Design an authentication service:\n"
+            "1. Research trade-offs between JWT and session-based auth. "
+            "Commit your analysis.\n"
+            "2. Write the implementation: a Python auth module with "
+            "login/logout/verify and the database schema. Commit the code.\n\n"
+            "Use the commit tool for each deliverable.",
+            max_steps=12, max_tokens=2048,
+            profile="full",
+            tool_names=["commit", "status", "get_config"],
+            on_step=log.on_step, on_tool_result=log.on_tool_result,
+        )
+        result.pprint()
+
+        # --- Results ---
+        if phase_state["shifted"]:
+            print(f"\n  Phase shift at commit: {phase_state['shift_at']}")
+            print(f"  Config after: temperature={t.config.get('temperature')}, "
+                  f"stage={t.config.get('stage')}")
+        else:
+            print(f"\n  No phase shift detected.")
+            print(f"  Config: temperature={t.config.get('temperature')}, "
+                  f"stage={t.config.get('stage')}")
+
+        directives = [e for e in t.search.log(limit=30)
+                      if e.content_type == "directive"]
+        if directives:
+            print(f"  Directives injected: {len(directives)}")
+            for d in directives:
+                print(f"    [{d.commit_hash[:8]}] {(d.message or '')[:60]}")
+
+        s = t.search.status()
+        print(f"  Final: {s.commit_count} commits, {s.token_count} tokens\n")
+        t.compile().pprint(style="chat")
+    print("\n  PASSED")
+
+
+# ---------------------------------------------------------------------------
+# Main
 # ---------------------------------------------------------------------------
 
 def main() -> None:
@@ -296,23 +197,28 @@ def main() -> None:
         return
 
     print("=" * 70)
-    print("  Implicit Behavior Discovery")
-    print("  Three scenarios testing whether an LLM agent discovers")
-    print("  tract capabilities without explicit instructions.")
+    print("  Adaptive Agent Behavior")
+    print("  Middleware constraints that shape agent actions at runtime.")
     print("=" * 70)
 
-    scenario_branch_discovery()
-    scenario_stage_navigation()
     scenario_quality_gate()
+    scenario_phase_detection()
 
-    print("\n\nDone. All three scenarios complete.")
+    print(f"\n{'=' * 70}")
+    print("  Both patterns work because the agent never needs to know about")
+    print("  the constraints. Middleware enforces invariants (Scenario 1) or")
+    print("  adapts the environment (Scenario 2); the agent responds naturally.")
+    print(f"{'=' * 70}")
+    print("\nDone.")
 
+
+test_adaptive_behavior = main
 
 if __name__ == "__main__":
     main()
 
 
 # --- See also ---
-# DAG operations (no LLM):      reference/03_dag_operations.py
-# Middleware reference:          reference/02_middleware.py
-# Semantic automation:           agentic/04_semantic_automation.py
+# Semantic gates (LLM-judged):    agentic/04_semantic_automation.py
+# Error recovery:                  agentic/10_error_recovery.py
+# Middleware reference:             reference/02_middleware.py

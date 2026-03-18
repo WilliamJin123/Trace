@@ -314,5 +314,5 @@ if __name__ == "__main__":
 
 
 # --- See also ---
-# TDD coding workflow:  agentic/06_coding_with_tests.py
+# Error recovery:       agentic/10_error_recovery.py
 # Semantic automation:  agentic/04_semantic_automation.py
