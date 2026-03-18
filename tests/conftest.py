@@ -1,4 +1,4 @@
-"""Shared test fixtures for Trace.
+"""Shared test fixtures for Tract.
 
 Provides in-memory SQLite engine, session, and repository fixtures.
 """

@@ -1295,21 +1295,6 @@ class Tract:
         return self._config_index
 
 
-    # Well-known config key type validators
-    _WELL_KNOWN_CONFIG_TYPES: dict[str, type | tuple[type, ...]] = {
-        "model": (str,),
-        "temperature": (int, float),
-        "max_tokens": (int,),
-        "max_commit_tokens": (int,),
-        "auto_compress_threshold": (int,),
-        "compact_tools": (dict,),
-        "compile_strategy": (str,),
-        "compile_strategy_k": (int,),
-        "compile_recent_ratio": (float, int),
-        "handoff_summary_k": (int,),
-    }
-
-
     def directive(
         self,
         name: str,

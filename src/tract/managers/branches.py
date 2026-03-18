@@ -159,7 +159,7 @@ class BranchManager:
 
         Args:
             target: A commit hash, branch name, or hash prefix.
-            mode: ``"soft"`` (default) or ``"hard"``.  In Trace both behave
+            mode: ``"soft"`` (default) or ``"hard"``.  In Tract both behave
                 identically (no working directory to clean).
 
         Returns:

@@ -209,6 +209,8 @@ class OperationConfigs:
     merge: LLMConfig | None = None
     compress: LLMConfig | None = None
     message: LLMConfig | None = None
+    gate: LLMConfig | None = None
+    maintain: LLMConfig | None = None
 
 
 @dataclass(frozen=True)

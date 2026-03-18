@@ -772,7 +772,7 @@ def _extract_usage(response: Any, client: LLMClient | None = None) -> dict | Non
     if client is not None and hasattr(client, "extract_usage"):
         try:
             return client.extract_usage(response)
-        except (ValueError, KeyError, TypeError):
+        except Exception:
             pass
 
     # OpenAI object format
@@ -812,7 +812,7 @@ def _extract_content(response: Any, client: LLMClient | None = None) -> str | No
     if client is not None and hasattr(client, "extract_content"):
         try:
             return client.extract_content(response)
-        except (ValueError, KeyError, TypeError):
+        except Exception:
             pass
 
     # OpenAI object format
@@ -846,7 +846,7 @@ def _extract_tool_calls(response: Any, client: LLMClient | None = None) -> list[
             result = client.extract_tool_calls(response)
             if result is not None:
                 return result
-        except (ValueError, KeyError, TypeError):
+        except Exception:
             pass
 
     # OpenAI object format

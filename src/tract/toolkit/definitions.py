@@ -123,8 +123,8 @@ def get_all_tools(tract: Tract) -> list[ToolDefinition]:
                     },
                     "priority": {
                         "type": "string",
-                        "enum": ["pinned", "normal", "skip"],
-                        "description": "Priority level: 'pinned' (protected), 'normal' (default), 'skip' (excluded).",
+                        "enum": ["pinned", "important", "normal", "skip"],
+                        "description": "Priority level: 'pinned' (protected from compression), 'important' (survives compression with retention criteria), 'normal' (default), 'skip' (excluded from compilation).",
                     },
                     "reason": {
                         "type": "string",
@@ -712,7 +712,7 @@ def get_all_tools(tract: Tract) -> list[ToolDefinition]:
                     },
                     "priority": {
                         "type": "string",
-                        "enum": ["pinned", "normal", "skip"],
+                        "enum": ["pinned", "important", "normal", "skip"],
                         "description": "Priority level. Default 'pinned' (survives compression).",
                     },
                 },
