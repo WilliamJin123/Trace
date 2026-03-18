@@ -289,12 +289,13 @@ def semantic_maintainer():
                 "Review the commit log for context health.\n"
                 "1. Annotate redundant commits (restating earlier content) as SKIP.\n"
                 "2. If research has shifted to recommendations, configure stage='synthesis'.\n"
-                "3. Compress clusters of related commits into summaries when 3+ cover the same topic.\n"
-                "4. Add a directive when you detect a clear research focus emerging.\n"
-                "5. Tag commits that represent key findings with 'key-finding'.\n"
+                "3. Use compress_range to summarize contiguous runs of related commits.\n"
+                "4. Edit verbose commits to shorten them (keep key facts, drop filler).\n"
+                "5. Add a directive when you detect a clear research focus emerging.\n"
+                "6. Tag commits that represent key findings with 'key-finding'.\n"
                 "Be conservative: only act on clear signals."
             ),
-            actions=["annotate", "compress", "configure", "directive", "tag"],
+            actions=["annotate", "compress_range", "configure", "directive", "edit", "tag"],
             model=llm.small,
             condition=lambda ctx: len(ctx.tract.search.log()) > 5,
         )

@@ -7,7 +7,7 @@ maintenance instructions, and executes returned actions against existing
 tract primitives.
 
 Unlike gates (which only block), maintainers perform maintenance actions:
-annotate, compress, configure, directive, tag, gc, block.
+annotate, compress, compress_range, configure, directive, edit, tag, gc, block.
 
 When ``max_peeks > 0``, the maintainer runs a two-pass flow: it first asks
 the LLM which commits (if any) need full content inspection, fetches those
@@ -66,6 +66,8 @@ Respond with JSON:
   "actions": [
     {"type": "annotate", "target": "<commit_hash_prefix>", "priority": "skip"},
     {"type": "compress", "commits": ["<hash1>", "<hash2>"], "instructions": "Summarize these"},
+    {"type": "compress_range", "from": "<oldest_hash>", "to": "<newest_hash>", "instructions": "Summarize this range"},
+    {"type": "edit", "target": "<commit_hash_prefix>", "content": "Replacement content (shorter/cleaner)"},
     {"type": "configure", "key": "stage", "value": "implementation"},
     {"type": "directive", "name": "current-phase", "text": "Focus on implementation"},
     {"type": "tag", "target": "<hash>", "tag": "key-finding"},
@@ -77,6 +79,8 @@ Respond with JSON:
 Only use action types from the allowed list. If no maintenance is needed, return {"reasoning": "...", "actions": []}.
 
 Valid priority values for annotate: "skip", "normal", "important", "pinned".
+Use "compress_range" to summarize a contiguous range of commits (easier than listing individual hashes).
+Use "edit" to rewrite a single commit's content (e.g., shorten a verbose tool result).
 """
 
 _PEEK_SYSTEM_PROMPT = """\
@@ -157,8 +161,9 @@ class SemanticMaintainer:
         instructions: Natural-language instructions for what maintenance
             to perform.
         actions: List of allowed action types. Subset of:
-            ``"annotate"``, ``"compress"``, ``"configure"``,
-            ``"directive"``, ``"tag"``, ``"gc"``, ``"block"``.
+            ``"annotate"``, ``"compress"``, ``"compress_range"``,
+            ``"configure"``, ``"directive"``, ``"edit"``,
+            ``"tag"``, ``"gc"``, ``"block"``.
         model: Model override passed to ``client.chat()``.
         condition: Optional deterministic pre-check. Receives the
             :class:`~tract.middleware.MiddlewareContext` and returns
@@ -186,7 +191,8 @@ class SemanticMaintainer:
 
     # Valid action types
     VALID_ACTIONS: ClassVar[frozenset[str]] = frozenset({
-        "annotate", "compress", "configure", "directive", "tag", "gc", "block",
+        "annotate", "compress", "compress_range", "configure", "directive",
+        "edit", "tag", "gc", "block",
     })
 
     def __post_init__(self) -> None:
@@ -709,10 +715,14 @@ class SemanticMaintainer:
             self._exec_annotate(tract, action)
         elif action_type == "compress":
             self._exec_compress(tract, action)
+        elif action_type == "compress_range":
+            self._exec_compress_range(tract, action)
         elif action_type == "configure":
             self._exec_configure(tract, action)
         elif action_type == "directive":
             self._exec_directive(tract, action)
+        elif action_type == "edit":
+            self._exec_edit(tract, action)
         elif action_type == "tag":
             self._exec_tag(tract, action)
         elif action_type == "gc":
@@ -758,6 +768,45 @@ class SemanticMaintainer:
 
         resolved = [tract.branches.resolve(c) for c in commits]
         tract.compression.compress(commits=resolved, instructions=instructions)
+
+    @staticmethod
+    def _exec_compress_range(tract: Tract, action: dict[str, Any]) -> None:
+        """Execute a compress_range action: compress a contiguous range of commits."""
+        from_hash = action.get("from", "")
+        to_hash = action.get("to", "")
+        instructions = action.get("instructions")
+
+        if not from_hash or not to_hash:
+            raise ValueError("compress_range requires 'from' and 'to' commit hashes.")
+
+        resolved_from = tract.branches.resolve(from_hash)
+        resolved_to = tract.branches.resolve(to_hash)
+        tract.compression.compress(
+            from_commit=resolved_from,
+            to_commit=resolved_to,
+            instructions=instructions,
+        )
+
+    @staticmethod
+    def _exec_edit(tract: Tract, action: dict[str, Any]) -> None:
+        """Execute an edit action: rewrite a commit's content in-place."""
+        from tract.models.commit import CommitOperation
+
+        target = action.get("target", "")
+        content = action.get("content", "")
+
+        if not target:
+            raise ValueError("Edit action requires a 'target' commit hash.")
+        if not content:
+            raise ValueError("Edit action requires 'content'.")
+
+        full_hash = tract.branches.resolve(target)
+        tract.commit(
+            content={"content_type": "freeform", "text": content},
+            operation=CommitOperation.EDIT,
+            edit_target=full_hash,
+            message=f"Maintainer edit: {target[:8]}",
+        )
 
     @staticmethod
     def _exec_configure(tract: Tract, action: dict[str, Any]) -> None:
