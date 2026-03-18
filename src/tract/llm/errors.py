@@ -1,6 +1,7 @@
 """LLM-specific error hierarchy.
 
-All LLM errors inherit from TraceError for consistent exception handling.
+All LLM errors inherit from :class:`~tract.exceptions.TraceError` for
+consistent exception handling.
 """
 
 from __future__ import annotations

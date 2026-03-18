@@ -1,6 +1,6 @@
-"""Trace exception hierarchy.
+"""Tract exception hierarchy.
 
-All Trace-specific exceptions inherit from TraceError.
+All Tract-specific exceptions inherit from TraceError.
 Each exception carries a ``hint`` attribute with an actionable suggestion
 for LLM agents encountering the error.
 """
@@ -38,7 +38,7 @@ __all__: list[str] = [
 
 
 class TraceError(Exception):
-    """Base exception for all Trace errors."""
+    """Base exception for all Tract errors."""
 
     hint: str = ""
 
@@ -100,7 +100,7 @@ class DetachedHeadError(TraceError):
     def __init__(self) -> None:
         super().__init__(
             "Cannot commit in detached HEAD state. "
-            "Use 'tract checkout main' to return to your branch."
+            "Use t.checkout('main') to return to your branch."
         )
         self.hint = "Run t.checkout('main') or t.switch('branch_name') to reattach."
 

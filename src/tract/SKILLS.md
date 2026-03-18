@@ -26,15 +26,15 @@ Content is always a dict, never a bare string.
 
 **Context**: `commit(content, operation, message, edit_target, metadata, tags)` — operation is `"append"` (default) or `"edit"` (must set `edit_target` to a commit hash). `compile()` — returns token/message counts. `status()` — branch, HEAD, tokens, budget. `log(limit, op_filter)` — history. `diff(commit_a, commit_b)` — compare commits. `get_commit(commit_hash)` — details. `compress(target_tokens, from_commit, to_commit, instructions, content, preserve)` — reduce tokens; pinned commits survive.
 
-**Branching**: `branch(name, source, switch)` — create branch. `switch(target)` — change branch. `merge(source, message)` — merge into current. `reset(target, mode)` — mode is `"soft"` (default). `checkout(target)` — read-only detached HEAD. `list_branches()`. `transition(target, handoff)` — switch with hooks; handoff is `"full"`, `"summary"`, `"none"`, or custom text.
+**Branching**: `branch(name, source, switch)` — create branch. `switch(target)` — change branch. `merge(source, message)` — merge into current. `reset(target, mode)` — mode is `"soft"` (default). `checkout(target)` — read-only detached HEAD. `list_branches()`. `transition(target, handoff)` — switch with middleware; handoff is `"full"`, `"summary"`, `"none"`, or custom text.
 
-**Annotations**: `annotate(target_hash, priority, reason)` — priority is `"pinned"` (survives compression), `"normal"`, or `"skip"` (excluded from compile). `directive(name, text, priority)` — named standing instruction, deduplicated by name, default pinned. Note: instruction/system commits and directives are **pinned by default** — check `log` output for `[pinned]`/`[skip]` tags before annotating.
+**Annotations**: `annotate(target_hash, priority, reason)` — priority is `"pinned"` (survives compression), `"important"` (compression-resistant), `"normal"`, or `"skip"` (excluded from compile). `directive(name, text, priority)` — named standing instruction, deduplicated by name, default pinned. Note: instruction/system commits and directives are **pinned by default** — check `log` output for `[pinned]`/`[skip]` tags before annotating.
 
 **Tags**: `tag(commit_hash, tag)`, `untag(commit_hash, tag)`, `query_by_tags(tags, match)` — match is `"any"` or `"all"`. `register_tag(name, description)`, `get_tags(commit_hash)`, `list_tags()`.
 
 **Config**: `configure(settings)` — keys: model, temperature, max_tokens, max_commit_tokens, auto_compress_threshold, compile_strategy, compile_strategy_k. `configure_model(model, operation, temperature)`. `get_config(key)`. `create_metadata(kind, data, path)`.
 
-**Middleware**: `create_middleware(event, code, description)` — events: pre_commit, post_commit, pre_compile, pre_compress, pre_merge, pre_gc, pre_transition, post_transition. Code must define `handler(ctx)`. `remove_middleware(handler_id)`.
+**Middleware**: `create_middleware(event, code, description)` — events: pre_commit, post_commit, pre_compile, pre_compress, pre_merge, pre_gc, pre_transition, post_transition, pre_generate, post_generate, pre_tool_execute, post_tool_execute. Code must define `handler(ctx)`. `remove_middleware(handler_id)`.
 
 ## Common Patterns
 
@@ -48,7 +48,7 @@ Content is always a dict, never a bare string.
 ## Key Gotchas
 
 - `operation` values: `"append"` / `"edit"` — these are commit operations.
-- `priority` values: `"pinned"` / `"normal"` / `"skip"` — these are annotations. Do not confuse with operations.
+- `priority` values: `"pinned"` / `"important"` / `"normal"` / `"skip"` — these are annotations. Do not confuse with operations.
 - `content` must be a dict with `content_type`, not a string.
 - `tool_io` uses `payload` (dict), not `text`.
 - `freeform` uses `payload` (dict), not `text`.

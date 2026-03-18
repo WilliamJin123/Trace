@@ -368,7 +368,8 @@ def get_profile(name: ProfileName | str) -> ToolProfile:
     """Look up a built-in profile by name.
 
     Args:
-        name: Profile name (``"self"``, ``"supervisor"``, or ``"full"``).
+        name: Profile name (``"self"``, ``"supervisor"``, ``"full"``,
+            ``"compact"``, or ``"discovery"``).
 
     Returns:
         The matching ToolProfile.

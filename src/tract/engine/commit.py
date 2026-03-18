@@ -1,4 +1,4 @@
-"""Commit engine for Trace.
+"""Commit engine for Tract.
 
 Orchestrates commit creation with validation, parent chain management,
 token budget enforcement, blob deduplication, and annotation auto-creation.
@@ -65,7 +65,7 @@ def extract_text_from_content(content: BaseModel) -> str:
 class CommitEngine:
     """Orchestrates commit creation with validation and storage.
 
-    The commit engine is the primary write path for Trace. It enforces:
+    The commit engine is the primary write path for Tract. It enforces:
     - Content-addressable blob storage (dedup via hash)
     - Immutable commit chain (parent pointers)
     - Edit constraints (edits must target non-edit commits)

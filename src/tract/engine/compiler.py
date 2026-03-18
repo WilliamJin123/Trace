@@ -1,4 +1,4 @@
-"""Default context compiler for Trace.
+"""Default context compiler for Tract.
 
 Converts a commit chain into LLM-ready structured messages.
 Handles edit resolution, priority filtering, time-travel compilation,

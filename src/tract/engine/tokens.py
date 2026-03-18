@@ -1,4 +1,4 @@
-"""Token counting implementations for Trace.
+"""Token counting implementations for Tract.
 
 Provides TiktokenCounter (production use) and NullTokenCounter (testing).
 Both implement the TokenCounter protocol from protocols.py.

@@ -1,7 +1,7 @@
-"""Trace: Git-like version control for LLM context windows.
+"""Tract: Git-like version control for LLM context windows.
 
 Agents produce better outputs when their context is clean, coherent, and relevant.
-Trace makes context a managed, version-controlled resource.
+Tract makes context a managed, version-controlled resource.
 """
 
 from tract._version import __version__
@@ -93,10 +93,10 @@ from tract.gate import SemanticGate, GateResult
 from tract.maintain import SemanticMaintainer, MaintainResult
 
 # Context intelligence
-from tract.intelligence import CherryPickResult, DedupResult
+from tract.intelligence import CherryPickResult, DedupResult, cherry_pick, deduplicate
 
 # Autonomous operations
-from tract.autonomous import AutoSplitResult, AutoRebaseResult, AutoBranchResult
+from tract.autonomous import AutoSplitResult, AutoRebaseResult, AutoBranchResult, auto_split, auto_rebase, auto_branch
 
 # Routing
 from tract.routing import Route, RoutingTable, SemanticRouter, RoutingResult
@@ -270,10 +270,15 @@ __all__ = [
     # Context intelligence
     "CherryPickResult",
     "DedupResult",
+    "cherry_pick",
+    "deduplicate",
     # Autonomous operations
     "AutoSplitResult",
     "AutoRebaseResult",
     "AutoBranchResult",
+    "auto_split",
+    "auto_rebase",
+    "auto_branch",
     # Routing
     "Route",
     "RoutingTable",

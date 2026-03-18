@@ -1,4 +1,4 @@
-"""Operations package for Trace.
+"""Operations package for Tract.
 
 Higher-level operations that compose storage primitives.
 """

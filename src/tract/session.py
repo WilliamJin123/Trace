@@ -1,4 +1,4 @@
-"""Session -- multi-agent entry point for Trace.
+"""Session -- multi-agent entry point for Tract.
 
 All tracts in a session share one SQLite file and engine.
 Each tract gets its own SQLAlchemy session for thread safety.

@@ -1,4 +1,4 @@
-"""Toolkit data models for Trace agent tool definitions.
+"""Toolkit data models for Tract agent tool definitions.
 
 Frozen dataclasses for tool definitions, profiles, configs, and results.
 """

@@ -1,4 +1,4 @@
-"""Trace storage layer.
+"""Tract storage layer.
 
 Provides SQLAlchemy ORM schema, engine/session factory, and repository
 implementations for SQLite.

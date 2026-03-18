@@ -1,4 +1,4 @@
-"""Merge operations for Trace.
+"""Merge operations for Tract.
 
 Implements merge strategies: fast-forward, clean auto-merge (branch-blocks),
 structural conflict detection, and LLM-mediated semantic merge.

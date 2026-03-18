@@ -1,4 +1,4 @@
-"""Deterministic hashing utilities for Trace.
+"""Deterministic hashing utilities for Tract.
 
 Provides canonical JSON serialization and SHA-256 hashing for content
 and commits. All hashing is deterministic: same input always produces

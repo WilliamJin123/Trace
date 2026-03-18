@@ -24,7 +24,7 @@ from tract.llm.anthropic_client import (
 )
 from tract.llm.cache import CachingLLMClient
 from tract.llm.claude_code import load_claude_code_credentials, create_claude_code_client
-from tract.llm.protocols import LLMClient, AgentLoop, Resolution, ResolverCallable
+from tract.llm.protocols import LLMClient, AsyncLLMClient, AgentLoop, Resolution, ResolverCallable
 from tract.llm.resolver import OpenAIResolver
 from tract.llm.errors import (
     LLMClientError,
@@ -43,7 +43,7 @@ from tract.toolkit.definitions import get_all_tools
 from tract.toolkit.callables import tools_to_callables
 
 # Default loop
-from tract.loop import LoopConfig, LoopResult, run_loop
+from tract.loop import LoopConfig, LoopResult, StepMetrics, run_loop, arun_loop
 
 __all__ = [
     # LLM
@@ -53,6 +53,7 @@ __all__ = [
     "load_claude_code_credentials",
     "create_claude_code_client",
     "LLMClient",
+    "AsyncLLMClient",
     "AgentLoop",
     "Resolution",
     "ResolverCallable",
@@ -84,5 +85,7 @@ __all__ = [
     # Loop
     "LoopConfig",
     "LoopResult",
+    "StepMetrics",
     "run_loop",
+    "arun_loop",
 ]

@@ -1,4 +1,4 @@
-"""Trace domain models.
+"""Tract domain models.
 
 Re-exports key models for convenient access.
 """

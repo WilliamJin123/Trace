@@ -1,4 +1,4 @@
-"""Compilation options model for Trace.
+"""Compilation options model for Tract.
 
 CompileOptions is a Pydantic model holding parameters for context compilation.
 CompiledContext and Message are re-exported from protocols.py for convenience.

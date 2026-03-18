@@ -1,4 +1,4 @@
-"""Abstract repository interfaces for Trace storage.
+"""Abstract repository interfaces for Tract storage.
 
 Defines ABC interfaces for all database operations. No SQLAlchemy
 imports here -- pure abstract contracts.

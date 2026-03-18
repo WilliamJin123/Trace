@@ -1,4 +1,4 @@
-"""Branch CRUD operations for Trace.
+"""Branch CRUD operations for Tract.
 
 Create, delete, list, and validate branches.
 Composes storage primitives (ref repo, commit repo) into higher-level actions.

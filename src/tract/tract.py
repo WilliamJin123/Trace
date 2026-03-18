@@ -1,4 +1,4 @@
-"""Tract -- the public SDK entry point for Trace.
+"""Tract -- the public SDK entry point.
 
 Ties together storage, commit engine, and context compiler into a clean,
 user-facing API.  Users interact with ``Tract.open()``, ``t.commit()``,
@@ -311,7 +311,7 @@ async def _aretry_with_backoff(
 
 
 class Tract:
-    """Primary entry point for Trace -- git-like version control for LLM context.
+    """Primary entry point for Tract -- git-like version control for LLM context.
 
     Create a tract via :meth:`Tract.open` (recommended) or
     :meth:`Tract.from_components` (testing / DI).
@@ -843,7 +843,7 @@ class Tract:
         retry: RetryConfig | None = None,
         prompt_dir: str | Path | None = None,
     ) -> Tract:
-        """Open (or create) a Trace repository.
+        """Open (or create) a Tract repository.
 
         Supports three database modes:
 

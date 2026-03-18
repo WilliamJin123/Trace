@@ -51,7 +51,7 @@ DISCOVERY_DOMAINS: dict[str, dict] = {
         "actions": COMPACT_DOMAINS["config"],
     },
     "middleware": {
-        "description": "Event middleware: create or remove pre/post hooks",
+        "description": "Event middleware: create or remove pre/post handlers",
         "actions": COMPACT_DOMAINS["middleware"],
     },
 }

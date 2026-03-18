@@ -1,4 +1,4 @@
-"""Merge and rebase domain models for Trace.
+"""Merge and rebase domain models for Tract.
 
 Defines data models for merge, rebase, and import operations:
 conflict information, merge results, rebase warnings, import issues,

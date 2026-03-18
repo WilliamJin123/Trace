@@ -1,4 +1,4 @@
-"""Compression operations for Trace.
+"""Compression operations for Tract.
 
 Implements context compression: summarizing commit chains into shorter
 summaries to fit token budgets. compress_range() returns a

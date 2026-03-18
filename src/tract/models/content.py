@@ -1,4 +1,4 @@
-"""Content type system for Trace.
+"""Content type system for Tract.
 
 Defines 8 built-in content types as Pydantic models with a discriminated union
 (ContentPayload). Each content type has behavioral hints (ContentTypeHints) for

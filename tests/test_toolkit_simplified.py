@@ -1,4 +1,4 @@
-"""Tests for simplified toolkit: new tools, direct dispatch, no orchestrator coupling."""
+"""Tests for simplified toolkit: new tools, direct dispatch, no framework coupling."""
 
 from __future__ import annotations
 
@@ -78,7 +78,7 @@ class TestNewToolDefinitions:
 
 class TestToolExecution:
     def test_executor_direct_dispatch(self, tract_instance):
-        """Executor dispatches directly to handler, no hook routing."""
+        """Executor dispatches directly to handler, no middleware routing."""
         executor = ToolExecutor(tract_instance)
         result = executor.execute("status", {})
         assert result.success

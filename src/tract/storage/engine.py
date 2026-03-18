@@ -1,4 +1,4 @@
-"""Engine and session factory for Trace storage.
+"""Engine and session factory for Tract storage.
 
 Provides SQLite engine creation with performance pragmas,
 session factory creation, and database initialization.
@@ -19,7 +19,7 @@ def create_trace_engine(
     *,
     url: str | None = None,
 ) -> Engine:
-    """Create a SQLAlchemy engine for Trace storage.
+    """Create a SQLAlchemy engine for Tract storage.
 
     Supports three modes:
 

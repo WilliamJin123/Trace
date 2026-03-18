@@ -742,7 +742,7 @@ def get_all_tools(tract: Tract) -> list[ToolDefinition]:
                     "event": {
                         "type": "string",
                         "enum": sorted(VALID_EVENTS),
-                        "description": "Event to hook into.",
+                        "description": "Middleware event to handle.",
                     },
                     "code": {
                         "type": "string",

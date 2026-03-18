@@ -1,4 +1,4 @@
-"""Protocol definitions for Trace.
+"""Protocol definitions for Tract.
 
 Defines pluggable interfaces (TokenCounter, ContextCompiler)
 and frozen dataclasses for structured output (Message, CompiledContext, TokenUsage).

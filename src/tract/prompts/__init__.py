@@ -1,1 +1,1 @@
-"""Prompt templates for Trace LLM operations."""
+"""Prompt templates for Tract LLM operations."""

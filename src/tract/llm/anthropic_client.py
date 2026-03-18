@@ -784,6 +784,8 @@ class AnthropicClient:
             "tool_use": "tool_calls",
             "max_tokens": "length",
             "stop_sequence": "stop",
+            "pause_turn": "stop",
+            "refusal": "stop",
         }
         finish_reason = finish_reason_map.get(stop_reason, "stop")
 

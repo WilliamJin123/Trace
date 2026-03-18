@@ -1,4 +1,4 @@
-"""Priority annotation model for Trace.
+"""Priority annotation model for Tract.
 
 Annotations are lightweight, mutable metadata attached to commits
 (like git tags). The annotation table is append-only for provenance.
@@ -55,7 +55,8 @@ class PriorityAnnotation(BaseModel):
 
 
 # Default priorities for built-in content types.
-# instruction defaults to PINNED; all others default to NORMAL.
+# instruction and session default to PINNED; reasoning defaults to SKIP;
+# all others default to NORMAL.
 DEFAULT_TYPE_PRIORITIES: dict[str, Priority] = {
     "instruction": Priority.PINNED,
     "dialogue": Priority.NORMAL,
@@ -64,4 +65,7 @@ DEFAULT_TYPE_PRIORITIES: dict[str, Priority] = {
     "artifact": Priority.NORMAL,
     "output": Priority.NORMAL,
     "freeform": Priority.NORMAL,
+    "session": Priority.PINNED,
+    "config": Priority.NORMAL,
+    "metadata": Priority.NORMAL,
 }

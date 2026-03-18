@@ -1,4 +1,4 @@
-"""Configuration models for Trace.
+"""Configuration models for Tract.
 
 TractConfig holds per-tract settings.
 TokenBudgetConfig controls token budget enforcement behavior.
@@ -304,7 +304,7 @@ class ToolSummarizationConfig:
     """Configuration for automatic tool result summarization.
 
     Used by :meth:`Tract.configure_tool_summarization` to set up
-    a tool_result hook that summarizes results based on per-tool
+    automatic summarization of tool results based on per-tool
     instructions and/or token count thresholds.
 
     Attributes:

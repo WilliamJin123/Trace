@@ -1,4 +1,4 @@
-"""SQLAlchemy ORM schema for Trace.
+"""SQLAlchemy ORM schema for Tract.
 
 Defines all database tables: blobs, commits, refs, annotations, _trace_meta.
 
@@ -27,7 +27,7 @@ from tract.models.commit import CommitOperation
 
 
 class Base(DeclarativeBase):
-    """Base class for all Trace ORM models."""
+    """Base class for all Tract ORM models."""
 
     pass
 
@@ -455,7 +455,7 @@ class BehavioralSpecRow(Base):
 
 
 class TraceMetaRow(Base):
-    """Key-value metadata for the Trace database itself (e.g., schema version)."""
+    """Key-value metadata for the Tract database itself (e.g., schema version)."""
 
     __tablename__ = "_trace_meta"
 

@@ -1,4 +1,4 @@
-"""Rebase and cherry-pick operations for Trace.
+"""Rebase and cherry-pick operations for Tract.
 
 Implements commit replay with new parentage, EDIT target remapping detection,
 and semantic safety checks for reordering.

@@ -1,4 +1,4 @@
-"""Navigation operations for Trace -- reset and checkout.
+"""Navigation operations for Tract -- reset and checkout.
 
 These operations manipulate HEAD position without creating new commits.
 They compose storage primitives (ref repo, commit repo) into higher-level
@@ -101,9 +101,9 @@ def reset(
     Stores the current HEAD as ORIG_HEAD before moving.
 
     - soft: moves HEAD only (forward history still accessible via hashes)
-    - hard: moves HEAD only (same as soft in Trace -- no working tree)
+    - hard: moves HEAD only (same as soft in Tract -- no working tree)
 
-    Note: In Trace, soft and hard have identical behavior because there
+    Note: In Tract, soft and hard have identical behavior because there
     is no working directory to clean.  The distinction exists for API
     compatibility with git semantics and future extensions.
 

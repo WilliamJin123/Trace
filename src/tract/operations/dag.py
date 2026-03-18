@@ -1,4 +1,4 @@
-"""DAG utilities for Trace -- merge base computation and ancestor queries.
+"""DAG utilities for Tract -- merge base computation and ancestor queries.
 
 These utilities operate on the commit DAG, following both first-parent
 (CommitRow.parent_hash) and extra parents (CommitParentRow) for merge commits.

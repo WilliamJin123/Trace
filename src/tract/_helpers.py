@@ -1,8 +1,8 @@
 """Shared internal utilities for tract LLM modules.
 
-Provides de-duplicated helpers used across intelligence, autonomous,
-maintain, gate, and routing modules.  This module contains ONLY
-reusable plumbing -- no business logic.
+Provides de-duplicated helpers used across gate, maintain, and other
+LLM-powered modules.  This module contains ONLY reusable plumbing --
+no business logic.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ def resolve_llm_client(
         The Tract instance whose LLM registry is consulted.
     *operation_names:
         One or more operation names to try, in priority order.
-        Example: ``resolve_llm_client(t, "intelligence", "chat")``.
+        Example: ``resolve_llm_client(t, "gate", "chat")``.
     """
     for name in operation_names:
         try:

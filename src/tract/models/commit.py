@@ -1,4 +1,4 @@
-"""Commit domain model for Trace.
+"""Commit domain model for Tract.
 
 CommitInfo is the SDK-facing model returned when querying commits.
 CommitOperation is the enum for commit operations (APPEND, EDIT).

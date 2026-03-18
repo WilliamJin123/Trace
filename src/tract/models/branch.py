@@ -1,4 +1,4 @@
-"""Branch domain model for Trace.
+"""Branch domain model for Tract.
 
 BranchInfo is the SDK-facing model returned when listing branches.
 """
