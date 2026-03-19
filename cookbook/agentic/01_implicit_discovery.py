@@ -10,7 +10,7 @@ Scenarios:
                         work, lowers temperature + injects precision directive.
 
 Demonstrates: middleware.add(), BlockedError recovery, dynamic config.set(),
-              dynamic directive(), MiddlewareContext, t.llm.run()
+              dynamic directive(), MiddlewareContext, t.runtime.run()
 """
 
 import io
@@ -67,7 +67,7 @@ def scenario_quality_gate() -> None:
         print(f"  Branch: {t.current_branch}")
         print(f"  Gate: pre_transition requires >= 3 artifact commits\n")
 
-        result = t.llm.run(
+        result = t.runtime.run(
             "Research authentication patterns, database schema design, and "
             "error handling for a REST API. Commit each finding as an "
             "artifact. When your research is thorough, transition to "
@@ -150,7 +150,7 @@ def scenario_phase_detection() -> None:
         print(f"  Config: stage=research, temperature=0.9")
         print(f"  Middleware: post_commit watches for implementation signals\n")
 
-        result = t.llm.run(
+        result = t.runtime.run(
             "Design an authentication service:\n"
             "1. Research trade-offs between JWT and session-based auth. "
             "Commit your analysis.\n"

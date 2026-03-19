@@ -13,7 +13,7 @@ Two patterns for using LLMs as judges of their own output:
 Core principle: LLMs are better at evaluating than generating. A cheap model
 scoring structured criteria catches issues that the generator misses.
 
-Demonstrates: branches for iteration history, t.llm.run(), t.llm.chat(),
+Demonstrates: branches for iteration history, t.runtime.run(), t.runtime.chat(),
               metadata for scores, merge(strategy="theirs"), pre_commit
               middleware, BlockedError recovery, tag-based gating,
               compile().pprint(style="chat")
@@ -129,7 +129,7 @@ def section_1_eval_loop() -> None:
                     f"in the feedback. Commit the improved version as an artifact."
                 )
 
-            gen_result = t.llm.run(
+            gen_result = t.runtime.run(
                 prompt,
                 max_steps=6,
                 max_tokens=2048,
@@ -153,7 +153,7 @@ def section_1_eval_loop() -> None:
             else:
                 code_text = gen_result.final_response or "(no output)"
 
-            eval_response = t.llm.chat(
+            eval_response = t.runtime.chat(
                 EVAL_PROMPT + code_text,
                 max_tokens=400,
             )
@@ -324,7 +324,7 @@ def section_2_rationale_gate() -> None:
 
         t.branch("agent-work", switch=True)
 
-        result = t.llm.run(
+        result = t.runtime.run(
             "Implement a Python function `flatten(nested: list) -> list` that "
             "flattens arbitrarily nested lists. You MUST commit a rationale "
             "first (tagged 'rationale'), then the implementation (tagged "

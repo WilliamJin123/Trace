@@ -180,7 +180,7 @@ def section_2_priority_eviction() -> None:
             preview = (entry.text or "")[:65] if entry.text else "(summary)"
             print(f"    {entry.commit_hash[:8]}  [{prio:9s}]  {preview}")
 
-        pinned = t.search.pinned()
+        pinned = t.pinned()
         print(f"\n  Pinned survived: {len(pinned)} commit(s)")
         for p in pinned:
             print(f"    {p.commit_hash[:8]}  {(p.message or '')[:50]}")
@@ -230,7 +230,7 @@ def section_3_auto_compression() -> None:
         log = StepLogger()
         print(f"\n  Running loop (max_tokens=2000, auto_compress at 80%)...\n")
 
-        result = t.llm.run(
+        result = t.runtime.run(
             "Research each microservices topic. Commit a detailed finding for "
             "each with implementation details and trade-offs.",
             max_steps=15,
@@ -256,7 +256,7 @@ def section_3_auto_compression() -> None:
                   f"{m.tool_count} tools{tag}")
 
         # Verify pinned constraint survived
-        pinned = t.search.pinned()
+        pinned = t.pinned()
         print(f"\n  Pinned after loop: {len(pinned)}")
         for p in pinned:
             print(f"    {p.commit_hash[:8]}  {(p.text or '')[:70]}")

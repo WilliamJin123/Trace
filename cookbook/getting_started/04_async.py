@@ -72,7 +72,7 @@ async def main() -> None:
         # --- 1. achat() -- async single-turn Q&A ---
 
         print("=== achat() ===")
-        response = await t.llm.achat("What is the capital of France?")
+        response = await t.runtime.achat("What is the capital of France?")
         print(f"  Response: {(response.text or '(no response)')[:200]}")
         print(f"  Tokens: {response.usage}")
 
@@ -83,7 +83,7 @@ async def main() -> None:
         print("\n=== arun() with async tools ===")
         log = StepLogger()
 
-        result = await t.llm.arun(
+        result = await t.runtime.arun(
             "Look up Python and Rust, then compare them briefly.",
             max_steps=8,
             tools=CUSTOM_TOOLS,
@@ -101,7 +101,7 @@ async def main() -> None:
         before = t.compile()
         print(f"  Before: {before.token_count} tokens, {before.commit_count} commits")
 
-        compressed = await t.compression.acompress(
+        compressed = await t.acompress(
             content="User asked about Python and Rust, agent compared them.",
         )
         after = t.compile()

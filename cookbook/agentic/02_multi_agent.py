@@ -179,7 +179,7 @@ def main() -> None:
         child = entry["tract"]
         analyst = entry["analyst"]
 
-        response = child.llm.chat(analyst["prompt"], max_tokens=600)
+        response = child.runtime.chat(analyst["prompt"], max_tokens=600)
         child.tag(response.commit_info.commit_hash, analyst["name"])
 
         preview = (response.text or "(no response)")[:200].replace("\n", "\n    ")
@@ -195,7 +195,7 @@ def main() -> None:
         child = entry["tract"]
         analyst = entry["analyst"]
 
-        summary_response = child.llm.chat(
+        summary_response = child.runtime.chat(
             f"Summarize your findings as the {analyst['title']}. "
             f"Bullet points, label PRO/CON/RISK, under 200 words.",
             max_tokens=400,
@@ -218,7 +218,7 @@ def main() -> None:
     # 5. Synthesis: coordinator identifies consensus + disagreements
     print("\n--- Synthesis ---")
 
-    response = coordinator.llm.chat(
+    response = coordinator.runtime.chat(
         "All three analyst reports are now in your context. Produce a "
         "FINAL RECOMMENDATION with these sections:\n\n"
         "1. CONSENSUS -- Points where all analysts agree\n"

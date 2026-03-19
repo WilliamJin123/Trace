@@ -9,7 +9,7 @@ Sections:
   1. Custom tool registration + agent loop with real filesystem tools
   2. Post-loop tool compaction: compress verbose results to save tokens
 
-Demonstrates: @t.toolkit.tool, t.llm.run(), compress_tool_calls(),
+Demonstrates: @t.toolkit.tool, t.runtime.run(), compress_tool_calls(),
               real os/pathlib operations inside tool handlers
 
 Requires: LLM API key (uses Claude Code provider)
@@ -131,7 +131,7 @@ def section_1_real_tools() -> None:
 
         # Run agent with a real task
         log = StepLogger()
-        result = t.llm.run(
+        result = t.runtime.run(
             "List the Python files in the 'agentic' directory, read the "
             "conftest.py file if it exists (or any small .py file you find), "
             "count the words in what you read, then write a summary note "
@@ -198,7 +198,7 @@ def section_2_compaction() -> None:
 
         # Run agent with a task that generates verbose tool output
         log = StepLogger()
-        result = t.llm.run(
+        result = t.runtime.run(
             "Explore the cookbook directory structure: list the top-level "
             "contents, then list the 'getting_started' subdirectory. "
             "Read at least 2 Python files from getting_started/. "
@@ -222,7 +222,7 @@ def section_2_compaction() -> None:
 
         # Compress all tool results at once
         print("  Calling compress_tool_calls()...")
-        compact_result = t.compression.compress_tool_calls(
+        compact_result = t.compress_tool_calls(
             instructions="Keep file names and key findings. Drop raw file "
                          "contents and verbose listings. Preserve structure."
         )

@@ -302,8 +302,7 @@ class MiddlewareManager:
 
             # Fire policies after middleware handlers
             if self._policy_engine is not None:
-                bound = self._policy_engine._event_bindings.get(event, [])
-                if bound:
+                if self._policy_engine.has_event_policies(event):
                     from tract.policy import PolicyContext
 
                     policy_ctx = PolicyContext(

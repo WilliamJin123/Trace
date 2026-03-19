@@ -90,11 +90,11 @@ def tag_queries() -> None:
         t.assistant("Q4 revenue is strongest.", tags=["decision"])
 
         # match="any" (OR): commits with reasoning OR observation
-        any_hits = t.tags.query(["reasoning", "observation"], match="any")
+        any_hits = t._tags_mgr.query(["reasoning", "observation"], match="any")
         print(f"  any-match ('reasoning' OR 'observation'): {len(any_hits)} commits")
 
         # match="all" (AND): commits with BOTH reasoning AND decision
-        all_hits = t.tags.query(["reasoning", "decision"], match="all")
+        all_hits = t._tags_mgr.query(["reasoning", "decision"], match="all")
         print(f"  all-match ('reasoning' AND 'decision'):   {len(all_hits)} commits")
 
         # log(tags=) filters the commit log
@@ -131,8 +131,8 @@ def priority_annotations() -> None:
         print(f"  after reset: {len(ctx.messages)} messages (restored)")
 
         # Convenience filters
-        print(f"  skipped: {len(t.search.skipped())} commits")
-        print(f"  pinned:  {len(t.search.pinned())} commits")
+        print(f"  skipped: {len(t.skipped())} commits")
+        print(f"  pinned:  {len(t.pinned())} commits")
 
     print("  PASSED")
 

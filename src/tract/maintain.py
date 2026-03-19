@@ -867,8 +867,6 @@ def _actions_to_dicts(actions: list[MaintenanceAction]) -> list[dict[str, Any]]:
     """
     result: list[dict[str, Any]] = []
     for action in actions:
-        d = action.model_dump(exclude_none=True)
-        # Pydantic extra fields (like "from", "to") are included by model_dump
-        # when extra="allow" is set.
+        d = action.model_dump(exclude_none=True, by_alias=True)
         result.append(d)
     return result

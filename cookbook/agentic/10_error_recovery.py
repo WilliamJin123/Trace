@@ -198,7 +198,7 @@ def section_branch_retry() -> None:
                     "Include specific Redis commands."
                 )
 
-            result = t.llm.run(
+            result = t.runtime.run(
                 hint + "\n\nCommit your design as a single artifact.",
                 max_steps=6,
                 max_tokens=1024,
@@ -208,7 +208,7 @@ def section_branch_retry() -> None:
             )
 
             # --- Verification: ask the LLM to judge the design ---
-            verification = t.llm.chat(
+            verification = t.runtime.chat(
                 "Review the caching design above. Does it address ALL of: "
                 "(1) cache invalidation on writes, "
                 "(2) race conditions / thundering herd, "

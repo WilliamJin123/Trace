@@ -10,7 +10,7 @@ Sections:
 
 Demonstrates: t.register_tag(), t.find(tag=...), t.branches.create/switch(),
               t.commit() with metadata, t.middleware.add(), t.directive(),
-              t.llm.run(), t.llm.chat(), pre_commit middleware
+              t.runtime.run(), t.runtime.chat(), pre_commit middleware
 
 Requires: LLM API key (uses Claude Code provider)
 """
@@ -58,7 +58,7 @@ def section_1_graveyard_pattern() -> None:
         # --- Approach A: token bucket with single Redis ---
         print("  --- Approach A: Token Bucket + Single Redis ---\n")
         t.branch("approach/token-bucket-redis", switch=True)
-        t.llm.run(
+        t.runtime.run(
             "Design a token bucket rate limiter backed by a single Redis node. "
             "Consider the multi-region requirement. Commit your design.",
             max_steps=5, max_tokens=1024, tool_names=["commit", "status"],
@@ -66,7 +66,7 @@ def section_1_graveyard_pattern() -> None:
         )
 
         # Agent discovers the fatal flaw
-        analysis = t.llm.chat(
+        analysis = t.runtime.chat(
             "Single Redis = cross-region latency 80-150ms, far above 5ms budget. "
             "Summarize why this is dead in 2 sentences.", max_tokens=200,
         )
@@ -104,7 +104,7 @@ def section_1_graveyard_pattern() -> None:
                     + "\n".join(graveyard)
                     + "\nDo NOT repeat any. Design something different.")
 
-        t.llm.run(
+        t.runtime.run(
             "Design a rate limiter avoiding graveyard problems. Consider local "
             "per-region counters with async sync. Commit your design.",
             max_steps=5, max_tokens=1024, tool_names=["commit", "status"],
@@ -113,7 +113,7 @@ def section_1_graveyard_pattern() -> None:
 
         top = t.log(limit=1)
         if top:
-            t.tags.apply(top[0].commit_hash, ["solution"])
+            t.tag(top[0].commit_hash, "solution")
         t.switch("main")
         t.merge("approach/sliding-window-local", message="merge: sliding window")
 
@@ -200,7 +200,7 @@ def section_2_graveyard_middleware() -> None:
 
         # Phase 1: agent stumbles toward dead approach
         print("  --- Phase 1: Research (triggers warning) ---\n")
-        r1 = t.llm.run(
+        r1 = t.runtime.run(
             "Research PostgreSQL connection pooling for microservices. "
             "Explore PgBouncer in session mode. Commit findings.",
             max_steps=5, max_tokens=1024, tool_names=["commit", "status"],
@@ -211,7 +211,7 @@ def section_2_graveyard_middleware() -> None:
         # Phase 2: course correction after warning
         if warnings_fired:
             print("\n  --- Phase 2: Course correction ---\n")
-            r2 = t.llm.run(
+            r2 = t.runtime.run(
                 "Graveyard warnings fired. Session mode and global pools are dead. "
                 "Research per-service pools with PgBouncer TRANSACTION mode. Commit.",
                 max_steps=5, max_tokens=1024, tool_names=["commit", "status"],

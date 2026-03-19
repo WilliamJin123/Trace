@@ -1,9 +1,9 @@
 """Quick Start -- From zero to working agent in 5 minutes
 
 The minimum setup: open a Tract, configure settings, run an agent loop, done.
-One t.llm.run() call handles compile -> LLM -> tools -> repeat automatically.
+One t.runtime.run() call handles compile -> LLM -> tools -> repeat automatically.
 
-Demonstrates: Tract.open(), system(), configure(), t.llm.run(), LoopResult
+Demonstrates: Tract.open(), system(), configure(), t.runtime.run(), LoopResult
 
 Requires: LLM API key (uses Groq provider)
 """
@@ -40,7 +40,7 @@ def main() -> None:
         # tools=[] since this is pure Q&A -- no context-management tools needed
         log = StepLogger()
 
-        result = t.llm.run(
+        result = t.runtime.run(
             "What are the three pillars of object-oriented programming? "
             "Explain each in one sentence.",
             max_steps=5,

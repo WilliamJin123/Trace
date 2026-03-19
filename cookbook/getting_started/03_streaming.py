@@ -1,7 +1,7 @@
 """Streaming -- See tokens as they arrive
 
 Tract supports streaming with any LLM client that has a stream() method.
-Pass on_token= to t.llm.run() and text arrives chunk-by-chunk instead of
+Pass on_token= to t.runtime.run() and text arrives chunk-by-chunk instead of
 waiting for the full response.
 
 Two approaches:
@@ -47,7 +47,7 @@ def main() -> None:
         print("=== Rich Streaming (StreamPrinter) ===\n")
 
         with StreamPrinter(title="Hash Tables") as printer:
-            result = t.llm.run(
+            result = t.runtime.run(
                 "Explain what a hash table is in 3 sentences.",
                 max_steps=3,
                 tools=[],
@@ -72,7 +72,7 @@ def main() -> None:
             token_count += 1
             print(text, end="", flush=True)
 
-        result2 = t.llm.run(
+        result2 = t.runtime.run(
             "What is a linked list? One sentence.",
             max_steps=3,
             tools=[],
@@ -94,7 +94,7 @@ def main() -> None:
         log = StepLogger()
 
         with StreamPrinter(title="Tool + Stream") as printer:
-            result3 = t.llm.run(
+            result3 = t.runtime.run(
                 "Check your status and then summarize your current context.",
                 max_steps=5,
                 profile="full",

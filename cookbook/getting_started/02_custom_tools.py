@@ -5,7 +5,7 @@ Two approaches for giving the agent your own tools alongside tract built-ins:
   1. @t.toolkit.tool decorator  -- recommended; infers schema from type hints
   2. Manual tool dicts           -- full control over the OpenAI function schema
 
-Demonstrates: @t.toolkit.tool, manual tool dicts, tool_handlers, t.llm.run()
+Demonstrates: @t.toolkit.tool, manual tool dicts, tool_handlers, t.runtime.run()
 Requires: LLM API key (uses Groq provider)
 """
 
@@ -96,7 +96,7 @@ def demo_decorator() -> None:
 
         print("\n=== Running agent ===\n")
 
-        result = t.llm.run(
+        result = t.runtime.run(
             "What is the circumference of a circle with radius 10? "
             "Look up pi with the constants tool, then calculate 2 * pi * 10.",
             max_steps=8,
@@ -174,7 +174,7 @@ def demo_manual() -> None:
         print(f"Custom tools: {[td['function']['name'] for td in MANUAL_TOOL_DEFS]}")
 
         t.system("You are a math assistant with calculator and constant-lookup tools.")
-        result = t.llm.run(
+        result = t.runtime.run(
             "What is 2 * pi * 10? Look up pi first, then calculate.",
             max_steps=8,
             tools=all_tools,

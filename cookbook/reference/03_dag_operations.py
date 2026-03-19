@@ -45,8 +45,8 @@ def scenario_log() -> None:
     pprint_log(list(reversed(history)))
 
     # Quick filters
-    pinned = t.search.pinned()
-    skipped = t.search.skipped()
+    pinned = t.pinned()
+    skipped = t.skipped()
     print(f"Pinned: {len(pinned)}, Skipped: {len(skipped)}")
 
     t.close()
@@ -140,8 +140,8 @@ def scenario_edit() -> None:
     )
     # Creates a new EDIT commit; original stays in history. Compile uses latest.
 
-    # Style 2: t.llm.revise(hash, prompt) — LLM-driven rewrite (requires LLM)
-    # e = t.llm.revise(a1.commit_hash, "Add info about the Eiffel Tower")
+    # Style 2: t.runtime.revise(hash, prompt) — LLM-driven rewrite (requires LLM)
+    # e = t.runtime.revise(a1.commit_hash, "Add info about the Eiffel Tower")
 
     # View edit chain: [original, edit1, edit2, ...]
     versions = t.edit_history(a1.commit_hash)
@@ -505,7 +505,7 @@ def scenario_tool_tracking() -> None:
     t.tool_result("c2", "bash", "import hashlib\ndef authenticate(): pass")
 
     # Compress only grep results, leave bash untouched (requires LLM):
-    # grep_result = t.compression.compress_tool_calls(
+    # grep_result = t.compress_tool_calls(
     #     name="grep",
     #     instructions="One line per file: 'filename: finding'",
     # )

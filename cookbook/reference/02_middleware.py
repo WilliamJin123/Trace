@@ -442,7 +442,7 @@ def autonomous_behaviors() -> None:
         t.user("What is Python?")
         t.assistant("A programming language.")
 
-        skipped = len(t.search.skipped())
+        skipped = len(t.skipped())
         print(f"  {len(t.log())} commits, {t.compile().commit_count} compiled, {skipped} skipped")
         assert skipped == 2
 
@@ -562,7 +562,7 @@ def autonomous_behaviors() -> None:
                 return
             tool_state["tokens"] += ctx.commit.token_count
             if tool_state["tokens"] > 20:
-                # Production: ctx.tract.compression.compress_tool_calls()
+                # Production: ctx.tract.compress_tool_calls()
                 tool_state["compaction_needed"] = True
                 tool_state["tokens"] = 0
 

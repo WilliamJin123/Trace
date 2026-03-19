@@ -365,6 +365,17 @@ class _Runtime:
         """Async version of :meth:`revise`."""
         return await self._tract._llm_mgr.arevise(*args, **kwargs)
 
+    def run(self, *args, **kwargs):
+        """Run an agentic loop (compile -> LLM -> tools -> repeat).
+
+        Delegates to :class:`~tract.managers.LLMManager`.
+        """
+        return self._tract._llm_mgr.run(*args, **kwargs)
+
+    async def arun(self, *args, **kwargs):
+        """Async version of :meth:`run`."""
+        return await self._tract._llm_mgr.arun(*args, **kwargs)
+
     def _build_generation_config(self, *args, **kwargs):
         """Build generation config from response and resolved kwargs.
 
@@ -1267,6 +1278,19 @@ class Tract:
         """
         self._check_open()
         return self._compression_mgr.record_usage(usage, head_hash=head_hash)
+
+    def compress_tool_calls(self, *args, **kwargs):
+        """Compress tool call/result pairs into compact summaries.
+
+        Delegates to :class:`~tract.managers.CompressionManager`.
+        """
+        self._check_open()
+        return self._compression_mgr.compress_tool_calls(*args, **kwargs)
+
+    async def acompress_tool_calls(self, *args, **kwargs):
+        """Async version of :meth:`compress_tool_calls`."""
+        self._check_open()
+        return await self._compression_mgr.acompress_tool_calls(*args, **kwargs)
 
     # ------------------------------------------------------------------
     # Spawn operations

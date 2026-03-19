@@ -45,7 +45,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from tract._helpers import (
     async_safe_llm_call as _async_safe_llm_call,
@@ -152,6 +152,28 @@ class Judgment:
     fail_open_default: Any = None
     operation_name: str = "judgment"
 
+    def _prepare(
+        self,
+        tract: Tract,
+        llm_client: Any = None,
+    ) -> tuple[Any, BuiltContext, list[dict[str, str]], dict[str, Any]] | None:
+        """Shared setup for evaluate/aevaluate.
+
+        Returns ``(client, built, messages, llm_kwargs)`` or ``None`` if
+        no LLM client is available (caller should return ``_fail_open``).
+        """
+        client = llm_client or _resolve_llm_client(
+            tract, self.operation_name, "chat",
+        )
+        if client is None:
+            return None
+
+        view = self.context or ContextView()
+        built = build_context(view, tract, default_scope=30)
+        messages = self._build_messages(built)
+        llm_kwargs = self._build_llm_kwargs()
+        return client, built, messages, llm_kwargs
+
     def evaluate(self, tract: Tract, *, llm_client: Any = None) -> JudgmentResult:
         """Synchronous evaluation.
 
@@ -165,26 +187,13 @@ class Judgment:
             A :class:`JudgmentResult`. On any failure (no client, LLM error,
             parse error), returns a fail-open result with ``succeeded=False``.
         """
-        # 1. Resolve LLM client
-        client = llm_client or _resolve_llm_client(
-            tract, self.operation_name, "chat",
-        )
-        if client is None:
+        prepared = self._prepare(tract, llm_client)
+        if prepared is None:
             return self._fail_open(
                 f"No LLM client available for '{self.operation_name}' or 'chat'",
             )
+        client, built, messages, llm_kwargs = prepared
 
-        # 2. Build context
-        view = self.context or ContextView()
-        built = build_context(view, tract, default_scope=30)
-
-        # 3. Build messages
-        messages = self._build_messages(built)
-
-        # 4. Build LLM kwargs
-        llm_kwargs = self._build_llm_kwargs()
-
-        # 5. Call LLM
         result = _safe_llm_call(
             client, messages, llm_kwargs,
             caller=f"Judgment({self.operation_name})",
@@ -193,8 +202,6 @@ class Judgment:
             return self._fail_open("LLM call failed")
 
         raw_text, tokens_used = result
-
-        # 6. Parse response
         return self._parse_response(raw_text, tokens_used, built)
 
     async def aevaluate(
@@ -215,26 +222,13 @@ class Judgment:
         Returns:
             A :class:`JudgmentResult`.
         """
-        # 1. Resolve LLM client
-        client = llm_client or _resolve_llm_client(
-            tract, self.operation_name, "chat",
-        )
-        if client is None:
+        prepared = self._prepare(tract, llm_client)
+        if prepared is None:
             return self._fail_open(
                 f"No LLM client available for '{self.operation_name}' or 'chat'",
             )
+        client, built, messages, llm_kwargs = prepared
 
-        # 2. Build context
-        view = self.context or ContextView()
-        built = build_context(view, tract, default_scope=30)
-
-        # 3. Build messages
-        messages = self._build_messages(built)
-
-        # 4. Build LLM kwargs
-        llm_kwargs = self._build_llm_kwargs()
-
-        # 5. Call LLM (async)
         result = await _async_safe_llm_call(
             client, messages, llm_kwargs,
             caller=f"Judgment({self.operation_name})",
@@ -243,8 +237,6 @@ class Judgment:
             return self._fail_open("Async LLM call failed")
 
         raw_text, tokens_used = result
-
-        # 6. Parse response
         return self._parse_response(raw_text, tokens_used, built)
 
     # -- Internal helpers --------------------------------------------------
@@ -446,7 +438,7 @@ class MaintenanceAction(BaseModel):
     to that action type need to be populated; the rest are ignored.
     """
 
-    model_config = {"extra": "allow"}
+    model_config = {"extra": "allow", "populate_by_name": True}
 
     type: str  # annotate, compress, compress_range, edit, configure, directive, tag, gc, block
 
@@ -462,9 +454,9 @@ class MaintenanceAction(BaseModel):
     commits: list[str] | None = None  # for compress
     instructions: str | None = None  # for compress / compress_range / edit
 
-    # compress_range
-    from_commit: str | None = None
-    to_commit: str | None = None
+    # compress_range — aliases match LLM prompt schema ("from"/"to")
+    from_commit: str | None = Field(None, alias="from")
+    to_commit: str | None = Field(None, alias="to")
 
     # edit
     content: str | None = None

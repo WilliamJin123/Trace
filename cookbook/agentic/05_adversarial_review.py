@@ -5,7 +5,7 @@ The proposer commits an implementation plan, the critic tears it apart on a
 separate branch, the defender evaluates which critiques hold up, and the reviser
 incorporates surviving feedback into a final version.
 
-Uses separate t.llm.run() calls per role so each agent has its own perspective
+Uses separate t.runtime.run() calls per role so each agent has its own perspective
 and can't self-censor. Branching isolates each viewpoint; compare() and merge()
 reconcile them. Full conversations are printed after each stage so you can
 read exactly what each agent said.
@@ -16,7 +16,7 @@ Stages:
   defend   -- independent agent pushes back on overblown critiques
   revise   -- incorporate surviving critiques into final version
 
-Demonstrates: multi-agent perspectives via separate t.llm.run() calls, branching
+Demonstrates: multi-agent perspectives via separate t.runtime.run() calls, branching
               for isolated viewpoints, compare() for cross-branch diff, merge()
               to reconcile, directives for role-specific behavior, middleware
               gates, config-per-stage (high temp for critique, low for defense),
@@ -150,7 +150,7 @@ def main() -> None:
 
         print("  Running critic agent...\n")
 
-        critic_result = t.llm.run(
+        critic_result = t.runtime.run(
             "Review the notification service proposal above. Find every flaw, "
             "risk, and questionable decision. Focus on:\n"
             "- Single points of failure\n"
@@ -225,7 +225,7 @@ def main() -> None:
 
         print("  Running defender agent...\n")
 
-        defense_result = t.llm.run(
+        defense_result = t.runtime.run(
             "Evaluate each critique from the adversarial review. For each one, "
             "decide if it's VALID (real problem worth fixing) or DISMISSED "
             "(overblown, incorrect, or trivial). Commit each verdict separately "
@@ -267,7 +267,7 @@ def main() -> None:
 
         print("  Running reviser agent...\n")
 
-        revise_result = t.llm.run(
+        revise_result = t.runtime.run(
             "Review the conversation history. The original proposal and the "
             "defense verdicts are both here. For every critique marked VALID, "
             "propose a concrete design change. Then commit a revised version "

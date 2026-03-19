@@ -94,7 +94,7 @@ def agent_tool(session, parent, *, purpose, directive, prompt, temperature=0.3):
     )
     _configure_llm(child, temperature=temperature)
 
-    response = child.llm.chat(prompt, max_tokens=500)
+    response = child.runtime.chat(prompt, max_tokens=500)
 
     result = session.collapse(
         child,
@@ -142,7 +142,7 @@ def section_1_subagent_as_tool() -> None:
 
     # Architect produces initial design via LLM
     print("  Architect drafting initial design...")
-    design_response = coordinator.llm.chat(
+    design_response = coordinator.runtime.chat(
         "Propose a high-level architecture for this platform. Cover: "
         "ingestion layer, storage strategy, processing pipeline, and "
         "dashboard serving. Keep it to 3-4 paragraphs.",
@@ -222,7 +222,7 @@ def section_1_subagent_as_tool() -> None:
 
     # Architect synthesizes all specialist findings
     print("  Architect synthesizing specialist analyses...")
-    synthesis = coordinator.llm.chat(
+    synthesis = coordinator.runtime.chat(
         "Three specialist analyses are now in your context: storage estimates, "
         "security review, and cost projections. Revise your architecture to "
         "address the key findings. Produce a final design summary with:\n"
@@ -359,7 +359,7 @@ def section_2_parallel_fan_out() -> None:
     # Synthesize
     print("\n  All reviews collapsed. Synthesizing...")
 
-    synthesis = coordinator.llm.chat(
+    synthesis = coordinator.runtime.chat(
         "Three specialist reviews are now in your context: performance, "
         "reliability, and operability. Produce a prioritized action plan:\n\n"
         "1. CRITICAL (must fix before production) -- issues all reviewers flag\n"

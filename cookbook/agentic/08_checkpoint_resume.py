@@ -47,7 +47,7 @@ def section_checkpoint_before_risky_op() -> None:
 
         # Step 1: Build research on main
         print("  --- Step 1: Research (main) ---\n")
-        t.llm.run(
+        t.runtime.run(
             "Research SQL vs NoSQL trade-offs for a high-traffic e-commerce "
             "platform. Cover consistency, scaling, query flexibility. "
             "Commit 2-3 findings.",
@@ -59,7 +59,7 @@ def section_checkpoint_before_risky_op() -> None:
         # Step 2: Experimental work on a side branch
         print("\n  --- Step 2: Experiment branch ---\n")
         t.branch("experiment", switch=True)
-        t.llm.run(
+        t.runtime.run(
             "Take a contrarian position: argue that a single-node SQLite "
             "database is sufficient. Be bold, commit your argument.",
             max_steps=6, max_tokens=512,
@@ -87,7 +87,7 @@ def section_checkpoint_before_risky_op() -> None:
 
         # Step 5: Retry with better approach
         print("\n  --- Step 5: Retry ---\n")
-        t.llm.run(
+        t.runtime.run(
             "Write a balanced conclusion: SQLite is good for prototyping "
             "but PostgreSQL is better for production e-commerce. Commit it.",
             max_steps=6, max_tokens=512,
@@ -126,7 +126,7 @@ def section_resume_from_checkpoint() -> None:
 
         # Stage 1: Research
         print("  --- Stage 1: Research ---\n")
-        t.llm.run(
+        t.runtime.run(
             "Research three caching approaches for distributed systems: "
             "write-through, write-back, write-around. Commit a summary.",
             max_steps=8, max_tokens=1024,
@@ -142,7 +142,7 @@ def section_resume_from_checkpoint() -> None:
 
         # Stage 2: Analysis
         print("\n  --- Stage 2: Analysis ---\n")
-        t.llm.run(
+        t.runtime.run(
             "Analyze which caching strategy is best for a read-heavy "
             "social media feed (90% reads, 10% writes, 50ms SLA). "
             "Commit your recommendation.",
@@ -192,7 +192,7 @@ def section_resume_from_checkpoint() -> None:
 
         # Retry synthesis from clean state
         print("\n  --- Retry synthesis ---\n")
-        t.llm.run(
+        t.runtime.run(
             "Synthesize research and analysis into a final caching "
             "recommendation for the read-heavy social media feed. "
             "3-4 sentences. Commit it.",

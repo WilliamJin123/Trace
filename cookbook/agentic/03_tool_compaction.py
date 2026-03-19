@@ -200,7 +200,7 @@ def main() -> None:
 
             # Compact all tool results at once
             print("  Calling compress_tool_calls()...")
-            result = t.compression.compress_tool_calls(
+            result = t.compress_tool_calls(
                 instructions="Summarize each file's purpose, key classes/functions, "
                              "and any security concerns. Keep it concise.",
             )
@@ -234,7 +234,7 @@ def main() -> None:
             threshold = 300  # tokens
             if compact_state["result_tokens"] > threshold:
                 # In production with configured LLM:
-                # ctx.tract.compression.compress_tool_calls(
+                # ctx.tract.compress_tool_calls(
                 #     instructions="Keep key findings only.",
                 # )
                 compact_state["compactions"] += 1
@@ -263,12 +263,12 @@ def main() -> None:
     # In a real agent loop, combine these patterns:
     #
     #   t.middleware.add("post_commit", auto_compact_tools)   # background compaction
-    #   result = t.llm.run("Do research...",            # agent loop
+    #   result = t.runtime.run("Do research...",            # agent loop
     #       max_steps=20,
     #       tool_profile="self",
     #   )
     #   t.tools.drop_failed_turns()                  # clean up errors
-    #   t.compression.compress_tool_calls()                     # final compaction
+    #   t.compress_tool_calls()                     # final compaction
     #
     # The middleware handles compaction DURING the loop (zero agent
     # steps wasted). The post-loop calls handle final cleanup.

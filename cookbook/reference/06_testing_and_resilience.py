@@ -68,7 +68,7 @@ def mock_llm_client_demo() -> None:
     m3 = MockLLMClient(["Revenue grew 15%."])
     with Tract.open(llm_client=m3) as t:
         t.system("Analyst.")
-        r = t.llm.chat("Analyze Q3.")
+        r = t.runtime.chat("Analyze Q3.")
         assert r.text == "Revenue grew 15%." and r.commit_info is not None
 
     print(f"  Protocol: OK, cycling: OK, Tract integration: OK")
@@ -90,10 +90,10 @@ def replay_client_demo() -> None:
 
     with Tract.open(llm_client=replay) as t:
         t.system("Planner.")
-        assert t.llm.chat("First?").text == "Step 1."
-        assert t.llm.chat("Then?").text == "Step 2."
+        assert t.runtime.chat("First?").text == "Step 1."
+        assert t.runtime.chat("Then?").text == "Step 2."
         try:
-            t.llm.chat("Next?")
+            t.runtime.chat("Next?")
             assert False, "Should raise"
         except IndexError:
             pass
@@ -107,7 +107,7 @@ def replay_client_demo() -> None:
     }])
     with Tract.open(llm_client=replay2) as t:
         t.system("Test.")
-        assert t.llm.chat("Hi").text == "Custom!"
+        assert t.runtime.chat("Hi").text == "Custom!"
 
     print(f"  Sequential: OK, exhaustion: IndexError, dict responses: OK")
     print("PASSED\n")
@@ -138,8 +138,8 @@ def function_client_demo() -> None:
 
     with Tract.open(llm_client=fn) as t:
         t.system("Assistant.")
-        assert t.llm.chat("Weather?").text == "Sunny tomorrow."
-        assert t.llm.chat("Other.").text == "Response #2"
+        assert t.runtime.chat("Weather?").text == "Sunny tomorrow."
+        assert t.runtime.chat("Other.").text == "Response #2"
 
     # Dict return for custom usage
     fn2 = FunctionLLMClient(lambda m, k: {
@@ -148,7 +148,7 @@ def function_client_demo() -> None:
     })
     with Tract.open(llm_client=fn2) as t:
         t.system("Test.")
-        r = t.llm.chat("Hi")
+        r = t.runtime.chat("Hi")
         assert r.text == "With usage" and r.usage is not None
 
     print(f"  Conditional: OK, dict return: OK, call_count: {fn.call_count}")

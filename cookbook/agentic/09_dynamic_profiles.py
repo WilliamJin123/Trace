@@ -12,7 +12,7 @@ through workflow stages. Two patterns:
 
 Demonstrates: ToolProfile, ToolConfig, switch_profile(), lock_tool(),
               unlock_tool(), pre_transition middleware, post_commit
-              middleware, t.llm.run() with dynamic profiles
+              middleware, t.runtime.run() with dynamic profiles
 """
 
 import io
@@ -126,7 +126,7 @@ def stage_based_switching() -> None:
         print(f"  --- RESEARCH ---")
         print(f"  Tools: {_tool_names(t, RESEARCH_PROFILE)}")
 
-        result = t.llm.run(
+        result = t.runtime.run(
             "Research authentication patterns for a REST API. "
             "Commit 2 findings: one on JWT tokens, one on session-based auth.",
             max_steps=6, max_tokens=1024,
@@ -143,7 +143,7 @@ def stage_based_switching() -> None:
         t.transition("implementation")
         print(f"  Tools: {_tool_names(t, IMPLEMENTATION_PROFILE)}")
 
-        result = t.llm.run(
+        result = t.runtime.run(
             "Create a branch called 'jwt-auth' and commit a JWT implementation plan.",
             max_steps=6, max_tokens=1024,
             profile=IMPLEMENTATION_PROFILE,
@@ -157,7 +157,7 @@ def stage_based_switching() -> None:
         review_names = _tool_names(t, REVIEW_PROFILE)
         print(f"  Tools: {review_names}")
 
-        result = t.llm.run(
+        result = t.runtime.run(
             "Review the implementation by compiling the current context. "
             "Commit a summary of your review findings.",
             max_steps=6, max_tokens=1024,
@@ -236,7 +236,7 @@ def progressive_discovery() -> None:
         print(f"  --- Phase 1: Minimal ---")
         print(f"  Tools: {_tool_names(t, MINIMAL_PROFILE)}")
 
-        result = t.llm.run(
+        result = t.runtime.run(
             "Research and commit 3 separate findings about database indexing: "
             "B-tree indexes, hash indexes, and composite indexes.",
             max_steps=8, max_tokens=1024,
@@ -254,7 +254,7 @@ def progressive_discovery() -> None:
             print(f"\n  --- Phase 2: Branching ---")
             print(f"  Tools: {sorted(phase2)}")
 
-            result = t.llm.run(
+            result = t.runtime.run(
                 "Create a branch called 'optimization' and commit an "
                 "implementation plan for database query optimization.",
                 max_steps=8, max_tokens=1024,

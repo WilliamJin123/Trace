@@ -52,9 +52,14 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class PolicyContext:
-    """Immutable snapshot passed to policy conditions and strategies."""
+    """Immutable snapshot passed to policy conditions and strategies.
 
-    tract: Any  # Tract instance (Any to avoid circular import)
+    Note: Semantic conditions (Evaluable/Judgment) only see ``tract`` —
+    they query LLM about tract state, not event metadata. Use a
+    deterministic condition if you need event/branch/trigger_data awareness.
+    """
+
+    tract: Tract
     event: str | None = None  # MiddlewareEvent that triggered this, or None for manual
     trigger_data: Any = None  # Event-specific data (pending content for pre_commit, etc.)
     branch: str = ""  # Current branch name
@@ -131,7 +136,7 @@ def _judgment_result_to_outcome(result: Any) -> PolicyOutcome:
             if isinstance(a, dict):
                 action_dicts.append(a)
             elif hasattr(a, "model_dump"):
-                action_dicts.append(a.model_dump(exclude_none=True))
+                action_dicts.append(a.model_dump(exclude_none=True, by_alias=True))
             else:
                 action_dicts.append(vars(a))
 
@@ -281,7 +286,6 @@ class PolicyEngine:
     def __init__(self) -> None:
         self._policies: dict[str, Policy] = {}  # name -> Policy
         self._event_bindings: dict[str, list[str]] = {}  # event -> [policy_names]
-        self._global_policies: list[str] = []  # policies that fire on all events
         self._recursion_guard: set[str] = set()  # prevent re-entrant firing
 
     # -- Registration --------------------------------------------------------
@@ -322,8 +326,6 @@ class PolicyEngine:
         for event_names in self._event_bindings.values():
             if name in event_names:
                 event_names.remove(name)
-        if name in self._global_policies:
-            self._global_policies.remove(name)
 
     # -- Introspection -------------------------------------------------------
 
@@ -351,6 +353,10 @@ class PolicyEngine:
     def get(self, name: str) -> Policy | None:
         """Get a policy by name, or None if not found."""
         return self._policies.get(name)
+
+    def has_event_policies(self, event: str) -> bool:
+        """Return True if any policies are bound to *event*."""
+        return bool(self._event_bindings.get(event))
 
     # -- Dispatching ---------------------------------------------------------
 

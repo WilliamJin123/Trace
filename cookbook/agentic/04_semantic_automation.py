@@ -140,7 +140,7 @@ def semantic_gate_transitions():
         print("  Phase 1: Initial Research")
         print("  " + "-" * 60)
 
-        result = t.llm.run(
+        result = t.runtime.run(
             "Research the trade-offs of microservices vs monolith architecture. "
             "Focus on ONE specific angle (e.g., deployment complexity OR data "
             "consistency). Commit your findings as you go. Keep it focused.",
@@ -184,7 +184,7 @@ def semantic_gate_transitions():
             print("  Phase 2: Expanding Research (Different Angle)")
             print("  " + "-" * 60)
 
-            result = t.llm.run(
+            result = t.runtime.run(
                 "The quality gate blocked our transition to synthesis because "
                 "the research lacks diverse perspectives. Research from a "
                 "COMPLETELY DIFFERENT angle than before. If you covered "
@@ -310,7 +310,7 @@ def semantic_maintainer():
         print("  Phase 1: Broad Research")
         print("  " + "-" * 60)
 
-        result = t.llm.run(
+        result = t.runtime.run(
             "Research strategies for building resilient supply chains. "
             "Cover geographic diversification, inventory management, and "
             "supplier relationships. Commit each finding as you go.",
@@ -339,7 +339,7 @@ def semantic_maintainer():
         print("  Phase 2: Specific Recommendations")
         print("  " + "-" * 60)
 
-        result = t.llm.run(
+        result = t.runtime.run(
             "Shift from broad research to specific, actionable recommendations "
             "for a mid-size manufacturer. Commit each recommendation.",
             max_steps=8,
