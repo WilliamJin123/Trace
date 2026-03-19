@@ -45,7 +45,7 @@ class TestEditHistory:
     def test_no_edits_returns_single_element(self, tract: Tract):
         """A commit with no edits returns a one-element list."""
         c1 = tract.commit(InstructionContent(text="original"), message="orig")
-        history = tract.search.edit_history(c1.commit_hash)
+        history = tract.edit_history(c1.commit_hash)
         assert len(history) == 1
         assert history[0].commit_hash == c1.commit_hash
         assert history[0].operation == CommitOperation.APPEND
@@ -60,7 +60,7 @@ class TestEditHistory:
             edit_target=c1.commit_hash,
             message="edit 1",
         )
-        history = tract.search.edit_history(c1.commit_hash)
+        history = tract.edit_history(c1.commit_hash)
         assert len(history) == 2
         assert history[0].commit_hash == c1.commit_hash
         assert history[1].commit_hash == e1.commit_hash
@@ -84,7 +84,7 @@ class TestEditHistory:
             edit_target=c1.commit_hash,
             message="edit 2",
         )
-        history = tract.search.edit_history(c1.commit_hash)
+        history = tract.edit_history(c1.commit_hash)
         assert len(history) == 3
         assert history[0].commit_hash == c1.commit_hash
         assert history[1].commit_hash == e1.commit_hash
@@ -103,7 +103,7 @@ class TestEditHistory:
             message="edit 1",
         )
         prefix = c1.commit_hash[:8]
-        history = tract.search.edit_history(prefix)
+        history = tract.edit_history(prefix)
         assert len(history) == 2
         assert history[0].commit_hash == c1.commit_hash
 
@@ -118,7 +118,7 @@ class TestEditHistory:
             message="edit 1",
         )
         # Look up using the edit's hash
-        history = tract.search.edit_history(e1.commit_hash)
+        history = tract.edit_history(e1.commit_hash)
         assert len(history) == 2
         assert history[0].commit_hash == c1.commit_hash
         assert history[1].commit_hash == e1.commit_hash
@@ -126,7 +126,7 @@ class TestEditHistory:
     def test_commit_not_found(self, tract: Tract):
         """Raises CommitNotFoundError for a nonexistent hash."""
         with pytest.raises(CommitNotFoundError):
-            tract.search.edit_history("deadbeefdeadbeef" * 4)
+            tract.edit_history("deadbeefdeadbeef" * 4)
 
     def test_returns_commit_info_models(self, tract: Tract):
         """All elements are CommitInfo instances."""
@@ -137,7 +137,7 @@ class TestEditHistory:
             edit_target=c1.commit_hash,
             message="edit 1",
         )
-        history = tract.search.edit_history(c1.commit_hash)
+        history = tract.edit_history(c1.commit_hash)
         for item in history:
             assert isinstance(item, CommitInfo)
 
@@ -153,7 +153,7 @@ class TestEditHistory:
             edit_target=c1.commit_hash,
             message="edit c1",
         )
-        history = tract.search.edit_history(c1.commit_hash)
+        history = tract.edit_history(c1.commit_hash)
         hashes = {h.commit_hash for h in history}
         assert c2.commit_hash not in hashes
 
@@ -176,7 +176,7 @@ class TestRestore:
             edit_target=c1.commit_hash,
             message="edit 1",
         )
-        restored = tract.search.restore(c1.commit_hash, version=0)
+        restored = tract.restore(c1.commit_hash, version=0)
         assert restored.operation == CommitOperation.EDIT
         assert restored.edit_target == c1.commit_hash
         assert restored.message == "restore to version 0"
@@ -202,7 +202,7 @@ class TestRestore:
             edit_target=c1.commit_hash,
             message="edit 2",
         )
-        restored = tract.search.restore(c1.commit_hash, version=1)
+        restored = tract.restore(c1.commit_hash, version=1)
         assert restored.operation == CommitOperation.EDIT
         assert restored.edit_target == c1.commit_hash
 
@@ -220,7 +220,7 @@ class TestRestore:
             edit_target=c1.commit_hash,
             message="edit 1",
         )
-        restored = tract.search.restore(c1.commit_hash, message="rollback")
+        restored = tract.restore(c1.commit_hash, message="rollback")
         assert restored.message == "rollback"
 
     def test_restore_creates_proper_edit(self, tract: Tract):
@@ -233,10 +233,10 @@ class TestRestore:
             edit_target=c1.commit_hash,
             message="edit 1",
         )
-        restored = tract.search.restore(c1.commit_hash)
+        restored = tract.restore(c1.commit_hash)
 
         # The new edit should appear in edit_history
-        history = tract.search.edit_history(c1.commit_hash)
+        history = tract.edit_history(c1.commit_hash)
         assert len(history) == 3  # original + edit + restore
         assert history[-1].commit_hash == restored.commit_hash
         assert history[-1].edit_target == c1.commit_hash
@@ -245,13 +245,13 @@ class TestRestore:
         """Raises IndexError for invalid version number."""
         c1 = tract.commit(InstructionContent(text="original"), message="orig")
         with pytest.raises(IndexError, match="out of range"):
-            tract.search.restore(c1.commit_hash, version=5)
+            tract.restore(c1.commit_hash, version=5)
 
     def test_restore_negative_version(self, tract: Tract):
         """Raises IndexError for negative version."""
         c1 = tract.commit(InstructionContent(text="original"), message="orig")
         with pytest.raises(IndexError, match="out of range"):
-            tract.search.restore(c1.commit_hash, version=-1)
+            tract.restore(c1.commit_hash, version=-1)
 
     def test_restore_preserves_generation_config(self, tract: Tract):
         """restore() preserves the generation_config from the source version."""
@@ -269,7 +269,7 @@ class TestRestore:
             generation_config={"model": "gpt-3.5", "temperature": 0.9},
         )
         # Restore to version 0 (original with gpt-4 config)
-        restored = tract.search.restore(c1.commit_hash, version=0)
+        restored = tract.restore(c1.commit_hash, version=0)
         assert restored.generation_config is not None
         assert restored.generation_config.model == "gpt-4"
         assert restored.generation_config.temperature == 0.7
@@ -285,13 +285,13 @@ class TestRestore:
             message="edit 1",
         )
         prefix = c1.commit_hash[:8]
-        restored = tract.search.restore(prefix)
+        restored = tract.restore(prefix)
         assert restored.edit_target == c1.commit_hash
 
     def test_restore_commit_not_found(self, tract: Tract):
         """Raises CommitNotFoundError for nonexistent hash."""
         with pytest.raises(CommitNotFoundError):
-            tract.search.restore("deadbeefdeadbeef" * 4)
+            tract.restore("deadbeefdeadbeef" * 4)
 
 
 # ---------------------------------------------------------------------------
@@ -327,7 +327,7 @@ class TestRevise:
         t.config.configure_llm(MockLLMClient(["improved answer"]))
         original = t.assistant("original answer")
 
-        result = t.llm.revise(original.commit_hash, "Improve this answer")
+        result = t.runtime.revise(original.commit_hash, "Improve this answer")
 
         assert isinstance(result, ChatResponse)
         assert result.text == "improved answer"
@@ -341,7 +341,7 @@ class TestRevise:
         t.config.configure_llm(MockLLMClient(["better version"]))
         original = t.assistant("first draft")
 
-        t.llm.revise(original.commit_hash, "Make it better")
+        t.runtime.revise(original.commit_hash, "Make it better")
 
         ctx = t.compile()
         # Only the edited content should appear, not the revision prompt
@@ -356,9 +356,9 @@ class TestRevise:
         t.config.configure_llm(MockLLMClient(["v2 content"]))
         original = t.assistant("v1 content")
 
-        result = t.llm.revise(original.commit_hash, "Revise please")
+        result = t.runtime.revise(original.commit_hash, "Revise please")
 
-        history = t.search.edit_history(original.commit_hash)
+        history = t.edit_history(original.commit_hash)
         assert len(history) == 2
         assert history[0].commit_hash == original.commit_hash
         assert history[1].commit_hash == result.commit_info.commit_hash
@@ -370,7 +370,7 @@ class TestRevise:
         t.config.configure_llm(MockLLMClient(["new text"]))
         original = t.assistant("old text")
 
-        result = t.llm.revise(original.commit_hash, "Shorten this to one sentence")
+        result = t.runtime.revise(original.commit_hash, "Shorten this to one sentence")
 
         assert result.commit_info.message.startswith("revise:")
         t.close()
@@ -381,7 +381,7 @@ class TestRevise:
         t.config.configure_llm(MockLLMClient(["new text"]))
         original = t.assistant("old text")
 
-        result = t.llm.revise(original.commit_hash, "Fix it", message="manual fix")
+        result = t.runtime.revise(original.commit_hash, "Fix it", message="manual fix")
 
         assert result.commit_info.message == "manual fix"
         t.close()
@@ -392,7 +392,7 @@ class TestRevise:
         t.config.configure_llm(MockLLMClient(["updated instructions"]))
         original = t.system("original instructions")
 
-        result = t.llm.revise(original.commit_hash, "Make instructions clearer")
+        result = t.runtime.revise(original.commit_hash, "Make instructions clearer")
 
         assert result.text == "updated instructions"
         assert result.commit_info.edit_target == original.commit_hash
@@ -407,7 +407,7 @@ class TestRevise:
         t.config.configure_llm(MockLLMClient(["clarified question"]))
         original = t.user("vague question")
 
-        result = t.llm.revise(original.commit_hash, "Make the question clearer")
+        result = t.runtime.revise(original.commit_hash, "Make the question clearer")
 
         assert result.commit_info.edit_target == original.commit_hash
         t.close()
@@ -419,7 +419,7 @@ class TestRevise:
         c1 = t.assistant("first")
         c2 = t.assistant("second")
 
-        t.llm.revise(c1.commit_hash, "Revise first")
+        t.runtime.revise(c1.commit_hash, "Revise first")
 
         ctx = t.compile()
         texts = [m.content for m in ctx.messages]
@@ -433,7 +433,7 @@ class TestRevise:
         t.config.configure_llm(MockLLMClient(["output"]))
         original = t.assistant("input")
 
-        result = t.llm.revise(original.commit_hash, "Do the thing")
+        result = t.runtime.revise(original.commit_hash, "Do the thing")
 
         assert result.prompt == "Do the thing"
         t.close()
@@ -445,7 +445,7 @@ class TestRevise:
         original = t.assistant("original")
 
         prefix = original.commit_hash[:8]
-        result = t.llm.revise(prefix, "Fix it")
+        result = t.runtime.revise(prefix, "Fix it")
 
         assert result.commit_info.edit_target == original.commit_hash
         t.close()

@@ -117,7 +117,7 @@ class TestConfigInheritance:
         with Tract.open() as t:
             t.config.set(model="gpt-4o", temperature=0.7)
             t.user("seed commit")
-            t.branches.create("feature")
+            t.branch("feature")
             # On feature branch now; parent's config should be visible
             assert t.config.get("model") == "gpt-4o"
             assert t.config.get("temperature") == 0.7
@@ -127,7 +127,7 @@ class TestConfigInheritance:
         with Tract.open() as t:
             t.config.set(model="gpt-3.5")
             t.user("seed")
-            t.branches.create("feature")
+            t.branch("feature")
             t.config.set(model="gpt-4o")
             assert t.config.get("model") == "gpt-4o"
 
@@ -136,7 +136,7 @@ class TestConfigInheritance:
         with Tract.open() as t:
             t.config.set(model="gpt-3.5", temperature=0.7)
             t.user("seed")
-            t.branches.create("feature")
+            t.branch("feature")
             t.config.set(model="gpt-4o")
             # model overridden, temperature inherited
             assert t.config.get("model") == "gpt-4o"
@@ -147,10 +147,10 @@ class TestConfigInheritance:
         with Tract.open() as t:
             t.config.set(model="gpt-3.5")
             t.user("seed")
-            t.branches.create("feature")
+            t.branch("feature")
             t.config.set(model="gpt-4o")
             # Switch back to main
-            t.branches.checkout("main")
+            t.checkout("main")
             assert t.config.get("model") == "gpt-3.5"
 
 
@@ -168,14 +168,14 @@ class TestConfigAfterCheckout:
             t.config.set(model="gpt-3.5")
             t.user("main seed")
             # Create feature branch with different config
-            t.branches.create("feature")
+            t.branch("feature")
             t.config.set(model="gpt-4o")
             assert t.config.get("model") == "gpt-4o"
             # Switch back to main
-            t.branches.checkout("main")
+            t.checkout("main")
             assert t.config.get("model") == "gpt-3.5"
             # Switch back to feature
-            t.branches.checkout("feature")
+            t.checkout("feature")
             assert t.config.get("model") == "gpt-4o"
 
     def test_checkout_invalidates_config_index(self):
@@ -186,7 +186,7 @@ class TestConfigAfterCheckout:
             # Force index build
             _ = t.config_index
             assert not t._config_mgr._config_index.is_stale
-            t.branches.create("feature")
+            t.branch("feature")
             # branch with switch=True should invalidate
             # Access config_index to trigger rebuild
             idx = t.config_index
@@ -197,7 +197,7 @@ class TestConfigAfterCheckout:
         """Config on a branch with no config commits returns defaults."""
         with Tract.open() as t:
             t.user("seed on main")
-            t.branches.create("empty-config")
+            t.branch("empty-config")
             assert t.config.get("model") is None
             assert t.config.get("model", default="default-model") == "default-model"
             assert t.config.get_all() == {}
@@ -216,16 +216,16 @@ class TestConfigBranchIsolation:
         with Tract.open() as t:
             t.user("common ancestor")
             # Branch A
-            t.branches.create("branch-a")
+            t.branch("branch-a")
             t.config.set(model="model-a")
             # Go back to main, create branch B
-            t.branches.checkout("main")
-            t.branches.create("branch-b")
+            t.checkout("main")
+            t.branch("branch-b")
             t.config.set(model="model-b")
             # Verify isolation
-            t.branches.checkout("branch-a")
+            t.checkout("branch-a")
             assert t.config.get("model") == "model-a"
-            t.branches.checkout("branch-b")
+            t.checkout("branch-b")
             assert t.config.get("model") == "model-b"
 
     def test_sibling_branches_share_ancestor_config(self):
@@ -233,16 +233,16 @@ class TestConfigBranchIsolation:
         with Tract.open() as t:
             t.config.set(shared_key="shared-value")
             t.user("common ancestor")
-            t.branches.create("branch-a")
+            t.branch("branch-a")
             t.config.set(model="model-a")
-            t.branches.checkout("main")
-            t.branches.create("branch-b")
+            t.checkout("main")
+            t.branch("branch-b")
             t.config.set(model="model-b")
             # Both siblings see the shared ancestor config
-            t.branches.checkout("branch-a")
+            t.checkout("branch-a")
             assert t.config.get("shared_key") == "shared-value"
             assert t.config.get("model") == "model-a"
-            t.branches.checkout("branch-b")
+            t.checkout("branch-b")
             assert t.config.get("shared_key") == "shared-value"
             assert t.config.get("model") == "model-b"
 
@@ -277,7 +277,7 @@ class TestGetAllConfigsEdgeCases:
         with Tract.open() as t:
             t.config.set(model="gpt-3.5", temperature=0.5)
             t.user("seed")
-            t.branches.create("feature")
+            t.branch("feature")
             t.config.set(model="gpt-4o", max_tokens=1000)
             result = t.config.get_all()
             assert result == {
@@ -407,7 +407,7 @@ class TestConfigIndexLen:
         with Tract.open() as t:
             t.config.set(model="gpt-4o", temperature=0.7)
             t.user("seed")
-            t.branches.create("feature")
+            t.branch("feature")
             t.config.set(max_tokens=1000)
             # 3 unique keys: model, temperature (inherited), max_tokens (own)
             assert len(t.config_index) == 3

@@ -261,7 +261,7 @@ def _resolve_entries(
 
     if isinstance(scope, list):
         # Explicit hashes — look up from full log
-        log = list(tract.search.log(limit=500))
+        log = list(tract.log(limit=500))
         log_map = {e.commit_hash: e for e in log}
         result: list[CommitInfo] = []
         seen: set[str] = set()
@@ -280,7 +280,7 @@ def _resolve_entries(
 
     # int or None scope — last N commits
     limit = scope if scope is not None else 500
-    entries = list(tract.search.log(limit=limit))
+    entries = list(tract.log(limit=limit))
 
     # Apply 'since' cutoff if set
     if view.since:
@@ -346,7 +346,7 @@ def _add_forced_includes(
     need_full_log = bool(view.always_include_hashes or view.always_include_tags)
     full_log: dict[str, CommitInfo] = {}
     if need_full_log:
-        full_log = {e.commit_hash: e for e in tract.search.log(limit=500)}
+        full_log = {e.commit_hash: e for e in tract.log(limit=500)}
 
     if view.always_include_hashes:
         for h in view.always_include_hashes:
@@ -522,7 +522,7 @@ def _format_compiled(tract: Tract) -> str:
 def _get_content_str(tract: Tract, commit_hash: str, max_chars: int = 0) -> str:
     """Fetch commit content as a string."""
     try:
-        content = tract.search.get_content(commit_hash)
+        content = tract.get_content(commit_hash)
         if content is None:
             return "(no content)"
         text = (
@@ -567,7 +567,7 @@ def _format_state(
 
     if view.include_branches:
         try:
-            branches = tract.branches.list()
+            branches = tract.list_branches()
             if branches:
                 branch_lines = ["BRANCHES:"]
                 for b in branches:
@@ -593,7 +593,7 @@ def _format_state(
         try:
             # Directives are instruction commits; deduplicate by name
             # (closest to HEAD wins = first in log since newest-first)
-            all_entries = tract.search.log(limit=200)
+            all_entries = tract.log(limit=200)
             seen_names: set[str] = set()
             dir_lines: list[str] = ["ACTIVE DIRECTIVES:"]
             found = False
@@ -606,7 +606,7 @@ def _format_state(
                         name = entry.commit_hash[:8]
                     if name not in seen_names:
                         seen_names.add(name)
-                        content = tract.search.get_content(entry.commit_hash)
+                        content = tract.get_content(entry.commit_hash)
                         text = str(content) if content is not None else "(empty)"
                         dir_lines.append(f"  {name}: {text}")
                         found = True
@@ -617,7 +617,7 @@ def _format_state(
 
     if view.include_token_status:
         try:
-            status = tract.search.status()
+            status = tract.status()
             sections.append(f"TOKEN STATUS: {status.token_count} tokens")
         except Exception:
             pass

@@ -354,6 +354,24 @@ class _Runtime:
         """Async version of :meth:`generate`."""
         return await self._tract._llm_mgr.agenerate(*args, **kwargs)
 
+    def revise(self, *args, **kwargs):
+        """Ask the LLM to revise a previous commit and apply as an EDIT.
+
+        Delegates to :class:`~tract.managers.LLMManager`.
+        """
+        return self._tract._llm_mgr.revise(*args, **kwargs)
+
+    async def arevise(self, *args, **kwargs):
+        """Async version of :meth:`revise`."""
+        return await self._tract._llm_mgr.arevise(*args, **kwargs)
+
+    def _build_generation_config(self, *args, **kwargs):
+        """Build generation config from response and resolved kwargs.
+
+        Delegates to :class:`~tract.managers.LLMManager`.
+        """
+        return self._tract._llm_mgr._build_generation_config(*args, **kwargs)
+
 
 class Tract:
     """Primary entry point for Tract -- git-like version control for LLM context.
@@ -779,7 +797,7 @@ class Tract:
         self._runtime = _Runtime(self)
 
     # ------------------------------------------------------------------
-    # Sub-object accessors (kept: config, middleware, policies, runtime)
+    # Sub-object accessors
     # ------------------------------------------------------------------
 
     @property
@@ -801,6 +819,21 @@ class Tract:
     def runtime(self):
         """Runtime sub-object -- LLM and tool operations."""
         return self._runtime
+
+    @property
+    def tools(self):
+        """Tool tracking sub-object."""
+        return self._tools_mgr
+
+    @property
+    def persistence(self):
+        """Persistence sub-object."""
+        return self._persistence_mgr
+
+    @property
+    def templates(self):
+        """Template and profile sub-object."""
+        return self._templates_mgr
 
     # ------------------------------------------------------------------
     # Branch operations
@@ -1169,6 +1202,21 @@ class Tract:
         self._check_open()
         return self._search_mgr.query_by_config(field_or_config, operator, value, **kwargs)
 
+    def skipped(self, **kwargs):
+        """Get commits with SKIP priority."""
+        self._check_open()
+        return self._search_mgr.skipped(**kwargs)
+
+    def pinned(self, **kwargs):
+        """Get commits with PINNED priority."""
+        self._check_open()
+        return self._search_mgr.pinned(**kwargs)
+
+    def manifest(self, **kwargs) -> str:
+        """Build a text manifest of the current commit log."""
+        self._check_open()
+        return self._search_mgr.manifest(**kwargs)
+
     # ------------------------------------------------------------------
     # Compression operations
     # ------------------------------------------------------------------
@@ -1303,6 +1351,30 @@ class Tract:
         """
         self._check_open()
         return self._persistence_mgr.compile_records(limit)
+
+    def compile_record_commits(self, record_id: str) -> list[str]:
+        """Get effective commit hashes for a compile record.
+
+        Args:
+            record_id: The compile record ID.
+
+        Returns:
+            Ordered list of commit hashes that were included.
+        """
+        self._check_open()
+        return self._persistence_mgr.compile_record_commits(record_id)
+
+    def token_checkpoints(self, limit: int = 100) -> list:
+        """Get API-sourced token checkpoints, newest first.
+
+        Args:
+            limit: Maximum number of checkpoints to return.
+
+        Returns:
+            List of compile record objects with API-sourced tokens.
+        """
+        self._check_open()
+        return self._persistence_mgr.token_checkpoints(limit)
 
     # ------------------------------------------------------------------
     # Template / profile operations

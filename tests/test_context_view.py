@@ -176,9 +176,9 @@ class TestFilters:
         with _make_tract() as t:
             t.user("Keep me")
             t.user("Skip me")
-            entries = t.search.log(limit=1)
+            entries = t.log(limit=1)
             from tract.models.annotations import Priority
-            t.annotations.set(entries[0].commit_hash, Priority.SKIP)
+            t.annotate(entries[0].commit_hash, Priority.SKIP)
 
             built = build_context(
                 ContextView(min_priority="normal"), t,
@@ -196,7 +196,7 @@ class TestPeek:
         with _make_tract() as t:
             t.user("PeekableContent999")
             t.user("Other message")
-            entries = t.search.log(limit=2)
+            entries = t.log(limit=2)
             peek_hash = entries[1].commit_hash  # older one
 
             built = build_context(
@@ -215,7 +215,7 @@ class TestForcedIncludes:
     def test_always_include_hashes_outside_scope(self) -> None:
         with _make_tract() as t:
             t.user("Old important message")
-            old_hash = t.search.log(limit=1)[0].commit_hash
+            old_hash = t.log(limit=1)[0].commit_hash
             for i in range(5):
                 t.user(f"Recent {i}")
 
@@ -227,7 +227,7 @@ class TestForcedIncludes:
 
     def test_always_include_tags(self) -> None:
         with _make_tract() as t:
-            t.tags.register("key-finding", "important finding")
+            t.register_tag("key-finding", "important finding")
             t.commit(
                 {"content_type": "freeform", "payload": {"text": "Tagged finding"}},
                 message="Tagged message",
@@ -277,7 +277,7 @@ class TestState:
     def test_branches_included(self) -> None:
         with _make_tract() as t:
             t.user("seed commit")
-            t.branches.create("feature")
+            t.branch("feature")
             built = build_context(ContextView(include_branches=True), t)
             assert "BRANCHES:" in built.text
             assert "feature" in built.text
@@ -293,7 +293,7 @@ class TestState:
 
     def test_tags_summary(self) -> None:
         with _make_tract() as t:
-            t.tags.register("research", "research tag")
+            t.register_tag("research", "research tag")
             # Use commit-time tags (immutable, stored in CommitInfo.tags)
             t.commit(
                 {"content_type": "freeform", "payload": {"text": "note 1"}},

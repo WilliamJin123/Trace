@@ -206,8 +206,8 @@ class TestCurateKeepTags:
         session, parent, hashes = _make_session_with_parent(4)
 
         # Register a tag and tag one commit
-        parent.tags.register("important")
-        parent.tags.add(hashes[1], "important")
+        parent.register_tag("important")
+        parent.tag(hashes[1], "important")
 
         child = session.deploy(
             parent,
@@ -218,12 +218,12 @@ class TestCurateKeepTags:
 
         # Only hashes[1] should NOT be skipped
         for h in [hashes[0], hashes[2], hashes[3]]:
-            annotations = child.annotations.get(h)
+            annotations = child.get_annotation(h)
             skip_anns = [a for a in annotations if a.priority == Priority.SKIP]
             assert len(skip_anns) > 0, f"Expected SKIP annotation on {h[:12]}"
 
         # hashes[1] should NOT have SKIP
-        annotations = child.annotations.get(hashes[1])
+        annotations = child.get_annotation(hashes[1])
         skip_anns = [a for a in annotations if a.priority == Priority.SKIP]
         assert len(skip_anns) == 0, "Tagged commit should not be skipped"
 
@@ -256,11 +256,11 @@ class TestCurateKeepTags:
         )
 
         # h1 should not be skipped, h2 should be skipped
-        anns_h2 = child.annotations.get(h2)
+        anns_h2 = child.get_annotation(h2)
         skip_anns = [a for a in anns_h2 if a.priority == Priority.SKIP]
         assert len(skip_anns) > 0
 
-        anns_h1 = child.annotations.get(h1)
+        anns_h1 = child.get_annotation(h1)
         skip_anns = [a for a in anns_h1 if a.priority == Priority.SKIP]
         assert len(skip_anns) == 0
 
@@ -288,13 +288,13 @@ class TestCurateDrop:
 
         # Dropped commits should be SKIPPED
         for h in [hashes[1], hashes[2]]:
-            annotations = child.annotations.get(h)
+            annotations = child.get_annotation(h)
             skip_anns = [a for a in annotations if a.priority == Priority.SKIP]
             assert len(skip_anns) > 0, f"Expected SKIP on {h[:12]}"
 
         # Non-dropped commits should NOT be skipped
         for h in [hashes[0], hashes[3]]:
-            annotations = child.annotations.get(h)
+            annotations = child.get_annotation(h)
             skip_anns = [a for a in annotations if a.priority == Priority.SKIP]
             assert len(skip_anns) == 0, f"Did not expect SKIP on {h[:12]}"
 
@@ -373,7 +373,7 @@ class TestCurateCompactBefore:
 
         # The total number of commits should be less than the original
         # (3 commits before marker compressed into 1 summary)
-        child_log = child.search.log(limit=100)
+        child_log = child.log(limit=100)
         # We should have fewer commits than original 5
         # (at most: 1 summary + marker + commit after marker = 3)
         assert len(child_log) < 5
@@ -406,7 +406,7 @@ class TestCurateCompactBefore:
         )
 
         # All original commits should still be present
-        child_log = child.search.log(limit=100)
+        child_log = child.log(limit=100)
         assert len(child_log) == 3
 
         session.close()
@@ -477,7 +477,7 @@ class TestFullCurationPipeline:
         session = Session.open()
         parent = session.create_tract(display_name="parent")
         _setup_tag_repos(parent)
-        parent.tags.register("keep")
+        parent.register_tag("keep")
 
         h1 = parent.commit(
             DialogueContent(role="user", text="Msg 1"),
@@ -502,15 +502,15 @@ class TestFullCurationPipeline:
         )
 
         # h1 should not be skipped
-        anns = child.annotations.get(h1)
+        anns = child.get_annotation(h1)
         assert all(a.priority != Priority.SKIP for a in anns)
 
         # h2 should be skipped (by drop)
-        anns = child.annotations.get(h2)
+        anns = child.get_annotation(h2)
         assert any(a.priority == Priority.SKIP for a in anns)
 
         # h3 should be skipped (by keep_tags)
-        anns = child.annotations.get(h3)
+        anns = child.get_annotation(h3)
         assert any(a.priority == Priority.SKIP for a in anns)
 
         session.close()
@@ -541,7 +541,7 @@ class TestMergeBackWorkflow:
         )
 
         # Parent should not see the child's commit yet
-        parent_log = parent.search.log(limit=100)
+        parent_log = parent.log(limit=100)
         parent_hashes = [c.commit_hash for c in parent_log]
         assert child_commit.commit_hash not in parent_hashes
 
@@ -549,7 +549,7 @@ class TestMergeBackWorkflow:
         result = parent.merge("research")
 
         # Parent should now include the child's commits
-        parent_log_after = parent.search.log(limit=100)
+        parent_log_after = parent.log(limit=100)
         # The parent should have more commits after merge
         assert len(parent_log_after) > len(parent_log)
 
@@ -592,7 +592,7 @@ class TestMergeBackWorkflow:
         )
 
         # Parent should have the summary commit
-        parent_head_info = parent.search.log(limit=1)[0]
+        parent_head_info = parent.log(limit=1)[0]
         assert "collapse" in parent_head_info.message.lower()
 
         session.close()
@@ -641,7 +641,7 @@ class TestDeployEdgeCases:
         assert parent.head == hashes[-1]
 
         # Child should have one more commit
-        child_log = child.search.log(limit=100)
+        child_log = child.log(limit=100)
         assert len(child_log) == 4  # 3 original + 1 child commit
 
         session.close()

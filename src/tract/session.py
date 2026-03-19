@@ -634,7 +634,7 @@ class Session:
 
         branch_existed = False
         try:
-            parent.branches.create(branch_name, switch=False)
+            parent.branch(branch_name, switch=False)
         except BranchExistsError:
             branch_existed = True
 
@@ -1014,9 +1014,9 @@ def _curate_keep_tags(child: Tract, keep_tags: list[str]) -> None:
     chain = _get_commit_chain(child)
 
     for row in chain:
-        commit_tags = set(child.tags.get(row.commit_hash))
+        commit_tags = set(child.get_tags(row.commit_hash))
         if not (commit_tags & tag_set):
-            child.annotations.set(row.commit_hash, Priority.SKIP, reason="curation:keep_tags")
+            child.annotate(row.commit_hash, Priority.SKIP, reason="curation:keep_tags")
 
 
 def _curate_drop(child: Tract, drop_hashes: list[str]) -> None:
@@ -1059,7 +1059,7 @@ def _curate_drop(child: Tract, drop_hashes: list[str]) -> None:
 
     # Apply SKIP annotations
     for h in drop_hashes:
-        child.annotations.set(h, Priority.SKIP, reason="curation:drop")
+        child.annotate(h, Priority.SKIP, reason="curation:drop")
 
 
 def _curate_compact_before(child: Tract, marker_hash: str) -> None:
@@ -1115,7 +1115,7 @@ def _curate_compact_before(child: Tract, marker_hash: str) -> None:
 
     if has_llm:
         # Use the Tract.compress() API which handles all wiring
-        child.compression.compress(
+        child.compress(
             commits=non_skipped_hashes,
             triggered_by="curation:compact_before",
         )
@@ -1139,7 +1139,7 @@ def _curate_compact_before(child: Tract, marker_hash: str) -> None:
             summary = "(empty summary)"
 
         # Use Tract.compress() with manual content
-        child.compression.compress(
+        child.compress(
             commits=non_skipped_hashes,
             content=summary,
             triggered_by="curation:compact_before",

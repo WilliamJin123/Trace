@@ -157,10 +157,10 @@ class TestStrategyEdgeCases:
     def test_strategy_does_not_mutate_dag(self):
         """Compiling with any strategy does not change the DAG."""
         t = _make_tract_with_commits(3)
-        log_before = [c.commit_hash for c in t.search.log()]
+        log_before = [c.commit_hash for c in t.log()]
         t.compile(strategy="messages")
         t.compile(strategy="adaptive", strategy_k=2)
-        log_after = [c.commit_hash for c in t.search.log()]
+        log_after = [c.commit_hash for c in t.log()]
         assert log_before == log_after
 
     def test_single_commit_all_strategies(self):
